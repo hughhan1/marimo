@@ -1,7 +1,7 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from marimo._messaging.msgspec_encoder import asdict
@@ -13,11 +13,14 @@ from marimo._messaging.notification import (
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.mocks import token_header
 
-if TYPE_CHECKING:
-    from starlette.testclient import WebSocketTestSession
+
+class Frames(Protocol):
+    """A session's event stream, read one frame at a time."""
+
+    def receive_json(self) -> Any: ...
 
 
-def receive_notification(websocket: WebSocketTestSession) -> dict[str, Any]:
+def receive_notification(websocket: Frames) -> dict[str, Any]:
     """Read a private session notification from the host event stream."""
     while True:
         event = websocket.receive_json()
@@ -27,7 +30,7 @@ def receive_notification(websocket: WebSocketTestSession) -> dict[str, Any]:
             return {"op": notification["op"], "data": notification}
 
 
-def receive_until(op: str, websocket: WebSocketTestSession) -> dict[str, Any]:
+def receive_until(op: str, websocket: Frames) -> dict[str, Any]:
     while True:
         data = receive_notification(websocket)
         if data["op"] == op:

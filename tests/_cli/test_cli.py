@@ -48,6 +48,7 @@ from marimo._utils.env import is_env_true
 from marimo._utils.net import find_free_port
 from marimo._utils.platform import is_windows
 from marimo._utils.toml import toml_reader
+from tests.mcp_request import connect_session, tool_request, tool_result
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -924,7 +925,6 @@ def test_cli_new() -> None:
 def test_cli_kernel_killed_when_server_killed() -> None:
     """Orphaned kernels should self-terminate via the parent poller."""
     import psutil
-    from websockets.sync.client import connect
 
     port = _get_port()
     p = subprocess.Popen(
@@ -932,8 +932,8 @@ def test_cli_kernel_killed_when_server_killed() -> None:
     )
     try:
         assert _try_fetch(port) is not None
-        # Opening a WebSocket causes the server to spawn a kernel process.
-        with connect(f"ws://{DEFAULT_HOST}:{port}/ws?session_id=s1"):
+        # Following a session causes the server to spawn a kernel process.
+        with connect_session(f"http://{DEFAULT_HOST}:{port}", "s1"):
             server = psutil.Process(p.pid)
             deadline = time.time() + 10
             kernel_pids: list[int] = []
@@ -1491,8 +1491,6 @@ def test_editor_sandbox_supplies_server_tools(
     tmp_path: Path, bare_marimo_python: str, entry: str, backend: str
 ) -> None:
     """Formatting works without adding Ruff to the notebook or host."""
-    from websockets.sync.client import connect
-
     from marimo._environments.uv import find_uv_bin
 
     if entry == "stdin" and _is_win32():
@@ -1566,14 +1564,10 @@ def test_editor_sandbox_supplies_server_tools(
             assert _try_fetch(port) is not None
             # An unresolvable manifest must not prevent server startup.
             notebook.write_text(source)
-            query = urllib.parse.urlencode(
-                {
-                    "session_id": "formatting",
-                    **({"file": str(notebook)} if entry == "folder" else {}),
-                }
-            )
-            with connect(
-                f"ws://{DEFAULT_HOST}:{port}/ws?{query}"
+            with connect_session(
+                f"http://{DEFAULT_HOST}:{port}",
+                "formatting",
+                file=str(notebook) if entry == "folder" else None,
             ) as websocket:
                 while True:
                     event = json.loads(websocket.recv(timeout=60))
@@ -1583,21 +1577,16 @@ def test_editor_sandbox_supplies_server_tools(
                     assert message["op"] != "kernel-startup-error", message
                     if message["op"] == "kernel-ready":
                         break
-                request = urllib.request.Request(
-                    f"http://{DEFAULT_HOST}:{port}/api/kernel/format",
-                    data=json.dumps(
-                        {
-                            "codes": {"cell": "x=  1"},
-                            "lineLength": 80,
-                        }
-                    ).encode(),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Marimo-Session-Id": "formatting",
-                    },
+                request = tool_request(
+                    f"http://{DEFAULT_HOST}:{port}",
+                    "kernel_format",
+                    {"codes": {"cell": "x=  1"}, "lineLength": 80},
+                    {"Marimo-Session-Id": "formatting"},
                 )
                 with urllib.request.urlopen(request, timeout=10) as response:
-                    assert json.load(response) == {"codes": {"cell": "x = 1"}}
+                    assert tool_result(response)["structuredContent"] == {
+                        "codes": {"cell": "x = 1"}
+                    }
         finally:
             process.terminate()
             process.wait(timeout=15)

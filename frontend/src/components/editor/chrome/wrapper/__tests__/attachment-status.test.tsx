@@ -20,14 +20,27 @@ import {
   type StableSessionId,
   stableSessionIdAtom,
 } from "@/core/kernel/session";
-import { API } from "@/core/network/api";
 import { connectionAtom } from "@/core/network/connection";
 import { ConnectionState } from "@/core/session/types";
 import { Deferred } from "@/utils/Deferred";
 import { AttachmentStatus } from "../footer-items/attachment-status";
 
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/core/network/api", () => ({ API: { post: vi.fn() } }));
+const API = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("@/core/network/holon", () => ({
+  getTools: async () => ({
+    pair_notebooks_attachments_detach: ({
+      id,
+      attachment_id,
+    }: {
+      id: string;
+      attachment_id: string;
+    }) =>
+      API.post(`/pair/notebooks/${encodeURIComponent(id)}/attachments/detach`, {
+        attachment_id,
+      }),
+  }),
+}));
 
 const attachmentsAtom = atom<Attachment[]>([]);
 vi.mock("@/core/session/active-notebook", async (importOriginal) => ({
@@ -302,7 +315,7 @@ describe("AttachmentStatus", () => {
       screen.getByRole("button", { name: "Cancel disconnect Pi" }),
     ).toBeDisabled();
     fireEvent.click(button);
-    expect(API.post).toHaveBeenCalledOnce();
+    await waitFor(() => expect(API.post).toHaveBeenCalledOnce());
     await act(async () => deferred.resolve(""));
   });
 

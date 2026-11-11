@@ -22,7 +22,10 @@ from marimo._server.session_manager import SessionManager
 from marimo._server.utils import initialize_asyncio
 from marimo._session.queue import ProcessLike
 from marimo._session.session import SessionImpl
+from tests._server import mcp_client
 from tests._server.mocks import get_mock_session_manager
+
+mcp_client.install()
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
@@ -116,6 +119,20 @@ def user_config_manager() -> Iterator[UserConfigStore]:
     yield TestUserConfigManager()
 
     tmp.cleanup()
+
+
+@pytest.fixture(autouse=True)
+def fresh_mcp_events() -> None:
+    """Give each test its own MCP Events.
+
+    Events keep to the event loop they are first served on, and each test
+    client follows its sessions on a loop of its own.
+    """
+    from marimo._server.api.events import events
+    from marimo._server.api.tools import mcp_server
+
+    events.cache_clear()
+    mcp_server.cache_clear()
 
 
 @pytest.fixture

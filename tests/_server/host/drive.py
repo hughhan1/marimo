@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from marimo._core.host import Host
+    from tests._server.session_events import SessionEvents
 
 PORT = 1234
 """Server port used to validate the request's Host header."""
@@ -48,7 +49,9 @@ def position(host: Host, cursor: str) -> int:
     return found
 
 
-def socket_snapshot(websocket: WebSocketTestSession) -> list[dict[str, Any]]:
+def socket_snapshot(
+    websocket: WebSocketTestSession | SessionEvents,
+) -> list[dict[str, Any]]:
     """Read the opening snapshot or replay, including its ready boundary."""
     events = []
     while True:

@@ -8,11 +8,10 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from starlette.authentication import requires
-from starlette.responses import JSONResponse
 
 from marimo import _loggers
 from marimo._server.api.deps import AppState
-from marimo._server.api.utils import parse_request
+from marimo._server.api.tools import tool
 from marimo._server.files.directory_scanner import DirectoryScanner
 from marimo._server.host.lifespan import ensure_host
 from marimo._server.models.home import (
@@ -24,7 +23,6 @@ from marimo._server.models.home import (
     WorkspaceFilesRequest,
     WorkspaceFilesResponse,
 )
-from marimo._server.router import APIRouter
 from marimo._server.workspace import (
     count_files,
     flatten_files,
@@ -41,25 +39,14 @@ MAX_FILES = DirectoryScanner.MAX_FILES
 
 LOGGER = _loggers.marimo_logger()
 
-# Router for home endpoints
-router = APIRouter()
 
-
-@router.post("/recent_files")
+@tool("home_recent_files", output=RecentFilesResponse)
 @requires("edit")
 async def read_code(
     *,
     request: Request,
 ) -> RecentFilesResponse:
-    """
-    responses:
-        200:
-            description: Get the recent files
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/RecentFilesResponse"
-    """
+    """List the recently opened notebooks."""
     app_state = AppState(request)
     # Pass the workspace's directory to filter and relativize paths
     directory = None
@@ -70,27 +57,18 @@ async def read_code(
     return RecentFilesResponse(files=files)
 
 
-@router.post("/workspace_files")
+@tool(
+    "home_workspace_files",
+    input=WorkspaceFilesRequest,
+    output=WorkspaceFilesResponse,
+)
 @requires("read")
 async def workspace_files(
     *,
     request: Request,
+    body: WorkspaceFilesRequest,
 ) -> WorkspaceFilesResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/WorkspaceFilesRequest"
-    responses:
-        200:
-            description: Get the files in the workspace
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/WorkspaceFilesResponse"
-    """
-    body = await parse_request(request, cls=WorkspaceFilesRequest)
+    """List the workspace's files."""
     app_state = AppState(request)
     session_manager = app_state.session_manager
 
@@ -212,78 +190,43 @@ def _get_active_sessions(app_state: AppState) -> list[MarimoFile]:
     return files[::-1]
 
 
-@router.post("/running_notebooks")
+@tool("home_running_notebooks", output=RunningNotebooksResponse)
 @requires("edit")
 async def running_notebooks(
     *,
     request: Request,
 ) -> RunningNotebooksResponse:
-    """
-    responses:
-        200:
-            description: Get the running files
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/RunningNotebooksResponse"
-    """
+    """List the notebooks with a running session."""
     app_state = AppState(request)
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 
-@router.post("/shutdown_session")
+@tool(
+    "home_shutdown_session",
+    input=ShutdownSessionRequest,
+    output=RunningNotebooksResponse,
+)
 @requires("edit")
 async def shutdown_session(
     *,
     request: Request,
+    body: ShutdownSessionRequest,
 ) -> RunningNotebooksResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ShutdownSessionRequest"
-    responses:
-        200:
-            description: Shutdown the current session
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/RunningNotebooksResponse"
-    """
+    """Close a session and list the notebooks still running."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=ShutdownSessionRequest)
     app_state.session_manager.close_session(body.session_id)
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 
-@router.post("/tutorial/open")
+@tool("home_tutorial_open", input=OpenTutorialRequest, output=MarimoFile)
 @requires("edit")
 async def tutorial(
     *,
     request: Request,
-) -> MarimoFile | JSONResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/OpenTutorialRequest"
-    responses:
-        200:
-            description: Open a new tutorial
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/MarimoFile"
-    """
-    import msgspec
-
+    body: OpenTutorialRequest,
+) -> MarimoFile:
+    """Create a copy of a tutorial notebook and return its path."""
     # Create a new tutorial file and return the filepath
-    try:
-        body = await parse_request(request, cls=OpenTutorialRequest)
-    except msgspec.ValidationError:
-        return JSONResponse({"detail": "Tutorial not found"}, status_code=400)
     temp_dir = tempfile.TemporaryDirectory()
     path = create_temp_tutorial_file(body.tutorial_id, temp_dir)
 

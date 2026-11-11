@@ -16,6 +16,7 @@ from tests._server.mocks import (
     token_header,
     with_session,
 )
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.testclient import TestClient
@@ -60,7 +61,7 @@ def test_version(client: TestClient) -> None:
 
     response = client.get("/api/version", headers=token_header())
     assert response.status_code == 200, response.text
-    assert response.text == __version__
+    assert response.json() == {"text": __version__}
 
 
 def test_sessions_requires_auth(client: TestClient) -> None:
@@ -78,8 +79,8 @@ def test_sessions_empty(client: TestClient) -> None:
 def test_sessions_stable_id_survives_reconnect(
     client: TestClient, connection_id: str
 ) -> None:
-    with client.websocket_connect(
-        f"/ws?session_id={SESSION_ID}", headers=token_header()
+    with connect_session(
+        client, f"/ws?session_id={SESSION_ID}", headers=token_header()
     ) as websocket:
         snapshot = socket_snapshot(websocket)
         notebook_id = next(
@@ -102,8 +103,8 @@ def test_sessions_stable_id_survives_reconnect(
         assert response.status_code == 200, response.text
         assert response.json() == {SESSION_ID: expected}
 
-    with client.websocket_connect(
-        f"/ws?session_id={connection_id}", headers=token_header()
+    with connect_session(
+        client, f"/ws?session_id={connection_id}", headers=token_header()
     ) as websocket:
         # The same connection rejoins its session; another resumes it.
         assert receive_notification(websocket)["op"] == (
@@ -115,8 +116,8 @@ def test_sessions_stable_id_survives_reconnect(
 
 
 def test_sessions_stable_id_changes_after_restart(client: TestClient) -> None:
-    with client.websocket_connect(
-        f"/ws?session_id={SESSION_ID}", headers=token_header()
+    with connect_session(
+        client, f"/ws?session_id={SESSION_ID}", headers=token_header()
     ) as websocket:
         assert receive_notification(websocket)["op"] == "kernel-ready"
         response = client.get("/api/sessions", headers=token_header())
@@ -129,8 +130,8 @@ def test_sessions_stable_id_changes_after_restart(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     assert response.json() == {}
 
-    with client.websocket_connect(
-        f"/ws?session_id={SESSION_ID}", headers=token_header()
+    with connect_session(
+        client, f"/ws?session_id={SESSION_ID}", headers=token_header()
     ) as websocket:
         assert receive_notification(websocket)["op"] == "kernel-ready"
         response = client.get("/api/sessions", headers=token_header())

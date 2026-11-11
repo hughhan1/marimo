@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from starlette.authentication import requires
 
 from marimo import _loggers
+from marimo._server.api.tools import tool
 from marimo._server.api.utils import dispatch_control_request
 from marimo._server.models.models import (
     BaseResponse,
@@ -15,174 +16,88 @@ from marimo._server.models.models import (
     ListSQLTablesRequest,
     PreviewDatasetColumnRequest,
     PreviewSQLTableRequest,
+    SuccessResponse,
 )
-from marimo._server.router import APIRouter
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
 LOGGER = _loggers.marimo_logger()
 
-# Router for data source endpoints
-router = APIRouter()
 
-
-@router.post("/discover")
+@tool(
+    "datasources_discover",
+    input=DiscoverDataSourcesRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def discover_data_sources(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/DiscoverDataSourcesRequest"
-    responses:
-        200:
-            description: Discover datasource connections
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, DiscoverDataSourcesRequest)
+async def discover_data_sources(
+    *, request: Request, body: DiscoverDataSourcesRequest
+) -> BaseResponse:
+    """Ask the kernel to discover the notebook's data sources."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/preview_column")
+@tool(
+    "datasources_preview_column",
+    input=PreviewDatasetColumnRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
 async def preview_column(
-    request: Request,
+    *, request: Request, body: PreviewDatasetColumnRequest
 ) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/PreviewDatasetColumnRequest"
-    responses:
-        200:
-            description: Preview a column in a dataset
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, PreviewDatasetColumnRequest)
+    """Ask the kernel to preview a column of a dataset."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/preview_sql_table")
+@tool(
+    "datasources_preview_sql_table",
+    input=PreviewSQLTableRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def preview_sql_table(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/PreviewSQLTableRequest"
-    responses:
-        200:
-            description: Preview a SQL table
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, PreviewSQLTableRequest)
+async def preview_sql_table(
+    *, request: Request, body: PreviewSQLTableRequest
+) -> BaseResponse:
+    """Ask the kernel to preview a SQL table."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/preview_sql_table_list")
+@tool(
+    "datasources_preview_sql_table_list",
+    input=ListSQLTablesRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def preview_sql_table_list(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ListSQLTablesRequest"
-    responses:
-        200:
-            description: Preview a list of tables in an SQL schema
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, ListSQLTablesRequest)
+async def preview_sql_table_list(
+    *, request: Request, body: ListSQLTablesRequest
+) -> BaseResponse:
+    """Ask the kernel to list the tables of a SQL schema."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/preview_sql_schema_list")
+@tool(
+    "datasources_preview_sql_schema_list",
+    input=ListSQLSchemasRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def preview_sql_schema_list(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ListSQLSchemasRequest"
-    responses:
-        200:
-            description: Preview a list of schemas in an SQL database
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, ListSQLSchemasRequest)
+async def preview_sql_schema_list(
+    *, request: Request, body: ListSQLSchemasRequest
+) -> BaseResponse:
+    """Ask the kernel to list the schemas of a SQL database."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/preview_datasource_connection")
+@tool(
+    "datasources_preview_datasource_connection",
+    input=ListDataSourceConnectionRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def preview_datasource_connection(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ListDataSourceConnectionRequest"
-    responses:
-        200:
-            description: Broadcasts a datasource connection
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(
-        request, ListDataSourceConnectionRequest
-    )
+async def preview_datasource_connection(
+    *, request: Request, body: ListDataSourceConnectionRequest
+) -> BaseResponse:
+    """Ask the kernel to describe a data source connection."""
+    return await dispatch_control_request(request, body)

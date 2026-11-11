@@ -224,27 +224,38 @@ def test_open_response_rejects_invalid_url_without_exposing_it(
     )
 
 
+def _tool_reply(payload: object) -> io.BytesIO:
+    """A `tools/call` response whose structured result is `payload`."""
+    return io.BytesIO(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"content": [], "structuredContent": payload},
+            }
+        ).encode()
+    )
+
+
 def test_list_sessions_sends_request_and_parses_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = io.BytesIO(
-        json.dumps(
-            {
-                "session-1": {
-                    "session_id": "sess-stable-1",
-                    "filename": "analysis.py",
-                    "path": "/work/analysis.py",
-                    "notebook_id": "nb-analysis",
-                    "state": "idle",
-                },
-                "session-2": {
-                    "session_id": "sess-stable-2",
-                    "filename": None,
-                    "path": None,
-                    "notebook_id": None,
-                },
-            }
-        ).encode()
+    response = _tool_reply(
+        {
+            "session-1": {
+                "session_id": "sess-stable-1",
+                "filename": "analysis.py",
+                "path": "/work/analysis.py",
+                "notebook_id": "nb-analysis",
+                "state": "idle",
+            },
+            "session-2": {
+                "session_id": "sess-stable-2",
+                "filename": None,
+                "path": None,
+                "notebook_id": None,
+            },
+        }
     )
     calls = _patch_response(monkeypatch, response)
 
@@ -270,30 +281,51 @@ def test_list_sessions_sends_request_and_parses_response(
             "notebook_id": None,
         },
     }
-    assert calls == [
-        {
-            "method": "GET",
-            "url": (
-                "https://example.com/base/api/sessions"
-                "?access_token=query-token"
-            ),
-            "headers": {"Authorization": "Bearer secret-token"},
-            "body": None,
-        }
-    ]
+    [call] = calls
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "https://example.com/base/api/mcp?access_token=query-token"
+    )
+    assert call["headers"]["Authorization"] == "Bearer secret-token"
+    assert call["headers"]["Mcp-Name"] == "sessions"
+    sent = json.loads(call["body"])
+    assert sent["method"] == "tools/call"
+    assert sent["params"]["name"] == "sessions"
     assert response.closed
 
 
 def test_list_sessions_omits_authorization_without_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = io.BytesIO(b"{}")
+    response = _tool_reply({})
     calls = _patch_response(monkeypatch, response)
 
     assert client.list_sessions(url="http://localhost:2718", token=None) == {}
 
-    assert calls[0]["headers"] == {}
+    assert "Authorization" not in calls[0]["headers"]
     assert response.closed
+
+
+def test_list_sessions_reports_a_refused_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    problem = {"type": "x", "title": "Forbidden", "status": 403}
+    response = io.BytesIO(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "isError": True,
+                    "content": [{"type": "text", "text": json.dumps(problem)}],
+                },
+            }
+        ).encode()
+    )
+    _patch_response(monkeypatch, response)
+
+    with pytest.raises(PairError, match=r"^Authentication failed\.$"):
+        client.list_sessions(url="http://localhost:2718", token=None)
 
 
 @pytest.mark.parametrize(
@@ -344,7 +376,7 @@ def test_list_sessions_rejects_malformed_response(
     monkeypatch: pytest.MonkeyPatch,
     payload: object,
 ) -> None:
-    response = io.BytesIO(json.dumps(payload).encode())
+    response = _tool_reply(payload)
     _patch_response(monkeypatch, response)
 
     with pytest.raises(PairError) as exc_info:
@@ -355,7 +387,7 @@ def test_list_sessions_rejects_malformed_response(
         )
 
     assert str(exc_info.value) == (
-        "Unexpected response from http://localhost:2718/api/sessions."
+        "Unexpected response from http://localhost:2718/api/mcp."
     )
     assert "password" not in str(exc_info.value)
     assert "secret" not in str(exc_info.value)
@@ -374,7 +406,7 @@ def test_list_sessions_rejects_invalid_json(
         )
 
     assert str(exc_info.value) == (
-        "Unexpected response from http://localhost:2718/api/sessions."
+        "Unexpected response from http://localhost:2718/api/mcp."
     )
     assert "secret" not in str(exc_info.value)
     assert response.closed
@@ -383,16 +415,14 @@ def test_list_sessions_rejects_invalid_json(
 def test_list_sessions_rejects_server_without_stable_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = io.BytesIO(
-        json.dumps(
-            {
-                "session-1": {
-                    "filename": "analysis.py",
-                    "path": "/work/analysis.py",
-                    "notebook_id": "nb-analysis",
-                }
+    response = _tool_reply(
+        {
+            "session-1": {
+                "filename": "analysis.py",
+                "path": "/work/analysis.py",
+                "notebook_id": "nb-analysis",
             }
-        ).encode()
+        }
     )
     _patch_response(monkeypatch, response)
 

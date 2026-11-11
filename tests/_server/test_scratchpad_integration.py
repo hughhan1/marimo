@@ -12,8 +12,8 @@ The existing in-process `TestClient` fixture mocks the scratchpad
 stream out entirely, so real kernel timing and cross-process
 notification ordering aren't testable there. These tests share one
 `marimo edit` subprocess across the module and drive it through
-the full HTTP surface: a websocket for session setup and
-`completed-run` synchronization, host edits to populate
+the full HTTP surface: the session's event stream for session setup
+and `completed-run` synchronization, host edits to populate
 `session.document` (required for `code_mode` cell
 lookup by name), host runs to execute cells, and
 `/api/kernel/execute` to hit the scratchpad. Each test gets a
@@ -40,8 +40,9 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 import pytest
-import websockets.sync.client
 from inline_snapshot import snapshot
+
+from tests.mcp_request import connect_session, request_headers, tool_payload
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -93,7 +94,7 @@ def _server(
     """One `marimo edit` subprocess shared across the module.
 
     Per-test isolation comes from the `session` fixture which uses
-    a unique `session_id` — each WS connect creates a fresh kernel
+    a unique `session_id` — each new session creates a fresh kernel
     and empty `session.document`.
     """
     tmp = tmp_path_factory.mktemp("mnb")
@@ -140,7 +141,7 @@ def _server(
 class _Session:
     """Per-test session: unique ID → fresh kernel + empty document.
 
-    Wraps the websocket + HTTP calls. Use `wait_for_completed_run` to
+    Wraps the session's events + HTTP calls. Use `wait_for_completed_run` to
     synchronize with kernel activity instead of sleeping.
     """
 
@@ -149,16 +150,13 @@ class _Session:
         self.session_id = f"it_{uuid.uuid4().hex[:8]}"
         self.notebook_id = ""
         self.cells: dict[str, str] = {}
-        self.ws = websockets.sync.client.connect(
-            f"{base.replace('http', 'ws')}/ws?session_id={self.session_id}",
-            open_timeout=5,
-        )
+        self.ws = connect_session(base, self.session_id)
         # Drain kernel-ready handshake.
         self._recv_until(lambda m: m.get("op") == "kernel-ready")
 
     def close(self) -> None:
         # Close the session on the server via ``restart_session`` —
-        # marimo otherwise treats a new WS connection with a new
+        # marimo otherwise treats a new connection with a new
         # ``session_id`` as a reconnection and keeps the kernel state.
         # This tears down only our session, not the module-wide server.
         try:
@@ -175,12 +173,12 @@ class _Session:
         predicate: Callable[[dict[str, Any]], bool],
         timeout_s: float = 10.0,
     ) -> dict[str, Any]:
-        """Drain WS until a message matches `predicate(msg)`."""
+        """Drain events until a message matches `predicate(msg)`."""
         deadline = time.monotonic() + timeout_s
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TimeoutError("websocket predicate never satisfied")
+                raise TimeoutError("session predicate never satisfied")
             raw = self.ws.recv(timeout=remaining)
             event = json.loads(raw)
             if event["event"] == "notebook":
@@ -209,18 +207,32 @@ class _Session:
     ) -> str:
         import urllib.request
 
+        # The kernel's routes are the editor's tools; the scratchpad stream
+        # and the host's edits stay on HTTP.
+        sent: dict[str, str] = dict(headers or {})
+        tool = path.startswith("/api/kernel/") and not path.endswith(
+            "/api/kernel/execute"
+        )
+        if tool:
+            name = re.sub(r"\W+", "_", path.removeprefix("/api/")).strip("_")
+            url, data = f"{self.base}/api/mcp", tool_payload(name, body)
+            sent = {**sent, **request_headers("tools/call", name)}
+        else:
+            url, data = f"{self.base}{path}", body
         req = urllib.request.Request(
-            f"{self.base}{path}",
+            url,
             method="POST",
-            data=json.dumps(body).encode(),
+            data=json.dumps(data).encode(),
             headers={
                 "Content-Type": "application/json",
                 "Marimo-Session-Id": self.session_id,
-                **(headers or {}),
+                **sent,
             },
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             text: str = resp.read().decode()
+        if tool:
+            return json.dumps(json.loads(text)["result"]["structuredContent"])
         return text
 
     def edit(self, changes: list[dict[str, Any]]) -> None:

@@ -7,8 +7,8 @@ import {
 } from "../notebook/replica";
 import { Logger } from "@/utils/Logger";
 
-// Keep server reasons in sync with ws_endpoint.py and ws/*.py.
-// SSE carries the same reasons in close events. Unclassified reasons retry.
+// Keep server reasons in sync with marimo/_server/codes.py. A terminated
+// session subscription carries them in its error. Unclassified reasons retry.
 export function classifyCloseEvent(event: { reason?: string }): CloseDecision {
   switch (event.reason) {
     case "MARIMO_NO_FILE_KEY":

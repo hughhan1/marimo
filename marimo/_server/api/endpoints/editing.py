@@ -7,12 +7,12 @@ from starlette.authentication import requires
 
 from marimo._messaging.notification import FocusCellNotification
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import tool
 from marimo._server.api.utils import (
     dispatch_control_request,
     enforce_consumer_capability,
     install_packages_on_server,
     notify_server_missing_packages,
-    parse_request,
 )
 from marimo._server.models.models import (
     BaseResponse,
@@ -24,67 +24,32 @@ from marimo._server.models.models import (
     StdinRequest,
     SuccessResponse,
 )
-from marimo._server.router import APIRouter
 from marimo._utils.formatter import DefaultFormatter
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
-# Router for editing endpoints
-router = APIRouter()
 
-
-@router.post("/code_autocomplete")
+@tool(
+    "kernel_code_autocomplete",
+    input=CodeCompletionRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def code_complete(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/CodeCompletionRequest"
-    responses:
-        200:
-            description: Complete a code fragment
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, cls=CodeCompletionRequest)
+async def code_complete(
+    *, request: Request, body: CodeCompletionRequest
+) -> BaseResponse:
+    """Ask the kernel for code completions at a position in a cell."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/focus_cell")
+@tool("kernel_focus_cell", input=FocusCellRequest, output=SuccessResponse)
 @requires("edit")
-async def focus_cell(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FocusCellRequest"
-    responses:
-        200:
-            description: Focus a cell in kiosk-mode consumers
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+async def focus_cell(
+    *, request: Request, body: FocusCellRequest
+) -> BaseResponse:
+    """Tell the notebook's clients to focus a cell."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FocusCellRequest)
     app_state.require_current_session().notify(
         FocusCellNotification(cell_id=body.cell_id),
         from_consumer_id=None,
@@ -92,25 +57,13 @@ async def focus_cell(request: Request) -> BaseResponse:
     return SuccessResponse()
 
 
-@router.post("/format")
+@tool("kernel_format", input=FormatCellsRequest, output=FormatResponse)
 @requires("edit")
-async def format_cell(request: Request) -> FormatResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FormatCellsRequest"
-    responses:
-        200:
-            description: Format code
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FormatResponse"
-    """
+async def format_cell(
+    *, request: Request, body: FormatCellsRequest
+) -> FormatResponse:
+    """Format cells' code with the server's formatter."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FormatCellsRequest)
     formatter = DefaultFormatter(line_length=body.line_length)
     filename = app_state.require_current_session().app_file_manager.path
     if filename and filename.endswith((".md", ".qmd")):
@@ -137,60 +90,26 @@ async def format_cell(request: Request) -> FormatResponse:
         ) from None
 
 
-@router.post("/stdin")
+@tool("kernel_stdin", input=StdinRequest, output=SuccessResponse)
 @requires("edit")
-async def stdin(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/StdinRequest"
-    responses:
-        200:
-            description: Send input to the stdin stream
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+async def stdin(*, request: Request, body: StdinRequest) -> BaseResponse:
+    """Answer the kernel's request for input."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=StdinRequest)
     app_state.require_current_session().put_input(body.text)
 
     return SuccessResponse()
 
 
-@router.post("/install_missing_packages")
+@tool(
+    "kernel_install_missing_packages",
+    input=InstallPackagesRequest,
+    output=SuccessResponse,
+)
 @requires("edit")
-async def install_missing_packages(request: Request) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/InstallPackagesRequest"
-    responses:
-        200:
-            description: Install missing packages
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    body = await parse_request(request, cls=InstallPackagesRequest)
+async def install_missing_packages(
+    *, request: Request, body: InstallPackagesRequest
+) -> BaseResponse:
+    """Install packages into the kernel's environment, or the server's."""
     cmd = body.as_command()
 
     if cmd.source == "server":

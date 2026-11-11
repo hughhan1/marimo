@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.testclient import TestClient
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from marimo._environments import backends
+from marimo._environments.environment import Environment, ProcessPlan
+from marimo._environments.sandbox import BackendAdapter
 from marimo._messaging.notification import (
     EnvironmentOperationNotification,
     KernelReadyNotification,
@@ -21,12 +28,12 @@ from marimo._server.api.endpoints.ws.ws_connection_validator import (
 )
 from marimo._server.codes import WebSocketCodes
 from marimo._server.host.session import SessionEventStream
+from marimo._server.main import create_starlette_app
 from marimo._server.session_manager import SessionManager
 from marimo._session.model import ConnectionState, SessionMode
 from marimo._types.ids import SessionId
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.api.endpoints.ws_helpers import (
-    HEADERS,
     QUERY_PARAMS_CASES,
     assert_kernel_ready_response,
     assert_parse_ready_response,
@@ -37,11 +44,12 @@ from tests._server.api.endpoints.ws_helpers import (
 )
 from tests._server.conftest import get_kernel_tasks
 from tests._server.mocks import get_session_manager
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from starlette.testclient import TestClient, WebSocketTestSession
+    from tests._server.session_events import SessionEvents
 
 
 def _create_ws_url(session_id: str) -> str:
@@ -53,9 +61,18 @@ OTHER_WS_URL = _create_ws_url("456")
 
 
 def test_ws(client: TestClient) -> None:
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
+
+
+def test_a_page_from_before_a_restart_follows_its_session(
+    client: TestClient,
+) -> None:
+    """A restarted server has a new server token, which the page lacks."""
+    stale = {"Marimo-Server-Token": "from-before-a-restart"}
+    with connect_session(client, WS_URL, headers=stale) as websocket:
+        assert_kernel_ready_response(receive_notification(websocket))
 
 
 @pytest.mark.parametrize("failure", ["disconnect", "cancel"])
@@ -129,37 +146,39 @@ async def test_failed_startup_progress_delivery_detaches_session(
 
 
 def test_without_session(client: TestClient) -> None:
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect("/ws?access_token=fake-token"):
+    # The event's arguments require a session id.
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(client, "/ws?access_token=fake-token") as ws:
+            ws.receive_text()
             raise AssertionError()
-    assert exc_info.value.code == 1000
-    assert exc_info.value.reason == "MARIMO_NO_SESSION_ID"
+    assert exc_info.value.code == WebSocketCodes.UNEXPECTED_ERROR
+    assert "session_id: Field required" in exc_info.value.reason
 
 
 def test_disconnect_and_reconnect(client: TestClient) -> None:
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
     # Connect by the same session id
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert data["op"] == "alert"
 
 
 def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
     manager = get_session_manager(client)
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
         stable_id = manager.sessions[SessionId("123")].stable_id
         websocket.close()
     # Connect by the same session id
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert data["op"] == "alert"
         assert manager.sessions[SessionId("123")].stable_id == stable_id
     # New connection with a new browser ID (simulates refresh)
-    with client.websocket_connect(OTHER_WS_URL) as websocket:
+    with connect_session(client, OTHER_WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({"resumed": True}))
         assert manager.sessions[SessionId("456")].stable_id == stable_id
@@ -174,7 +193,7 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
         logs="Kernel startup output\n",
         log_mode="append",
     )
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         assert_kernel_ready_response(receive_notification(websocket))
         view = manager.sessions[SessionId("123")].session_view
         view.add_notification(
@@ -192,7 +211,7 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
         websocket.close()
 
     for url in (WS_URL, OTHER_WS_URL):
-        with client.websocket_connect(url) as websocket:
+        with connect_session(client, url) as websocket:
             message = receive_notification(websocket)
             if url == OTHER_WS_URL:
                 assert_kernel_ready_response(
@@ -220,11 +239,11 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
 def test_second_connection_with_other_session_joins_as_viewer(
     client: TestClient,
 ) -> None:
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
         # A second EDIT connection is not refused; auto-routes to a viewer.
-        with client.websocket_connect(OTHER_WS_URL) as other_websocket:
+        with connect_session(client, OTHER_WS_URL) as other_websocket:
             assert_kernel_ready_response(
                 receive_notification(other_websocket),
                 create_response({"kiosk": True, "resumed": True}),
@@ -237,11 +256,11 @@ def test_second_connection_with_same_file_joins_as_viewer(
 ) -> None:
     ws_1 = f"{WS_URL}&file={temp_marimo_file}"
     ws_2 = f"{OTHER_WS_URL}&file={temp_marimo_file}"
-    with client.websocket_connect(ws_1) as websocket:
+    with connect_session(client, ws_1) as websocket:
         data = receive_notification(websocket)
         assert_parse_ready_response(data)
         # A second EDIT connection is not refused; auto-routes to a viewer.
-        with client.websocket_connect(ws_2) as other_websocket:
+        with connect_session(client, ws_2) as other_websocket:
             viewer = parse_raw(
                 receive_notification(other_websocket)["data"],
                 KernelReadyNotification,
@@ -259,7 +278,7 @@ def test_file_watcher_calls_reload(client: TestClient) -> None:
         session_manager._create_file_change_coordinator()
     )
     session_manager.watch = True
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
         filename = session_manager.workspace.get_unique_file_key()
@@ -283,7 +302,7 @@ def test_file_watcher_calls_reload(client: TestClient) -> None:
 async def test_query_params(
     client: TestClient, query: str, expected: dict[str, str | list[str]]
 ) -> None:
-    with client.websocket_connect(f"{WS_URL}&{query}") as websocket:
+    with connect_session(client, f"{WS_URL}&{query}") as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -294,24 +313,23 @@ async def test_query_params(
 
 async def test_connect_kiosk_without_session(client: TestClient) -> None:
     with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
-        with client.websocket_connect(
-            "/ws?session_id=123&kiosk=true&access_token=fake-token"
+        with connect_session(
+            client, "/ws?session_id=123&kiosk=true&access_token=fake-token"
         ) as websocket:
             receive_notification(websocket)
             raise AssertionError()
-    assert exc_info.value.code == WebSocketCodes.NORMAL_CLOSE
     assert exc_info.value.reason == "MARIMO_NO_SESSION"
 
 
 async def test_connect_kiosk_with_session(client: TestClient) -> None:
     # Create the first session
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
         # Connect by the same session id in kiosk mode
-        with client.websocket_connect(
-            f"{WS_URL}&kiosk=true"
+        with connect_session(
+            client, f"{WS_URL}&kiosk=true"
         ) as other_websocket:
             data = receive_notification(other_websocket)
             assert_kernel_ready_response(
@@ -325,23 +343,22 @@ async def test_cannot_connect_kiosk_with_run_session(
     # Create the first session
     session_manager = get_session_manager(client)
     session_manager.mode = SessionMode.RUN
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
         # Connect by the same session id in kiosk mode
         with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
-            with client.websocket_connect(
-                f"{WS_URL}&kiosk=true"
+            with connect_session(
+                client, f"{WS_URL}&kiosk=true"
             ) as other_websocket:
                 data = receive_notification(other_websocket)
                 raise AssertionError()
-        assert exc_info.value.code == WebSocketCodes.FORBIDDEN
         assert exc_info.value.reason == "MARIMO_KIOSK_NOT_ALLOWED"
 
 
 def flush_messages(
-    websocket: WebSocketTestSession, at_least: int = 0
+    websocket: SessionEvents, at_least: int = 0
 ) -> list[dict[str, Any]]:
     # There is no way to properly flush messages from the websocket
     # without using a timeout or non-blocking calls
@@ -355,20 +372,23 @@ def flush_messages(
 def test_ws_requires_authentication(client: TestClient) -> None:
     """Test that WebSocket connections require authentication."""
     # Try to connect without any authentication headers
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect("/ws"):
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(client, "/ws?session_id=123") as ws:
+            ws.receive_text()
             raise AssertionError("Should not be able to connect without auth")
 
     assert exc_info.value.code == WebSocketCodes.UNAUTHORIZED
     assert exc_info.value.reason == "MARIMO_UNAUTHORIZED"
+    assert get_session_manager(client).sessions == {}
 
 
 def test_ws_rejects_invalid_token(client: TestClient) -> None:
     """An incorrect access_token must be rejected, not just a missing one."""
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect(
-            "/ws?session_id=123&access_token=wrong-token"
-        ):
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(
+            client, "/ws?session_id=123&access_token=wrong-token"
+        ) as ws:
+            ws.receive_text()
             raise AssertionError(
                 "Should not be able to connect with an invalid token"
             )
@@ -377,14 +397,13 @@ def test_ws_rejects_invalid_token(client: TestClient) -> None:
     assert exc_info.value.reason == "MARIMO_UNAUTHORIZED"
 
 
-def test_ws_with_valid_authentication(client: TestClient) -> None:
-    """Test that WebSocket connections work with valid authentication."""
-    # Connect with proper authentication headers
-    with client.websocket_connect(WS_URL, headers=HEADERS) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data)
-
-    # Clean up
+def test_allows_unauthenticated_when_auth_disabled(client: TestClient) -> None:
+    # Trusted environments (e.g. --no-token) disable marimo's own auth
+    app = create_starlette_app(base_url="", enable_auth=False)
+    app.state = client.app.state  # type: ignore[union-attr]
+    app.state.enable_auth = False
+    with connect_session(TestClient(app), "/ws?session_id=123") as ws:
+        assert receive_notification(ws)["op"] == "kernel-ready"
 
 
 # ==============================================================================
@@ -395,7 +414,7 @@ def test_ws_with_valid_authentication(client: TestClient) -> None:
 async def test_session_resumption(client: TestClient) -> None:
     """Test that session resumption restores state and replays operations."""
     # Create a session and instantiate it
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -412,7 +431,7 @@ async def test_session_resumption(client: TestClient) -> None:
     await asyncio.sleep(0.2)
 
     # Resume with new session ID (simulates browser refresh)
-    with client.websocket_connect(OTHER_WS_URL) as websocket:
+    with connect_session(client, OTHER_WS_URL) as websocket:
         # Should receive the resumed state
         kernel_ready_msg = receive_notification(websocket)
         assert kernel_ready_msg["op"] == "kernel-ready"
@@ -436,7 +455,7 @@ async def test_reconnection_cancels_close_handle(client: TestClient) -> None:
     session_manager = get_session_manager(client)
     session_manager.mode = SessionMode.RUN
 
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -447,7 +466,7 @@ async def test_reconnection_cancels_close_handle(client: TestClient) -> None:
         await asyncio.sleep(0.1)
 
         # Reconnect immediately (before TTL expires)
-        with client.websocket_connect(WS_URL) as new_websocket:
+        with connect_session(client, WS_URL) as new_websocket:
             data = receive_notification(new_websocket)
             # The same connection rejoins its session and is told so.
             assert data["op"] == "alert"
@@ -491,11 +510,11 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
             return getattr(self._loop, name)
 
     # Disconnect under the patch, but always release the socket on failure.
-    ws_a = client.websocket_connect(WS_URL)
-    ws_a.__enter__()
+    ws_a = connect_session(client, WS_URL)
+    socket_a = ws_a.__enter__()
     a_disconnected = False
     try:
-        assert_kernel_ready_response(receive_notification(ws_a))
+        assert_kernel_ready_response(receive_notification(socket_a))
         assert session_manager.get_session("123") is not None
 
         with patch(
@@ -510,7 +529,7 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
                 await asyncio.sleep(0.01)
         assert captured, "Consumer A disconnect did not schedule a TTL close"
 
-        with client.websocket_connect(WS_URL) as ws_b:
+        with connect_session(client, WS_URL) as ws_b:
             data = receive_notification(ws_b)
             assert data["op"] == "alert", (
                 f"Expected the reconnect alert, got {data.get('op')}"
@@ -587,7 +606,7 @@ def test_session_ttl_expiration(
     session_manager.mode = mode
     session_manager.ttl_seconds = manager_ttl
 
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -632,7 +651,7 @@ async def test_edit_mode_without_session_ttl_no_delayed_cleanup(
     # Default: no --session-ttl flag passed
     assert session_manager.ttl_seconds is None
 
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -667,13 +686,12 @@ def test_missing_file_key_closes_connection(client: TestClient) -> None:
         "get_unique_file_key",
         return_value=None,
     ):
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(
-                "/ws?session_id=123&access_token=fake-token"
-            ):
-                pass
+        with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+            with connect_session(
+                client, "/ws?session_id=123&access_token=fake-token"
+            ) as ws:
+                ws.receive_text()
 
-        assert exc_info.value.code == WebSocketCodes.NORMAL_CLOSE
         assert exc_info.value.reason == "MARIMO_NO_FILE_KEY"
 
 
@@ -686,14 +704,14 @@ async def test_rapid_reconnection_cancels_ttl_cleanup(
     client: TestClient,
 ) -> None:
     """Test that rapid reconnection cancels the TTL cleanup timer."""
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
     # Disconnect and immediately reconnect (before TTL expires)
     await asyncio.sleep(0.1)
 
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert data["op"] == "alert"
 
@@ -701,7 +719,7 @@ async def test_rapid_reconnection_cancels_ttl_cleanup(
 async def test_multiple_rapid_reconnections(client: TestClient) -> None:
     """Test multiple rapid connect/disconnect cycles don't break session."""
     for i in range(5):
-        with client.websocket_connect(WS_URL) as websocket:
+        with connect_session(client, WS_URL) as websocket:
             data = receive_notification(websocket)
             if i == 0:
                 assert_kernel_ready_response(data)
@@ -711,7 +729,7 @@ async def test_multiple_rapid_reconnections(client: TestClient) -> None:
 
 async def test_websocket_message_queue_delivery(client: TestClient) -> None:
     """Test that kernel messages are queued and delivered."""
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
 
@@ -751,7 +769,7 @@ def test_disconnect_expires_pending_startup(
 
     monkeypatch.setattr(SessionImpl, "create", create)
     url = WS_URL
-    with client.websocket_connect(url) as websocket:
+    with connect_session(client, url) as websocket:
         assert started.wait(timeout=5)
         websocket.close()
         # Stay in the client context: its teardown cancels the server task,
@@ -778,7 +796,7 @@ def test_sandbox_progress_before_preparation_failure(
     monkeypatch.setattr(NotebookSandbox, "launch_async", prepare)
     get_session_manager(client).sandbox = True
 
-    with client.websocket_connect(WS_URL) as websocket:
+    with connect_session(client, WS_URL) as websocket:
         assert receive_notification(websocket) == {
             "op": "startup-progress",
             "data": {
@@ -841,7 +859,7 @@ def test_refresh_observes_existing_sandbox_preparation(
     }
     # Keep one server loop alive across both browser connections.
     with client:
-        with client.websocket_connect(WS_URL) as first:
+        with connect_session(client, WS_URL) as first:
             assert receive_notification(first) == expected
             running = receive_notification(first)
             output = receive_notification(first)
@@ -849,7 +867,7 @@ def test_refresh_observes_existing_sandbox_preparation(
                 "environment": "Resolving dependencies\n"
             }
             first.close()
-            with client.websocket_connect(replacement_url) as refreshed:
+            with connect_session(client, replacement_url) as refreshed:
                 assert receive_notification(refreshed) == expected
                 snapshot = receive_notification(refreshed)
                 assert snapshot == {
@@ -893,3 +911,142 @@ def test_refresh_observes_existing_sandbox_preparation(
                 with pytest.raises(WebSocketDisconnect) as closed:
                     receive_notification(refreshed)
                 assert closed.value.reason == "MARIMO_KERNEL_STARTUP_ERROR"
+
+
+@pytest.mark.parametrize("outcome", ["ready", "error", "disconnect"])
+def test_sandbox_progress_during_preparation(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    outcome: str,
+) -> None:
+    preparing = threading.Event()
+    release = asyncio.Event()
+    cleaned_up = threading.Event()
+    python = (
+        sys.executable
+        if outcome == "ready"
+        else str(tmp_path / "missing-python")
+    )
+    environment = Environment(python, sys.prefix, "unchanged")
+
+    async def prepare_environment(*_args: Any, **_kwargs: Any) -> Environment:
+        preparing.set()
+        try:
+            await release.wait()
+            return environment
+        finally:
+            cleaned_up.set()
+
+    # Control sandbox preparation while exercising real kernel startup.
+    # A missing interpreter triggers a launch failure after preparation succeeds.
+    adapter = MagicMock(spec=BackendAdapter)
+    adapter.name = backends.current_backend()
+    adapter.sync_async.side_effect = prepare_environment
+    adapter.launch.return_value = ProcessPlan(
+        (python, "-m", "marimo._ipc.launch_kernel"), os.environ.copy()
+    )
+    monkeypatch.setattr(backends, "adapter_for", lambda *_: adapter)
+    manager = get_session_manager(client)
+    manager.sandbox = True
+    if outcome == "disconnect":
+        manager.ttl_seconds = 0
+
+    with connect_session(client, WS_URL) as websocket:
+        assert receive_notification(websocket) == {
+            "op": "startup-progress",
+            "data": {
+                "op": "startup-progress",
+                "phase": "preparing-environment",
+                "logs": "",
+                "log_mode": "replace",
+            },
+        }
+        running = receive_notification(websocket)
+        assert running["op"] == "environment-operation"
+        assert running["data"]["action"] == "prepare"
+        assert running["data"]["status"] == {"kind": "running"}
+        assert not manager.sessions
+        assert preparing.wait(timeout=5)
+        if outcome == "disconnect":
+            websocket.close()
+            assert cleaned_up.wait(timeout=5)
+        else:
+            websocket.portal.call(release.set)
+            completed = receive_notification(websocket)
+            assert (
+                completed["data"]["operation_id"]
+                == running["data"]["operation_id"]
+            )
+            assert completed["data"]["status"] == {"kind": "succeeded"}
+            assert receive_notification(websocket) == {
+                "op": "startup-progress",
+                "data": {
+                    "op": "startup-progress",
+                    "phase": "starting-kernel",
+                    "logs": "",
+                    "log_mode": "replace",
+                },
+            }
+            message = receive_notification(websocket)
+            if outcome == "ready":
+                assert_kernel_ready_response(message)
+            else:
+                assert message["op"] == "kernel-startup-error"
+                assert (
+                    "Failed to start kernel subprocess"
+                    in message["data"]["error"]
+                )
+                with pytest.raises(WebSocketDisconnect) as closed:
+                    receive_notification(websocket)
+                assert (closed.value.code, closed.value.reason) == (
+                    WebSocketCodes.UNEXPECTED_ERROR,
+                    "MARIMO_KERNEL_STARTUP_ERROR",
+                )
+    if outcome != "ready":
+        assert not manager.sessions
+
+
+async def test_check_status_update_runs_off_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The synchronous update check must not block kernel messages."""
+    from marimo._config.settings import GLOBAL_SETTINGS
+    from marimo._server.api.endpoints.ws import session_handler
+
+    monkeypatch.setattr(GLOBAL_SETTINGS, "CHECK_STATUS_UPDATE", True)
+    monkeypatch.setattr(session_handler, "has_toasted", False)
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_check(on_update: Any) -> None:
+        started.set()
+        assert release.wait(timeout=10)
+        on_update("0.0.1", MagicMock(latest_version="9.9.9", notices=[]))
+
+    monkeypatch.setattr(session_handler, "check_for_updates", slow_check)
+
+    handler = SessionEventStream(
+        connection=MagicMock(),
+        notebook=None,
+        bridge=MagicMock(),
+        types=None,
+        cursor=None,
+        manager=MagicMock(mode=SessionMode.EDIT),
+        params=ConnectionParams(
+            session_id=SessionId("s1"),
+            file_key="test.py",
+            kiosk=False,
+            auto_instantiate=False,
+        ),
+    )
+    # Returns immediately, while the check is still running on a thread
+    handler._check_status_update()
+    assert await asyncio.wait_for(asyncio.to_thread(started.wait, 10), 20)
+    assert handler._events.empty()
+
+    # Once the check completes, the alert is delivered onto the queue
+    release.set()
+    message = await asyncio.wait_for(handler._events.get(), timeout=10)
+    assert "Update available" in message.event.data.marimo.title

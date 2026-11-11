@@ -12,6 +12,7 @@ from tests._server.api.endpoints.ws_helpers import (
 )
 from tests._server.host.drive import socket_snapshot
 from tests._server.mocks import run_cells
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.testclient import TestClient
@@ -42,8 +43,8 @@ def new_cell(cell_id: str) -> dict[str, Any]:
 
 async def test_connect_kiosk_with_session(client: TestClient) -> None:
     # Create the first session
-    with client.websocket_connect(
-        "/ws?session_id=123", headers=_HEADERS
+    with connect_session(
+        client, "/ws?session_id=123", headers=_HEADERS
     ) as websocket:
         snapshot = socket_snapshot(websocket)
         notebook_id = notebook_id_of(snapshot)
@@ -51,8 +52,8 @@ async def test_connect_kiosk_with_session(client: TestClient) -> None:
         assert_kernel_ready_response(editor_ready)
 
         # Connect in kiosk mode
-        with client.websocket_connect(
-            "/ws?session_id=456&kiosk=true", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=456&kiosk=true", headers=_HEADERS
         ) as other_websocket:
             data = receive_notification(other_websocket)
             assert_kernel_ready_response(
@@ -105,13 +106,13 @@ async def test_connect_kiosk_with_session(client: TestClient) -> None:
 def test_kiosk_connection_cannot_edit_or_run_through_the_host(
     client: TestClient,
 ) -> None:
-    with client.websocket_connect(
-        "/ws?session_id=123", headers=_HEADERS
+    with connect_session(
+        client, "/ws?session_id=123", headers=_HEADERS
     ) as editor:
         notebook_id = notebook_id_of(socket_snapshot(editor))
         assert_kernel_ready_response(receive_notification(editor))
-        with client.websocket_connect(
-            "/ws?session_id=456&kiosk=true", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=456&kiosk=true", headers=_HEADERS
         ) as kiosk:
             receive_until("kernel-ready", kiosk)
             base = f"/api/marimo/v1/notebooks/{notebook_id}"
@@ -139,13 +140,13 @@ def test_kiosk_connection_cannot_edit_or_run_through_the_host(
 
 
 def test_second_edit_connection_joins_as_viewer(client: TestClient) -> None:
-    with client.websocket_connect(
-        "/ws?session_id=ed1", headers=_HEADERS
+    with connect_session(
+        client, "/ws?session_id=ed1", headers=_HEADERS
     ) as editor:
         assert_kernel_ready_response(receive_notification(editor))
 
-        with client.websocket_connect(
-            "/ws?session_id=vw1", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=vw1", headers=_HEADERS
         ) as viewer:
             data = receive_notification(viewer)
             assert_kernel_ready_response(
@@ -164,10 +165,10 @@ def test_second_edit_connection_joins_as_viewer(client: TestClient) -> None:
 
 
 def test_takeover_ping_pong_preserves_membership(client: TestClient) -> None:
-    with client.websocket_connect("/ws?session_id=a", headers=_HEADERS) as ta:
+    with connect_session(client, "/ws?session_id=a", headers=_HEADERS) as ta:
         assert_kernel_ready_response(receive_notification(ta))
-        with client.websocket_connect(
-            "/ws?session_id=b", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=b", headers=_HEADERS
         ) as tb:
             receive_until("kernel-ready", tb)
 
@@ -191,15 +192,15 @@ def test_takeover_ping_pong_preserves_membership(client: TestClient) -> None:
 
 
 def test_third_viewer_survives_takeover(client: TestClient) -> None:
-    with client.websocket_connect("/ws?session_id=a", headers=_HEADERS) as ta:
+    with connect_session(client, "/ws?session_id=a", headers=_HEADERS) as ta:
         notebook_id = notebook_id_of(socket_snapshot(ta))
         assert_kernel_ready_response(receive_notification(ta))
-        with client.websocket_connect(
-            "/ws?session_id=b", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=b", headers=_HEADERS
         ) as tb:
             receive_until("kernel-ready", tb)
-            with client.websocket_connect(
-                "/ws?session_id=c", headers=_HEADERS
+            with connect_session(
+                client, "/ws?session_id=c", headers=_HEADERS
             ) as tc:
                 receive_until("kernel-ready", tc)
 
@@ -226,10 +227,10 @@ def test_third_viewer_survives_takeover(client: TestClient) -> None:
 
 
 def test_capabilities_changed_is_not_recorded(client: TestClient) -> None:
-    with client.websocket_connect("/ws?session_id=a", headers=_HEADERS) as ta:
+    with connect_session(client, "/ws?session_id=a", headers=_HEADERS) as ta:
         assert_kernel_ready_response(receive_notification(ta))
-        with client.websocket_connect(
-            "/ws?session_id=b", headers=_HEADERS
+        with connect_session(
+            client, "/ws?session_id=b", headers=_HEADERS
         ) as tb:
             receive_until("kernel-ready", tb)
             client.post(
@@ -247,14 +248,14 @@ def test_capabilities_changed_is_not_recorded(client: TestClient) -> None:
 
 
 def test_refresh_resumes_as_editor(client: TestClient) -> None:
-    with client.websocket_connect(
-        "/ws?session_id=ed1", headers=_HEADERS
+    with connect_session(
+        client, "/ws?session_id=ed1", headers=_HEADERS
     ) as editor:
         assert_kernel_ready_response(receive_notification(editor))
     # editor socket closed on block exit -> session is orphaned
 
-    with client.websocket_connect(
-        "/ws?session_id=ed2", headers=_HEADERS
+    with connect_session(
+        client, "/ws?session_id=ed2", headers=_HEADERS
     ) as refreshed:
         assert_kernel_ready_response(
             receive_until("kernel-ready", refreshed),

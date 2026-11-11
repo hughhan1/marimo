@@ -7,7 +7,13 @@ import type { NotebookId } from "@marimo-team/client/protocol";
 import type { NotebookBackend } from "../notebook/replica";
 import { PyodideBridge } from "../wasm/bridge";
 import { isWasm } from "../wasm/utils";
-import { sessionSse, websocket, withHeaders } from "../transports/server";
+import { getMarimo } from "../network/holon";
+import {
+  type SessionArguments,
+  type SubscribeSession,
+  sessionEvents,
+  withHeaders,
+} from "../transports/server";
 import {
   createStaticNotebookBackend,
   emptySnapshot,
@@ -20,9 +26,8 @@ export interface EditorBackendOptions {
   static: boolean;
   /** The notebook the page was served with, shown until the host answers. */
   snapshot: StaticNotebookSnapshot | null;
-  transportType: "websocket" | "sse";
-  /** The session route, read before each connection. */
-  url: () => string;
+  /** What the page subscribes to its session with, read before each connection. */
+  sessionArguments: () => SessionArguments;
   /** The runtime's headers, read before each request. */
   headers: () => Record<string, string>;
   /** The host URL of a notebook the stream reported. */
@@ -34,16 +39,16 @@ export interface EditorBackendOptions {
 }
 
 /**
- * Read the session route once the host has started.
+ * Read the session's arguments once the host has started.
  *
  * Every connection waits for the same startup. Once it settles, even by
  * giving up, connections read the route directly. An explicit reconnect
  * checks the host's health instead.
  */
 function afterStartup({
-  url,
+  sessionArguments,
   waitUntilReady,
-}: Pick<EditorBackendOptions, "url" | "waitUntilReady">) {
+}: Pick<EditorBackendOptions, "sessionArguments" | "waitUntilReady">) {
   let startup: Promise<void> | undefined;
   let settled = false;
   return async () => {
@@ -59,9 +64,15 @@ function afterStartup({
         });
       }
     }
-    return url();
+    return sessionArguments();
   };
 }
+
+/** The server's `session` event, through the editor's MCP client. */
+const subscribeSession: SubscribeSession = async (args, { signal }) => {
+  const { ext } = await getMarimo();
+  return ext.events.subscribe("session", args, { signal, delivery: "push" });
+};
 
 /**
  * Follow the notebook running in the WASM worker.
@@ -106,14 +117,10 @@ export function createEditorBackend(
   return options.snapshot ? startWithSnapshot(options.snapshot, live) : live;
 }
 
-/** Follow the notebook on the server, over SSE or a WebSocket. */
+/** Follow the notebook on the server, through its `session` event. */
 function server(options: EditorBackendOptions): NotebookBackend {
-  const url = afterStartup(options);
   return {
-    transport:
-      options.transportType === "sse"
-        ? sessionSse(url, options.headers)
-        : websocket(url),
+    transport: sessionEvents(afterStartup(options), subscribeSession),
     notebook: (id) =>
       new NotebookClient(options.notebookUrl(id), {
         fetch: withHeaders(options.headers),

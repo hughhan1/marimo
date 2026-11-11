@@ -1,8 +1,5 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { once } from "@/utils/once";
-import { getRuntimeManager } from "../runtime/config";
-import { API, createClientWithRuntimeManager } from "./api";
 import {
   getDefaultExportFilename,
   getDefaultMarkdownExportFilename,
@@ -12,572 +9,335 @@ import {
   waitForConnectionOpenIfNotebook,
 } from "./connection";
 import { withDevAssetUrl } from "./export-asset-url";
+import { type Replied, getTools, repliedFile } from "./holon";
 import type { EditRequests, RunRequests } from "./types";
 
-/**
- * Options for POSTing FormData via openapi-fetch. openapi-fetch types
- * request bodies from the JSON schema, so we bypass the body type and
- * override the serializer to pass the FormData through unchanged; the
- * browser then sets the multipart Content-Type with boundary.
- */
-function multipartInit(formData: FormData) {
-  return {
-    body: formData as never,
-    bodySerializer: (body: unknown) => body as never,
-  };
+/** A text file a tool replied with, named `fallback` when the reply names none. */
+async function textFile(reply: Replied, fallback: string) {
+  const file = await repliedFile(reply, fallback);
+  return { ...file, contents: await file.contents.text() };
 }
 
-const { handleExportResponse, handleResponse, handleResponseReturnNull } = API;
-
 export function createNetworkRequests(): EditRequests & RunRequests {
-  const getClient = once(() => {
-    const runtimeManager = getRuntimeManager();
-    return createClientWithRuntimeManager(runtimeManager);
-  });
-
-  const getHeaders = () => {
-    const runtimeManager = getRuntimeManager();
-    return runtimeManager.sessionHeaders();
-  };
-
-  const getParams = () => {
-    return {
-      header: getHeaders(),
-    };
-  };
-
   return {
     sendComponentValues: (request) => {
-      return getClient()
-        .POST("/api/kernel/set_ui_element_value", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_set_ui_element_value(request))
+        .then(() => null);
     },
     sendModelValue: (request) => {
-      return getClient()
-        .POST("/api/kernel/set_model_value", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_set_model_value(request))
+        .then(() => null);
     },
     sendRestart: () => {
-      return getClient()
-        .POST("/api/kernel/restart_session", {
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_restart_session({}))
+        .then(() => null);
     },
     sendRename: (request) => {
-      return getClient()
-        .POST("/api/kernel/rename", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_rename(request))
+        .then(() => null);
     },
     sendCopy: (request) => {
-      return getClient()
-        .POST("/api/kernel/copy", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_copy(request))
+        .then(() => null);
     },
     sendFormat: (request) => {
-      return getClient()
-        .POST("/api/kernel/format", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.kernel_format(request));
     },
     sendShutdown: () => {
-      return getClient()
-        .POST("/api/kernel/shutdown")
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_shutdown({}))
+        .then(() => null);
     },
     sendRunScratchpad: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/scratchpad/run", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_scratchpad_run(request))
+        .then(() => null);
     },
     sendInstantiate: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/instantiate", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_instantiate(request))
+        .then(() => null);
     },
     sendCodeCompletionRequest: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/code_autocomplete", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_code_autocomplete(request))
+        .then(() => null);
     },
     saveUserConfig: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_user_config", {
-          body: request,
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_save_user_config(request))
+        .then(() => null);
     },
     saveLayout: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_layout", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_save_layout(request))
+        .then(() => null);
     },
     saveAppConfig: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_app_config", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_save_app_config(request))
+        .then(() => null);
     },
     sendFunctionRequest: (request) => {
-      return getClient()
-        .POST("/api/kernel/function_call", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_function_call(request))
+        .then(() => null);
     },
     sendStdin: (request) => {
-      return getClient()
-        .POST("/api/kernel/stdin", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_stdin(request))
+        .then(() => null);
     },
     sendInstallMissingPackages: (request) => {
-      return getClient()
-        .POST("/api/kernel/install_missing_packages", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_install_missing_packages(request))
+        .then(() => null);
     },
     readCode: async () => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/read_code", {
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.kernel_read_code({}));
     },
     readSnippets: async () => {
       await waitForConnectionOpen();
-      return getClient()
-        .GET("/api/documentation/snippets", {
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.documentation_snippets({}));
     },
     previewDatasetColumn: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_column", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.datasources_preview_column(request))
+        .then(() => null);
     },
     previewSQLTable: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_table", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.datasources_preview_sql_table(request))
+        .then(() => null);
     },
     previewSQLTableList: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_table_list", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.datasources_preview_sql_table_list(request))
+        .then(() => null);
     },
     previewSQLSchemaList: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_schema_list", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.datasources_preview_sql_schema_list(request))
+        .then(() => null);
     },
     previewDataSourceConnection: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_datasource_connection", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) =>
+          tools.datasources_preview_datasource_connection(request),
+        )
+        .then(() => null);
     },
     discoverDataSources: (request) => {
-      return getClient()
-        .POST("/api/datasources/discover", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.datasources_discover(request))
+        .then(() => null);
     },
     validateSQL: (request) => {
-      return getClient()
-        .POST("/api/sql/validate", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.sql_validate(request))
+        .then(() => null);
     },
     openFile: async (request) => {
       await waitForConnectionOpen();
-      await getClient()
-        .POST("/api/files/open", {
-          body: request,
-        })
-        .then(handleResponseReturnNull);
+      await getTools()
+        .then((tools) => tools.files_open(request))
+        .then(() => null);
       return null;
     },
     getUsageStats: async () => {
       await waitForConnectionOpen();
-      return getClient().GET("/api/usage").then(handleResponse);
+      return getTools().then((tools) => tools.usage({}));
     },
     getEnvironmentInfo: () => {
-      return getClient().GET("/api/environment").then(handleResponse);
+      return getTools().then((tools) => tools.environment({}));
     },
     sendPdb: (request) => {
-      return getClient()
-        .POST("/api/kernel/pdb/pm", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_pdb_pm(request))
+        .then(() => null);
     },
     sendSetBreakpoints: (request) => {
-      return getClient()
-        .POST("/api/kernel/pdb/breakpoints", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.kernel_pdb_breakpoints(request))
+        .then(() => null);
     },
     getFileRoots: async () => {
       await waitForConnectionOpen();
-      return getClient().GET("/api/files/roots").then(handleResponse);
+      return getTools().then((tools) => tools.files_roots({}));
     },
     sendListFiles: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/list_files", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_list_files(request));
     },
     sendSearchFiles: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/search", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_search(request));
     },
-    sendCreateFileOrFolder: async (request) => {
+    sendCreateFileOrFolder: async ({ file, ...request }) => {
       await waitForConnectionOpen();
-      const formData = new FormData();
-      formData.append("path", request.path);
-      formData.append("type", request.type);
-      formData.append("name", request.name);
-      if (request.file) {
-        formData.append("file", request.file, request.name);
+      const tools = await getTools();
+      if (!file) {
+        return tools.files_create(request);
       }
-      return getClient()
-        .POST("/api/files/create", multipartInit(formData))
-        .then(handleResponse);
+      const { path, name } = request;
+      return tools.files_upload({ path, name, file });
     },
     sendDeleteFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/delete", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_delete(request));
     },
     sendCopyFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/copy", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_copy(request));
     },
     sendRenameFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/move", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_move(request));
     },
     sendUpdateFile: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/update", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_update(request));
     },
     sendFileDetails: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/file_details", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.files_file_details(request));
     },
     openTutorial: (request) => {
-      return getClient()
-        .POST("/api/home/tutorial/open", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.home_tutorial_open(request));
     },
     getRecentFiles: () => {
-      return getClient().POST("/api/home/recent_files").then(handleResponse);
+      return getTools().then((tools) => tools.home_recent_files({}));
     },
     getWorkspaceFiles: (request) => {
-      return getClient()
-        .POST("/api/home/workspace_files", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.home_workspace_files(request));
     },
     getRunningNotebooks: () => {
-      return getClient()
-        .POST("/api/home/running_notebooks")
-        .then(handleResponse);
+      return getTools().then((tools) => tools.home_running_notebooks({}));
     },
     shutdownSession: (request) => {
-      return getClient()
-        .POST("/api/home/shutdown_session", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.home_shutdown_session(request));
     },
     getExportAvailability: () => {
-      return getClient().GET("/api/export/availability").then(handleResponse);
+      return getTools().then((tools) => tools.export_availability({}));
     },
     installExportRequirements: (request) => {
-      return getClient()
-        .POST("/api/export/requirements/install", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return getTools().then((tools) =>
+        tools.export_requirements_install(request),
+      );
     },
     exportAsHTML: async (request) => {
-      return getClient()
-        .POST("/api/export/html", {
-          body: withDevAssetUrl(request),
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then((response) =>
-          handleExportResponse(response, {
-            defaultFilename: getDefaultExportFilename("html"),
-          }),
-        );
+      return getTools()
+        .then((tools) => tools.export_html(withDevAssetUrl(request)))
+        .then((reply) => textFile(reply, getDefaultExportFilename("html")));
     },
     exportAsMarkdown: async (request) => {
-      return getClient()
-        .POST("/api/export/markdown", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then((response) =>
-          handleExportResponse(response, {
-            defaultFilename: getDefaultMarkdownExportFilename(request.flavor),
-          }),
+      return getTools()
+        .then((tools) => tools.export_markdown(request))
+        .then((reply) =>
+          textFile(reply, getDefaultMarkdownExportFilename(request.flavor)),
         );
     },
     exportAsScript: async (request) => {
-      return getClient()
-        .POST("/api/export/script", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then((response) =>
-          handleExportResponse(response, {
-            defaultFilename: getDefaultExportFilename("script.py"),
-          }),
+      return getTools()
+        .then((tools) => tools.export_script(request))
+        .then((reply) =>
+          textFile(reply, getDefaultExportFilename("script.py")),
         );
     },
     exportAsIPYNB: async (request) => {
-      return getClient()
-        .POST("/api/export/ipynb", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then((response) =>
-          handleExportResponse(response, {
-            defaultFilename: getDefaultExportFilename("ipynb"),
-          }),
-        );
+      return getTools()
+        .then((tools) => tools.export_ipynb(request))
+        .then((reply) => textFile(reply, getDefaultExportFilename("ipynb")));
     },
     exportAsPDF: async (request) => {
-      return getClient()
-        .POST("/api/export/pdf", {
-          body: request,
-          parseAs: "blob",
-          params: getParams(),
-        })
-        .then((response) =>
-          handleExportResponse(response, {
-            defaultFilename: getDefaultExportFilename("pdf"),
-          }),
+      return getTools()
+        .then((tools) => tools.export_pdf(request))
+        .then((reply) =>
+          repliedFile(reply, getDefaultExportFilename("pdf")),
         );
     },
     autoExportAsHTML: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/html", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.export_auto_export_html(request))
+        .then(() => null);
     },
     autoExportAsMarkdown: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/markdown", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.export_auto_export_markdown(request))
+        .then(() => null);
     },
     autoExportAsIPYNB: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/ipynb", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.export_auto_export_ipynb(request))
+        .then(() => null);
     },
     updateCellOutputs: async (request) => {
-      return getClient()
-        .POST("/api/export/update_cell_outputs", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.export_update_cell_outputs(request))
+        .then(() => null);
     },
     getSandbox: (request) =>
-      getClient()
-        .POST("/api/packages/sandbox", { body: request, params: getParams() })
-        .then(handleResponse),
+      getTools().then((tools) => tools.packages_sandbox(request)),
     updateManifest: (request) =>
-      getClient()
-        .POST("/api/packages/manifest", { body: request, params: getParams() })
-        .then(handleResponse),
+      getTools().then((tools) => tools.packages_manifest(request)),
     syncSandbox: (request) =>
-      getClient()
-        .POST("/api/packages/sync", { body: request, params: getParams() })
-        .then(handleResponse),
+      getTools().then((tools) => tools.packages_sync(request)),
     addPackage: (request) => {
-      return getClient()
-        .POST("/api/packages/add", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.packages_add(request));
     },
     removePackage: (request) => {
-      return getClient()
-        .POST("/api/packages/remove", {
-          body: request,
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.packages_remove(request));
     },
     getPackageList: async () => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpenIfNotebook();
-      return getClient().GET("/api/packages/list").then(handleResponse);
+      return getTools().then((tools) => tools.packages_list({}));
     },
     getDependencyTree: async () => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpenIfNotebook();
-      return getClient().GET("/api/packages/tree").then(handleResponse);
+      return getTools().then((tools) => tools.packages_tree({}));
     },
     listSecretKeys: async (request) => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/secrets/keys", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.secrets_keys(request))
+        .then(() => null);
     },
     writeSecret: async (request) => {
-      return getClient()
-        .POST("/api/secrets/create", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.secrets_create(request))
+        .then(() => null);
     },
     invokeAiTool: async (request) => {
-      return getClient()
-        .POST("/api/ai/invoke_tool", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return getTools().then((tools) => tools.ai_invoke_tool(request));
     },
     clearCache: async () => {
-      return getClient()
-        .POST("/api/cache/clear", {
-          body: {},
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.cache_clear({}))
+        .then(() => null);
     },
     getCacheInfo: async () => {
-      return getClient()
-        .POST("/api/cache/info", {
-          body: {},
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.cache_info({}))
+        .then(() => null);
     },
     listStorageEntries: (request) => {
-      return getClient()
-        .POST("/api/storage/list_entries", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.storage_list_entries(request))
+        .then(() => null);
     },
     downloadStorage: (request) => {
-      return getClient()
-        .POST("/api/storage/download", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return getTools()
+        .then((tools) => tools.storage_download(request))
+        .then(() => null);
     },
   };
 }

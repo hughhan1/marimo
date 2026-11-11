@@ -15,6 +15,7 @@ from tests._server.api.endpoints.ws_helpers import headers, receive_until
 from tests._server.host.drive import finished, socket_snapshot, wait_for
 from tests._server.host.live import key, open_host
 from tests._server.mocks import get_session_manager
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,8 +29,8 @@ def test_editor_input_replies_require_interact(
 ) -> None:
     with (
         client,
-        client.websocket_connect(
-            "/ws?session_id=editor", headers=headers("editor")
+        connect_session(
+            client, "/ws?session_id=editor", headers=headers("editor")
         ) as editor,
     ):
         snapshot = socket_snapshot(editor)
@@ -40,7 +41,7 @@ def test_editor_input_replies_require_interact(
         )
         receive_until("kernel-ready", editor)
         url = "/ws?session_id=other" + ("&kiosk=true" if kiosk else "")
-        with client.websocket_connect(url, headers=headers("other")) as other:
+        with connect_session(client, url, headers("other")) as other:
             ready = receive_until("kernel-ready", other)
             assert ready["data"]["consumer_capabilities"] == {
                 "edit": False,

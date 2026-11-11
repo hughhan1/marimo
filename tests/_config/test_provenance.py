@@ -208,12 +208,12 @@ def test_environment_sources_use_variable_names(
 ) -> None:
     monkeypatch.setenv("MARIMO_RUNTIME_AUTO_INSTANTIATE", "true")
     monkeypatch.setenv("MARIMO_RUNTIME_ON_CELL_CHANGE", "lazy")
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", "sse")
+    monkeypatch.setenv("MARIMO_SERVER_BROWSER", "firefox")
     layer = EnvVarReader().read_layer()
     assert layer == ConfigLayer(
         {
             "runtime": {"auto_instantiate": True, "on_cell_change": "lazy"},
-            "server": {"transport": "sse"},
+            "server": {"browser": "firefox"},
         },
         "env_var",
     )
@@ -230,7 +230,7 @@ def test_environment_sources_use_variable_names(
             "runtime",
             "on_cell_change",
         ): "env var: MARIMO_RUNTIME_ON_CELL_CHANGE",
-        ("server", "transport"): "env var: MARIMO_SERVER_TRANSPORT",
+        ("server", "browser"): "env var: MARIMO_SERVER_BROWSER",
     }
 
 
@@ -343,7 +343,7 @@ def test_manager_tracks_file_environment_default_and_security_sources(
     notebook.write_text(
         '# /// script\n# [tool.marimo.runtime]\n# on_cell_change = "lazy"\n# ///\n'
     )
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", "sse")
+    monkeypatch.setenv("MARIMO_SERVER_BROWSER", "firefox")
     monkeypatch.setattr(GLOBAL_SETTINGS, "RESTRICT_SHARING", True)
     manager = MarimoConfigManager(
         user,
@@ -358,7 +358,7 @@ def test_manager_tracks_file_environment_default_and_security_sources(
         ("save", "autosave_delay"),
         ("runtime", "on_cell_change"),
         ("runtime", "dotenv"),
-        ("server", "transport"),
+        ("server", "browser"),
         ("sharing", "html"),
         ("ai", "open_ai", "api_key"),
     ]
@@ -367,7 +367,7 @@ def test_manager_tracks_file_environment_default_and_security_sources(
         ("save", "autosave_delay"): "default",
         ("runtime", "on_cell_change"): notebook,
         ("runtime", "dotenv"): "inferred",
-        ("server", "transport"): "env_var",
+        ("server", "browser"): "env_var",
         ("sharing", "html"): "MARIMO_RESTRICT_SHARING",
         ("ai", "open_ai", "api_key"): tmp_path / "marimo.toml",
     }
@@ -378,7 +378,7 @@ def test_manager_tracks_file_environment_default_and_security_sources(
                 {
                     "display": {"theme": "light"},
                     "runtime": {"on_cell_change": "lazy"},
-                    "server": {"transport": "sse"},
+                    "server": {"browser": "firefox"},
                     "sharing": {"html": False, "wasm": False, "molab": False},
                     "ai": {"open_ai": {"api_key": "********"}},
                 }

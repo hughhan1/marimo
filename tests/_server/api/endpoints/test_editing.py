@@ -12,6 +12,7 @@ from tests._server.api.endpoints.ws_helpers import (
     receive_until,
 )
 from tests._server.mocks import token_header, with_session
+from tests._server.session_events import connect_session
 
 HAS_FORMATTER = DependencyManager.ruff.has() or DependencyManager.black.has()
 
@@ -166,7 +167,8 @@ def test_focus_cell_notifies_same_session_kiosk_consumer(
 ) -> None:
     cell_id = "some-cell-id"
     auth_token = token_header("fake-token")
-    with client.websocket_connect(
+    with connect_session(
+        client,
         f"/ws?session_id={SESSION_ID}&kiosk=true&access_token=fake-token",
         headers=auth_token,
     ) as websocket:

@@ -16,7 +16,7 @@ import { notebookIsRunningAtom } from "../executions";
 import { activeNotebookReplicaAtom } from "../session/active-notebook";
 import { flushDocument } from "../cells/document";
 import { createWasmNotebookBackend } from "../transports/wasm";
-import type { ClientCommand } from "../kernel/messages";
+import type { WireCommand } from "../kernel/messages";
 import { getInitialAppMode } from "../mode";
 import { API } from "../network/api";
 import { withDevAssetUrl } from "../network/export-asset-url";
@@ -561,7 +561,7 @@ export class PyodideBridge implements RunRequests, EditRequests {
   public sendCreateFileOrFolder: EditRequests["sendCreateFileOrFolder"] =
     async (request) => {
       // The WASM RPC boundary can only carry JSON, so we base64-encode the
-      // file bytes here. The HTTP transport uses multipart/form-data instead.
+      // file bytes here.
       let contents: string | null = null;
       if (request.file) {
         const dataUrl = await serializeBlob(request.file);
@@ -800,7 +800,7 @@ export class PyodideBridge implements RunRequests, EditRequests {
   public listStorageEntries = throwNotImplemented;
   public downloadStorage = throwNotImplemented;
 
-  private async putControlRequest(operation: ClientCommand) {
+  private async putControlRequest(operation: WireCommand) {
     await this.rpc.proxy.request.bridge({
       functionName: "put_control_request",
       payload: operation,

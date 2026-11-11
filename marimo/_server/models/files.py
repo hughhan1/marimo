@@ -1,14 +1,19 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import msgspec
+from holon.ext.files import file_input_schema
 
 from marimo._metadata.opengraph import OpenGraphMetadata
 from marimo._server.models.models import BaseResponse
 
 FileCreateType = Literal["file", "directory", "notebook"]
+
+# Without a cap an authenticated client could exhaust disk. 1 GiB covers
+# normal notebook-data use cases with margin.
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 
 class FileInfo(msgspec.Struct, rename="camel"):
@@ -64,32 +69,20 @@ class FileCreateRequest(msgspec.Struct, rename="camel"):
     type: FileCreateType
     # The name of the file or directory
     name: str
-    # The contents of the file, base64-encoded. Used by the WASM/Pyodide RPC
-    # bridge, which cannot send multipart over the JS<->Py JSON boundary.
-    # The HTTP endpoint instead receives the raw file bytes via multipart/form-data.
-    contents: str | None = None
 
 
-class FileCreateMultipartRequest(msgspec.Struct, rename="camel"):
-    """multipart/form-data body for POST /api/files/create.
-
-    Schema-only: this struct exists to describe the multipart shape in
-    OpenAPI. At runtime, the endpoint reads the string fields from
-    `MultipartRequest.body` and the uploaded bytes from
-    `MultipartRequest.files["file"]` — `body.file` is never populated.
-    """
-
-    # The path where to create the file or directory
+class FileUploadRequest(msgspec.Struct, rename="camel"):
+    # The directory to put the file in
     path: str
-    # 'file', 'directory', or 'notebook'
-    type: FileCreateType
-    # The name of the file or directory
+    # The file's name there
     name: str
-    # OpenAPI-only (see class docstring). `format: binary` makes the
-    # generated spec emit a file-upload schema rather than a base64 string.
+    # The file, sent in the call or transferred beside it
     file: Annotated[
-        str | None, msgspec.Meta(extra_json_schema={"format": "binary"})
-    ] = None
+        dict[str, Any],
+        msgspec.Meta(
+            extra_json_schema=file_input_schema(max_size=MAX_UPLOAD_BYTES)
+        ),
+    ]
 
 
 class FileSearchRequest(msgspec.Struct, rename="camel"):

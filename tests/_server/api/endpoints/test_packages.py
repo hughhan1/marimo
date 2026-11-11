@@ -16,7 +16,10 @@ from marimo._environments.errors import (
 )
 from marimo._environments.sandbox import NotebookSandbox
 from marimo._messaging.notification import EnvironmentOperationNotification
-from marimo._runtime.packages.package_manager import PackageManager
+from marimo._runtime.packages.package_manager import (
+    PackageDescription,
+    PackageManager,
+)
 from marimo._server.api.deps import AppState
 from marimo._session.state.session_view import SessionView
 from tests._server.mocks import token_header
@@ -90,7 +93,10 @@ def mock_package_manager(monkeypatch: pytest.MonkeyPatch) -> PackageManager:
     mock_manager.install = AsyncMock(return_value=True)
     mock_manager.uninstall = AsyncMock(return_value=True)
     mock_manager.list_packages = MagicMock(
-        return_value=["package1", "package2"]
+        return_value=[
+            PackageDescription(name="package1", version="1.0"),
+            PackageDescription(name="package2", version="2.0"),
+        ]
     )
 
     def mock_get_package_manager(request: Any) -> PackageManager:
@@ -129,12 +135,12 @@ def test_add_package(client: TestClient, mock_package_manager: Mock) -> None:
 def test_add_package_no_name(
     client: TestClient, mock_package_manager: Mock
 ) -> None:
-    with pytest.raises(msgspec.ValidationError):
-        client.post(
-            "/api/packages/add",
-            headers=HEADERS,
-            json={},
-        )
+    response = client.post(
+        "/api/packages/add",
+        headers=HEADERS,
+        json={},
+    )
+    assert response.status_code == 400
     mock_package_manager.install.assert_not_called()
 
 
@@ -160,12 +166,12 @@ def test_remove_package(
 def test_remove_package_no_name(
     client: TestClient, mock_package_manager: Mock
 ) -> None:
-    with pytest.raises(msgspec.ValidationError):
-        client.post(
-            "/api/packages/remove",
-            headers=HEADERS,
-            json={},
-        )
+    response = client.post(
+        "/api/packages/remove",
+        headers=HEADERS,
+        json={},
+    )
+    assert response.status_code == 400
     mock_package_manager.uninstall.assert_not_called()
 
 
@@ -175,7 +181,12 @@ def test_list_packages(client: TestClient, mock_package_manager: Mock) -> None:
         headers=HEADERS,
     )
     assert response.status_code == 200
-    assert response.json() == {"packages": ["package1", "package2"]}
+    assert response.json() == {
+        "packages": [
+            {"name": "package1", "version": "1.0"},
+            {"name": "package2", "version": "2.0"},
+        ]
+    }
     mock_package_manager.list_packages.assert_called_once()
 
 
@@ -185,7 +196,9 @@ def test_list_packages_without_session(
     """The home page has no session, but can still list packages."""
     mock_manager = MagicMock(spec=PackageManager)
     mock_manager.is_manager_installed = MagicMock(return_value=True)
-    mock_manager.list_packages = MagicMock(return_value=["package1"])
+    mock_manager.list_packages = MagicMock(
+        return_value=[PackageDescription(name="package1", version="1.0")]
+    )
     monkeypatch.setattr(
         "marimo._server.api.endpoints.packages.create_package_manager",
         MagicMock(return_value=mock_manager),
@@ -196,7 +209,9 @@ def test_list_packages_without_session(
         headers=token_header("fake-token"),
     )
     assert response.status_code == 200
-    assert response.json() == {"packages": ["package1"]}
+    assert response.json() == {
+        "packages": [{"name": "package1", "version": "1.0"}]
+    }
 
 
 def test_add_package_failure(
@@ -429,12 +444,12 @@ def test_add_package_request_validation(
     ]
 
     for invalid_request in invalid_requests:
-        with pytest.raises(msgspec.ValidationError):
-            client.post(
-                "/api/packages/add",
-                headers=HEADERS,
-                json=invalid_request,
-            )
+        response = client.post(
+            "/api/packages/add",
+            headers=HEADERS,
+            json=invalid_request,
+        )
+        assert response.status_code == 400
     mock_package_manager.install.assert_not_called()
 
 
@@ -448,12 +463,12 @@ def test_remove_package_request_validation(
     ]
 
     for invalid_request in invalid_requests:
-        with pytest.raises(msgspec.ValidationError):
-            client.post(
-                "/api/packages/remove",
-                headers=HEADERS,
-                json=invalid_request,
-            )
+        response = client.post(
+            "/api/packages/remove",
+            headers=HEADERS,
+            json=invalid_request,
+        )
+        assert response.status_code == 400
     mock_package_manager.uninstall.assert_not_called()
 
 
@@ -1153,14 +1168,12 @@ def test_manifest_file_errors_are_reported(
     monkeypatch.setattr(
         f"marimo._environments.script_metadata.{operation}", denied
     )
+    # Each tool takes its own request's fields and nothing else.
+    body = {"fileKey": str(path)}
+    if endpoint == "manifest":
+        body.update(contents="dependencies = []", previous="")
     response = client.post(
-        f"/api/packages/{endpoint}",
-        headers=HEADERS,
-        json={
-            "fileKey": str(path),
-            "contents": "dependencies = []",
-            "previous": "",
-        },
+        f"/api/packages/{endpoint}", headers=HEADERS, json=body
     )
     assert response.status_code == 400
     assert "Permission denied for notebook manifest" in response.text

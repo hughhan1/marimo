@@ -1,5 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 import type { components } from "@marimo-team/marimo-api";
+import type { Inputs } from "#holon-ui";
 
 export type schemas = components["schemas"];
 export type DataType = schemas["DataType"];
@@ -16,7 +17,8 @@ export const DATA_TYPES = [
 ] as const;
 export type ModelLifecycle = NotificationMessageData<"model-lifecycle">;
 export type Banner = NotificationMessageData<"banner">;
-export type AiInlineCompletionRequest = schemas["AiInlineCompletionRequest"];
+export type AiInlineCompletionRequest =
+  Inputs["marimo"]["ai_inline_completion"];
 export type DataTableColumn = schemas["DataTableColumn"];
 export type DataTable = schemas["DataTable"];
 export type Database = schemas["Database"];
@@ -53,6 +55,21 @@ export type CacheInfoFetched = NotificationMessageData<"cache-info">;
 
 export type NotificationMessage = schemas["NotificationMessage"];
 export type ClientCommand = schemas["ClientCommand"];
+
+/**
+ * A command as the kernel receives it. Request bodies come from the generated
+ * client with plain strings where the editor brands or patterns its ids, and
+ * the worker reads JSON, so every string but the command's discriminant is a
+ * plain string on the wire.
+ */
+type Wire<T> = T extends string
+  ? string
+  : T extends readonly (infer Item)[]
+    ? Wire<Item>[]
+    : T extends object
+      ? { [K in keyof T]: K extends "type" ? T[K] : Wire<T[K]> }
+      : T;
+export type WireCommand = Wire<ClientCommand>;
 
 export type NotificationMessageType = NotificationMessage["op"];
 export interface NotificationPayload {

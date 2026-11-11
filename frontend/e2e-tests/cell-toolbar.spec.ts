@@ -14,6 +14,8 @@ test.beforeEach(async ({ page }) => {
   await page.goto(appUrl);
   await waitForMarimoApp(page);
   await expect(page.locator("h1").getByText("Cell 2")).toBeVisible();
+  const firstEditor = page.locator(".marimo-cell .cm-content").first();
+  await expect(firstEditor).toBeFocused();
 });
 
 test.afterEach(async () => {

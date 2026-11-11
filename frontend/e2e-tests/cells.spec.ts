@@ -1,6 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 import { expect, test } from "@playwright/test";
 import { getAppUrl, resetFile } from "../playwright.config";
+import { waitForMarimoApp } from "./test-utils";
 import {
   exportAsHTMLAndTakeScreenshot,
   maybeRestartKernel,
@@ -25,7 +26,7 @@ test.afterEach(async () => {
  * Cell re-render count is a good indicator of performance.
  */
 test("keeps re-renders from growing", async ({ page }) => {
-  await page.waitForLoadState("networkidle");
+  await waitForMarimoApp(page);
 
   // Read the render count
   const cellRenderCount = await page.evaluate(

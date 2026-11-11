@@ -11,6 +11,7 @@ from marimo._session.model import SessionMode
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.api.endpoints.ws_helpers import receive_notification
 from tests._server.mocks import token_header
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.testclient import TestClient
@@ -38,7 +39,7 @@ class TestAutoInstantiateEditMode:
         session_id = "test-edit-mode"
         ws_url = _create_ws_url(session_id)
 
-        with client.websocket_connect(ws_url) as websocket:
+        with connect_session(client, ws_url) as websocket:
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
 
@@ -54,7 +55,7 @@ class TestAutoInstantiateEditMode:
         ws_url = _create_ws_url(session_id)
         headers = _create_headers(session_id)
 
-        with client.websocket_connect(ws_url) as websocket:
+        with connect_session(client, ws_url) as websocket:
             # Wait for the session to be fully established
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
@@ -84,7 +85,7 @@ class TestAutoInstantiateRunMode:
         session_manager.mode = SessionMode.RUN
         ws_url = _create_ws_url(session_id)
 
-        with client.websocket_connect(ws_url) as websocket:
+        with connect_session(client, ws_url) as websocket:
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
 
@@ -109,7 +110,7 @@ class TestAutoInstantiateRunMode:
         session_manager.mode = SessionMode.RUN
         ws_url = _create_ws_url(session_id)
 
-        with client.websocket_connect(ws_url) as websocket:
+        with connect_session(client, ws_url) as websocket:
             # Wait for the session to be fully established
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
@@ -216,7 +217,7 @@ class TestInstantiateNotebookRequest:
         ws_url = _create_ws_url(session_id)
         headers = _create_headers(session_id)
 
-        with client.websocket_connect(ws_url) as websocket:
+        with connect_session(client, ws_url) as websocket:
             # Get the kernel-ready message
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"

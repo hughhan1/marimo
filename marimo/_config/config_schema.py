@@ -343,12 +343,6 @@ class ServerConfig(Config, kw_only=True):
             description="if true, the file download button will be hidden in the file explorer."
         ),
     ] = False
-    transport: Annotated[
-        Literal["websocket", "sse"] | UnsetType,
-        Meta(
-            description='experimental. The transport used to stream kernel messages to the frontend, typically set with the `MARIMO_SERVER_TRANSPORT` environment variable. `"websocket"` (default) uses the `/ws` WebSocket endpoint; `"sse"` uses server-sent events over HTTP, for deployments behind proxies or services that do not support WebSockets. The terminal and LSP still require WebSockets.'
-        ),
-    ] = UNSET
 
 
 class PackageManagementConfig(Config, kw_only=True):

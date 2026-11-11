@@ -1,44 +1,43 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from starlette.authentication import requires
-from starlette.responses import Response
 
 from marimo._messaging.messages import AGENT_MESSAGE_TYPE
 from marimo._server.api.deps import AppState
-from marimo._server.router import APIRouter
+from marimo._server.api.tools import tool
 from marimo._utils.http import HTTPException, HTTPStatus
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
-pair_router = APIRouter()
+
+class AgentMessage(msgspec.Struct):
+    """Any JSON content for the agents attached to a notebook."""
+
+    message: Any
 
 
-@pair_router.post("/notebooks/{id}/messages", include_in_schema=False)
+@tool("pair_notebooks_messages", input=AgentMessage, ids=("id",))
 @requires("edit")
-async def messages(request: Request) -> Response:
+async def messages(
+    *,
+    request: Request,
+    id: str,  # noqa: A002
+    body: AgentMessage,
+) -> None:
     """Send any JSON content to all agents attached to the notebook."""
     state = AppState(request)
-    session = state.session_by_stable_id(request.path_params["id"])
-    try:
-        payload = msgspec.json.decode(await request.body())
-    except msgspec.DecodeError as error:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Invalid JSON agent message payload.",
-        ) from error
-
+    session = state.session_by_stable_id(id)
     notebook = state.notebook_for_session(session)
     if notebook is None or not any(
         a.kind == "agent" for a in notebook.attachments
     ):
         raise HTTPException(status_code=409, detail="No agent attached")
-    notebook.emit(AGENT_MESSAGE_TYPE, payload)
-    return Response(status_code=202)
+    notebook.emit(AGENT_MESSAGE_TYPE, body.message)
 
 
 class DetachRequest(msgspec.Struct):
@@ -47,24 +46,22 @@ class DetachRequest(msgspec.Struct):
     attachment_id: str
 
 
-@pair_router.post(
-    "/notebooks/{id}/attachments/detach", include_in_schema=False
-)
+@tool("pair_notebooks_attachments_detach", input=DetachRequest, ids=("id",))
 @requires("edit")
-async def detach(request: Request) -> Response:
+async def detach(
+    *,
+    request: Request,
+    id: str,  # noqa: A002
+    body: DetachRequest,
+) -> None:
     """Disconnect one attachment without stopping its notebook runtime."""
     state = AppState(request)
-    session = state.session_by_stable_id(request.path_params["id"])
-    try:
-        body = msgspec.json.decode(await request.body(), type=DetachRequest)
-        if not body.attachment_id:
-            raise ValueError("Empty attachment ID")
-    except (msgspec.DecodeError, ValueError) as error:
+    session = state.session_by_stable_id(id)
+    if not body.attachment_id:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Invalid attachment ID.",
-        ) from error
+        )
     notebook = state.notebook_for_session(session)
     if notebook is not None:
         notebook.detach(body.attachment_id)
-    return Response(status_code=204)

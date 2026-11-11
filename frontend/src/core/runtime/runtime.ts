@@ -4,6 +4,7 @@ import type { NotebookId } from "@marimo-team/client/protocol";
 import { Deferred } from "@/utils/Deferred";
 import { Logger } from "@/utils/Logger";
 import { KnownQueryParams } from "../constants";
+import type { SessionArguments } from "../transports/server";
 import { isIslands } from "../islands/utils";
 import { getSessionId, type SessionId } from "../kernel/session";
 import { isStaticNotebook } from "../static/static-state";
@@ -119,9 +120,12 @@ export class RuntimeManager {
     return asWsUrl(this.appendCrossOriginAuth(url).toString());
   }
 
-  /** Keep notebook page parameters separate from connection options. */
-  private getSessionURL(path: string, sessionId: SessionId): URL {
-    const url = this.formatHttpURL({ path });
+  /**
+   * What the page subscribes to its session with: the session, its
+   * notebook file and kiosk mode, and the page's own query string.
+   */
+  public getSessionArguments(sessionId: SessionId): SessionArguments {
+    const known = this.formatHttpURL({ path: "/" }).searchParams;
     const notebookParams = new URLSearchParams(this.httpURL.search);
     const pageParams = new URLSearchParams(window.location.search);
     for (const key of pageParams.keys()) {
@@ -134,32 +138,12 @@ export class RuntimeManager {
     notebookParams.delete(KnownQueryParams.accessToken);
     notebookParams.delete("refresh_token");
     notebookParams.delete(KnownQueryParams.sessionId);
-    url.searchParams.set("query_params", notebookParams.toString());
-    url.searchParams.set(KnownQueryParams.sessionId, sessionId);
-    return url;
-  }
-
-  /**
-   * The WebSocket URL of the runtime.
-   */
-  public getWsURL(sessionId: SessionId): URL {
-    const url = this.getSessionURL("/ws", sessionId);
-    return asWsUrl(this.appendCrossOriginAuth(url).toString());
-  }
-
-  /**
-   * The SSE URL of the runtime; the http(s) alternative to `getWsURL`
-   * when `server.transport` is `"sse"`. Unlike WebSockets, SSE requests
-   * can send headers, so auth travels in the Authorization header
-   * (see `headers()`) instead of the URL.
-   */
-  public getSseURL(sessionId: SessionId): URL {
-    const url = this.getSessionURL("/sse", sessionId);
-    // The page URL can still carry access_token (merged in from the
-    // current page's params, before auth cleanup strips it); never
-    // forward it — a token in the URL leaks into proxy/server logs.
-    url.searchParams.delete(KnownQueryParams.accessToken);
-    return url;
+    return {
+      session_id: sessionId,
+      file: known.get(KnownQueryParams.filePath),
+      kiosk: known.get(KnownQueryParams.kiosk) === "true",
+      query_params: notebookParams.toString(),
+    };
   }
 
   /**

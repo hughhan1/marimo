@@ -102,6 +102,12 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
+class FileUpload(FileCreateRequest):
+    """A file to create and its bytes, base64-encoded for the JSON bridge."""
+
+    contents: str | None = None
+
+
 class AsyncQueueManager:
     """Manages queues for a session."""
 
@@ -430,7 +436,7 @@ class PyodideBridge:
         self,
         request: str,
     ) -> str:
-        body = self._parse(request, FileCreateRequest)
+        body = self._parse(request, FileUpload)
         try:
             # If we need to eliminate the overhead associated with
             # base64-encoding/decoding the file contents, we could try pushing

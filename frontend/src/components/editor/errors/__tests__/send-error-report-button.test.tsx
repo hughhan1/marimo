@@ -30,7 +30,6 @@ import {
   type StableSessionId,
   stableSessionIdAtom,
 } from "@/core/kernel/session";
-import { API } from "@/core/network/api";
 import { connectionAtom } from "@/core/network/connection";
 import { ConnectionState } from "@/core/session/types";
 import { Deferred } from "@/utils/Deferred";
@@ -41,7 +40,19 @@ import { OutputRenderer } from "../../Output";
 import { SendErrorReportButton } from "../send-error-report-button";
 
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/core/network/api", () => ({ API: { post: vi.fn() } }));
+const API = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("@/core/network/holon", () => ({
+  getTools: async () => ({
+    pair_notebooks_messages: ({
+      id,
+      message,
+    }: {
+      id: string;
+      message: unknown;
+    }) =>
+      API.post(`/pair/notebooks/${encodeURIComponent(id)}/messages`, message),
+  }),
+}));
 vi.mock("@/components/editor/chrome/wrapper/useOpenAiAssistant", () => ({
   useOpenAiAssistant: () => vi.fn(),
 }));
@@ -172,7 +183,7 @@ describe("SendErrorReportButton", () => {
     send();
     expect(screen.getByRole("button")).toBeDisabled();
     send();
-    expect(API.post).toHaveBeenCalledOnce();
+    await waitFor(() => expect(API.post).toHaveBeenCalledOnce());
     await act(async () => deferred.resolve(""));
     expect(screen.getByRole("button")).toBeEnabled();
   });

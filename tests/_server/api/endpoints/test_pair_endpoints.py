@@ -94,7 +94,7 @@ def test_message_is_an_opaque_custom_event(
         content=msgspec.json.encode(payload),
         headers=token_header("fake-token"),
     )
-    assert (response.status_code, response.content) == (202, b"")
+    assert (response.status_code, response.content) == (200, b"{}")
     assert len(events) == 1
     event = events[0].event
     assert isinstance(event, protocol.CustomEvent)
@@ -135,7 +135,7 @@ def test_no_host_notebook(
         json={"attachment_id": "missing"},
         headers=token_header("fake-token"),
     )
-    assert response.status_code == 204
+    assert response.status_code == 200
 
 
 def test_detach_removes_only_the_selected_attachment(
@@ -150,7 +150,7 @@ def test_detach_removes_only_the_selected_attachment(
         headers=token_header("fake-token"),
     )
     assert (response.status_code, notebook.attachments, session._closed) == (
-        204,
+        200,
         [second],
         False,
     )
@@ -159,7 +159,7 @@ def test_detach_removes_only_the_selected_attachment(
         json={"attachment_id": first.id},
         headers=token_header("fake-token"),
     )
-    assert response.status_code == 204
+    assert response.status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -180,27 +180,19 @@ def test_invalid_detach_body(
     )
 
 
-def test_invalid_message_json(
-    client: TestClient, target: tuple[SessionImpl, Notebook]
+# A well-formed body: the arguments are checked before the handler looks up
+# the session.
+OPERATIONS = [("messages", {}), ("attachments/detach", {"attachment_id": "x"})]
+
+
+@pytest.mark.parametrize(("operation", "body"), OPERATIONS)
+def test_missing_session(
+    client: TestClient, operation: str, body: dict[str, str]
 ) -> None:
-    session, _ = target
-    response = client.post(
-        path(session, "messages"),
-        content=b"{",
-        headers=token_header("fake-token"),
-    )
-    assert (response.status_code, response.json()) == (
-        400,
-        {"detail": "Invalid JSON agent message payload."},
-    )
-
-
-@pytest.mark.parametrize("operation", ["messages", "attachments/detach"])
-def test_missing_session(client: TestClient, operation: str) -> None:
     assert (
         client.post(
             f"/api/pair/notebooks/missing/{operation}",
-            json={},
+            json=body,
             headers=token_header("fake-token"),
         ).status_code
         == 404
@@ -228,9 +220,12 @@ def test_routes_require_authentication(
     assert (response.status_code, notebook.attachments) == (401, [])
 
 
-@pytest.mark.parametrize("operation", ["messages", "attachments/detach"])
+@pytest.mark.parametrize(("operation", "body"), OPERATIONS)
 def test_routes_require_edit_mode(
-    client: TestClient, target: tuple[SessionImpl, Notebook], operation: str
+    client: TestClient,
+    target: tuple[SessionImpl, Notebook],
+    operation: str,
+    body: dict[str, str],
 ) -> None:
     session, _ = target
     manager = get_session_manager(client)
@@ -239,7 +234,7 @@ def test_routes_require_edit_mode(
     assert client.get("/api/version", headers=headers).status_code == 200
     assert (
         client.post(
-            path(session, operation), json={}, headers=headers
+            path(session, operation), json=body, headers=headers
         ).status_code
         == 401
     )

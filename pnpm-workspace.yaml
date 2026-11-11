@@ -16,6 +16,12 @@ peerDependencyRules:
 minimumReleaseAge: 20160
 minimumReleaseAgeExclude:
   - effect@4.1.0
+  # Holon releases often, and each prototype step wants the newest one.
+  - holon-sh
+  - holon-ui
+  - holon-types
+  - "@holon-sh/*"
+  - "holon-types-*"
   - "@marimo-team/*"
   - "@vitejs/plugin-react@6.1.0"
   - oxc-transform-react@0.145.0

@@ -33,6 +33,7 @@ from tests._server.api.endpoints.ws_helpers import (
 )
 from tests._server.host.drive import socket_snapshot
 from tests._server.mocks import get_session_manager, workspace_scope
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,7 +50,7 @@ def _create_ws_url(session_id: str) -> str:
 
 
 def test_refresh_session(client: TestClient) -> None:
-    with client.websocket_connect(_create_ws_url("123")) as websocket:
+    with connect_session(client, _create_ws_url("123")) as websocket:
         data = receive_notification(websocket)
         print(data)
         assert_kernel_ready_response(data, create_response({}))
@@ -61,7 +62,7 @@ def test_refresh_session(client: TestClient) -> None:
 
     # New session with new ID (simulates refresh)
     # We should resume the current session
-    with client.websocket_connect(_create_ws_url("456")) as websocket:
+    with connect_session(client, _create_ws_url("456")) as websocket:
         # Resume the session
         data = receive_notification(websocket)
         assert_kernel_ready_response(
@@ -89,7 +90,7 @@ def test_refresh_session(client: TestClient) -> None:
 
     # New session again
     # We should not resume the current session with the new values
-    with client.websocket_connect(_create_ws_url("789")) as websocket:
+    with connect_session(client, _create_ws_url("789")) as websocket:
         # Resume the session
         data = receive_notification(websocket)
         assert_kernel_ready_response(
@@ -132,16 +133,18 @@ def test_refresh_resumes_directory_workspace_session(
     session_manager = get_session_manager(client)
 
     with workspace_scope(client, workspace):
-        with client.websocket_connect(
-            "/ws?session_id=dir1&file=example.py&access_token=fake-token"
+        with connect_session(
+            client,
+            "/ws?session_id=dir1&file=example.py&access_token=fake-token",
         ) as websocket:
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
             assert data["data"]["resumed"] is False
 
         # Simulated refresh: new session id, same workspace-relative key
-        with client.websocket_connect(
-            "/ws?session_id=dir2&file=example.py&access_token=fake-token"
+        with connect_session(
+            client,
+            "/ws?session_id=dir2&file=example.py&access_token=fake-token",
         ) as websocket:
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
@@ -153,7 +156,7 @@ def test_refresh_resumes_directory_workspace_session(
 
 
 def test_edited_document_survives_resume(client: TestClient) -> None:
-    with client.websocket_connect(_create_ws_url("123")) as websocket:
+    with connect_session(client, _create_ws_url("123")) as websocket:
         snapshot = socket_snapshot(websocket)
         notebook_id = next(
             e["data"]["notebook"]["id"]
@@ -206,7 +209,7 @@ def test_edited_document_survives_resume(client: TestClient) -> None:
 
     # New session with new ID (simulates refresh)
     # We should resume the current session
-    with client.websocket_connect(_create_ws_url("456")) as websocket:
+    with connect_session(client, _create_ws_url("456")) as websocket:
         # Resume the session
         data = receive_notification(websocket)
         assert_kernel_ready_response(
@@ -226,7 +229,7 @@ def test_edited_document_survives_resume(client: TestClient) -> None:
 
 
 def test_save_config(client: TestClient) -> None:
-    with client.websocket_connect(_create_ws_url("123")) as websocket:
+    with connect_session(client, _create_ws_url("123")) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({}))
         # Send save request
@@ -252,7 +255,7 @@ def test_save_config(client: TestClient) -> None:
 
 
 def test_restart_session(client: TestClient) -> None:
-    with client.websocket_connect(_create_ws_url("123")) as websocket:
+    with connect_session(client, _create_ws_url("123")) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({}))
 
@@ -269,7 +272,7 @@ def test_restart_session(client: TestClient) -> None:
 
     # New session with new ID (simulates refresh)
     # We start a new session
-    with client.websocket_connect(_create_ws_url("456")) as websocket:
+    with connect_session(client, _create_ws_url("456")) as websocket:
         # First message is the kernel reconnected
         data = receive_notification(websocket)
         assert_kernel_ready_response(
@@ -289,7 +292,7 @@ def test_resume_session_after_file_change(client: TestClient) -> None:
     # "not a marimo notebook" error.  The test invokes the handler
     # directly, so no watcher is needed.
 
-    with client.websocket_connect(_create_ws_url("123")) as websocket:
+    with connect_session(client, _create_ws_url("123")) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({}))
         for op in ("environment-state", "environment-state"):
@@ -331,7 +334,7 @@ def test_resume_session_after_file_change(client: TestClient) -> None:
         assert tx["source"] == "file-watch"
 
     # Resume session with new ID (simulates refresh)
-    with client.websocket_connect(_create_ws_url("456")) as websocket:
+    with connect_session(client, _create_ws_url("456")) as websocket:
         # Check for KernelReady message
         data = receive_notification(websocket)
         assert parse_raw(data["data"], KernelReadyNotification)
@@ -366,7 +369,7 @@ def test_environment_restored_after_disconnect(
     outcome: EnvironmentOperationStatus,
 ) -> None:
     with client:
-        with client.websocket_connect(_create_ws_url("123")) as websocket:
+        with connect_session(client, _create_ws_url("123")) as websocket:
             assert_kernel_ready_response(receive_notification(websocket))
             for source in ("kernel", "server"):
                 assert receive_notification(websocket) == {
@@ -431,8 +434,8 @@ def test_environment_restored_after_disconnect(
                 ],
             ),
         )
-        with client.websocket_connect(
-            _create_ws_url(connection_id)
+        with connect_session(
+            client, _create_ws_url(connection_id)
         ) as websocket:
             if connection_id != "123":
                 assert receive_notification(websocket)["op"] == "kernel-ready"

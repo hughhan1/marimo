@@ -54,6 +54,9 @@ dependencies = [
     "msgspec>=0.22.0",
     # for IPC, required for marimo edit --sandbox, marimo run <multiple notebooks>
     "pyzmq>=27.1.0; sys_platform != 'emscripten'",
+    # the server's API is MCP tools, served by the MCP SDK
+    "mcp>=2.3.0,<3; sys_platform != 'emscripten'",
+    "holon-sh>=0.0.1.dev10; sys_platform != 'emscripten'",
 ]
 readme = "README.md"
 license = "Apache-2.0"
@@ -331,7 +334,7 @@ required-environments = [
 # Mirror CI's dependency window (UV_EXCLUDE_NEWER in .github/workflows) so local
 # resolution reproduces what CI resolves at setup time, including the ruff version.
 exclude-newer = "7 days"
-exclude-newer-package = { agent-plugins = false, marimo-lens = false }
+exclude-newer-package = { agent-plugins = false, marimo-lens = false, holon-sh = false }
 
 [tool.uv.sources]
 marimo_docs = { path = "./docs", editable = true }

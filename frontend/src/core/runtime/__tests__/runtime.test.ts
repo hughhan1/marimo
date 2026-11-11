@@ -48,42 +48,6 @@ describe("RuntimeManager", () => {
     });
   });
 
-  describe("getWsURL", () => {
-    it("should return WebSocket URL with session ID for https", () => {
-      const runtime = new RuntimeManager(mockConfig);
-      const sessionId = "1234" as SessionId;
-      const url = runtime.getWsURL(sessionId);
-
-      expect(url.protocol).toBe("wss:");
-      expect(url.hostname).toBe("example.com");
-      expect(url.pathname).toBe("/ws");
-      expect(url.searchParams.has("types")).toBe(false);
-      expect(url.searchParams.get("session_id")).toBe(sessionId);
-    });
-
-    it("should return WebSocket URL for http", () => {
-      const runtime = new RuntimeManager(mockConfigWithoutToken);
-      const sessionId = "1234" as SessionId;
-      const url = runtime.getWsURL(sessionId);
-
-      expect(url.protocol).toBe("ws:");
-      expect(url.hostname).toBe("localhost");
-      expect(url.port).toBe("8080");
-      expect(url.searchParams.get("session_id")).toBe(sessionId);
-    });
-
-    it("should preserve existing query params", () => {
-      const runtime = new RuntimeManager({
-        url: "http://example.com?foo=bar",
-      });
-      const sessionId = "1234" as SessionId;
-      const url = runtime.getWsURL(sessionId);
-
-      expect(url.searchParams.get("foo")).toBe("bar");
-      expect(url.searchParams.get("session_id")).toBe(sessionId);
-    });
-  });
-
   describe("cross-origin auth token in WS URLs", () => {
     it("should add access_token to WS URL when cross-origin with authToken", () => {
       // example.com is cross-origin relative to the test environment (localhost)
@@ -91,10 +55,9 @@ describe("RuntimeManager", () => {
         url: "https://sandbox.example.com",
         authToken: "my-secret-token",
       });
-      const url = runtime.getWsURL("s_123" as SessionId);
+      const url = runtime.getTerminalWsURL();
 
       expect(url.searchParams.get("access_token")).toBe("my-secret-token");
-      expect(url.searchParams.get("session_id")).toBe("s_123");
     });
 
     it("should not add access_token to WS URL when same-origin", () => {
@@ -102,7 +65,7 @@ describe("RuntimeManager", () => {
         url: window.location.origin,
         authToken: "my-secret-token",
       });
-      const url = runtime.getWsURL("s_123" as SessionId);
+      const url = runtime.getTerminalWsURL();
 
       expect(url.searchParams.get("access_token")).toBeNull();
     });
@@ -111,7 +74,7 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://sandbox.example.com",
       });
-      const url = runtime.getWsURL("s_123" as SessionId);
+      const url = runtime.getTerminalWsURL();
 
       expect(url.searchParams.get("access_token")).toBeNull();
     });
@@ -122,10 +85,8 @@ describe("RuntimeManager", () => {
         authToken: "my-secret-token",
       });
 
-      const wsUrl = runtime.getWsURL("s_123" as SessionId);
       const terminalUrl = runtime.getTerminalWsURL();
 
-      expect(wsUrl.searchParams.get("access_token")).toBe("my-secret-token");
       expect(terminalUrl.searchParams.get("access_token")).toBe(
         "my-secret-token",
       );
@@ -194,39 +155,6 @@ describe("RuntimeManager", () => {
 
       expect(url.pathname).toBe("/base/api/marimo/v1/notebooks/n%2F1");
       expect(url.toString()).not.toContain("my-secret-token");
-    });
-  });
-
-  describe("getSseURL", () => {
-    it("should never put the auth token in the URL, even cross-origin", () => {
-      // SSE requests can send headers, so auth travels in the
-      // Authorization header; a token in the URL would leak into
-      // proxy and server logs.
-      const runtime = new RuntimeManager({
-        url: "https://sandbox.example.com",
-        authToken: "my-secret-token",
-      });
-      const url = runtime.getSseURL("s_123" as SessionId);
-
-      expect(url.searchParams.get("access_token")).toBeNull();
-      expect(url.toString()).not.toContain("my-secret-token");
-    });
-
-    it("should strip an access_token forwarded from the page URL", () => {
-      // The page URL can briefly carry access_token before auth cleanup
-      // removes it; it must not be forwarded to /sse.
-      const original = window.location.href;
-      window.history.pushState({}, "", "/?access_token=page-token&foo=bar");
-      try {
-        const runtime = new RuntimeManager(mockConfig);
-        const url = runtime.getSseURL("s_123" as SessionId);
-
-        expect(url.searchParams.get("access_token")).toBeNull();
-        expect(url.searchParams.get("query_params")).toBe("foo=bar");
-        expect(url.toString()).not.toContain("page-token");
-      } finally {
-        window.history.pushState({}, "", original);
-      }
     });
   });
 
@@ -408,7 +336,7 @@ describe("RuntimeManager", () => {
 
       expect(result).toBe(true);
       // Should strip /health from pathname but preserve query params
-      const wsUrl = runtime.getWsURL("s_test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
       expect(wsUrl.pathname).toBe("/ws");
       expect(wsUrl.hostname).toBe("sandbox.example.com");
       expect(wsUrl.searchParams.get("some_value")).toBe("abc123");
@@ -579,7 +507,7 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://example.com/nested/path/",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
       const aiUrl = runtime.getAiURL("completion");
 
       expect(wsUrl.pathname).toBe("/nested/path/ws");
@@ -601,7 +529,7 @@ describe("RuntimeManager", () => {
         url: "https://example.com/path?base_param=existing",
       });
 
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
       const httpUrl = runtime.formatHttpURL({
         path: "api/test",
         searchParams: new URLSearchParams(),
@@ -612,10 +540,12 @@ describe("RuntimeManager", () => {
       expect(wsUrl.searchParams.get("base_param")).toBe("existing");
       expect(httpUrl.searchParams.get("base_param")).toBe("existing");
 
-      // Should preserve all window-level query params (including custom ones)
+      // Should pass all window-level query params (including custom ones) to the session
       expect(
         Object.fromEntries(
-          new URLSearchParams(wsUrl.searchParams.get("query_params") ?? ""),
+          new URLSearchParams(
+            runtime.getSessionArguments("test" as SessionId).query_params,
+          ),
         ),
       ).toEqual({
         base_param: "existing",
@@ -626,9 +556,6 @@ describe("RuntimeManager", () => {
       expect(httpUrl.searchParams.get("custom_param")).toBe("value123");
       expect(httpUrl.searchParams.get("user_token")).toBe("abc");
       expect(httpUrl.searchParams.get("theme")).toBe("dark");
-
-      // Should also include session_id for WebSocket URLs
-      expect(wsUrl.searchParams.get("session_id")).toBe("test");
 
       // Restore original location
       Object.defineProperty(window, "location", {
@@ -641,10 +568,9 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://example.com/path?existing=param#fragment",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
 
       expect(wsUrl.searchParams.get("existing")).toBe("param");
-      expect(wsUrl.searchParams.get("session_id")).toBe("test");
       // Fragment should not be preserved in WebSocket URLs
       expect(wsUrl.hash).toBe("");
     });
@@ -663,8 +589,8 @@ describe("RuntimeManager", () => {
         url: "https://localhost",
       });
 
-      expect(httpRuntime.getWsURL("test" as SessionId).protocol).toBe("ws:");
-      expect(httpsRuntime.getWsURL("test" as SessionId).protocol).toBe("wss:");
+      expect(httpRuntime.formatWsURL("/ws").protocol).toBe("ws:");
+      expect(httpsRuntime.formatWsURL("/ws").protocol).toBe("wss:");
     });
 
     it("should handle blob URLs", () => {
@@ -681,11 +607,8 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "blob:https://example.com/12345678-1234-1234-1234-123456789abc",
       });
-      const sessionId = "test" as SessionId;
 
-      expect(runtime.getWsURL(sessionId).toString()).toMatchInlineSnapshot(
-        `"blob:https://example.com/12345678-1234-1234-1234-123456789abc?query_params=&session_id=test"`,
-      );
+      expect(runtime.formatWsURL("/ws").protocol).toBe("blob:");
       expect(Logger.warn).toHaveBeenCalledOnce();
     });
 
@@ -717,7 +640,7 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://user:pass@example.com",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
 
       expect(wsUrl.protocol).toBe("wss:");
       expect(wsUrl.username).toBe("user");
@@ -729,7 +652,7 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "http://[::1]:8080",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
 
       expect(wsUrl.protocol).toBe("ws:");
       expect(wsUrl.hostname).toBe("[::1]");
@@ -758,7 +681,7 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://example.com:9443/app",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
 
       expect(wsUrl.protocol).toBe("wss:");
       expect(wsUrl.hostname).toBe("example.com");
@@ -775,7 +698,7 @@ describe("RuntimeManager", () => {
 
       variants.forEach((url) => {
         const runtime = new RuntimeManager({ url });
-        const wsUrl = runtime.getWsURL("test" as SessionId);
+        const wsUrl = runtime.formatWsURL("/ws");
         expect(wsUrl.protocol).toBe("ws:");
       });
     });
@@ -784,12 +707,11 @@ describe("RuntimeManager", () => {
       const runtime = new RuntimeManager({
         url: "https://example.com?param1=value1&param2=value%20encoded&empty=",
       });
-      const wsUrl = runtime.getWsURL("test" as SessionId);
+      const wsUrl = runtime.formatWsURL("/ws");
 
       expect(wsUrl.searchParams.get("param1")).toBe("value1");
       expect(wsUrl.searchParams.get("param2")).toBe("value encoded");
       expect(wsUrl.searchParams.get("empty")).toBe("");
-      expect(wsUrl.searchParams.get("session_id")).toBe("test");
     });
 
     it("should accept data URLs (valid URL format)", () => {

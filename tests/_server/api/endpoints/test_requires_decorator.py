@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Test that all POST endpoints have @requires decorator for auth."""
+"""Test that all routes and tools have @requires decorator for auth."""
 
 from __future__ import annotations
 
@@ -22,10 +22,6 @@ EXEMPT_ENDPOINTS: set[tuple[str, str]] = {
     # via `_MARIMO_DISABLE_AUTH_ON_VIRTUAL_FILES` for sandboxed/embedded
     # deployments.
     ("assets.py", "/@file/{filename_and_length:path}"),
-    # The SSE session stream does its own auth check so failures are
-    # delivered in-band as a `close` event (matching /ws close frames)
-    # instead of an HTTP error; covered by auth tests in test_sse.py.
-    ("ws_endpoint.py", "/sse"),
 }
 
 ENDPOINTS_DIR = Path(__file__).resolve().parents[4] / (
@@ -71,6 +67,15 @@ def _get_endpoints_missing_requires(
                     route_method = func.attr.upper()
                     route_path = ast.literal_eval(decorator.args[0])
 
+                # Check for tool(...)
+                if (
+                    isinstance(func, ast.Name)
+                    and func.id == "tool"
+                    and decorator.args
+                ):
+                    route_method = "TOOL"
+                    route_path = ast.literal_eval(decorator.args[0])
+
                 # Check for requires(...)
                 if isinstance(func, ast.Name) and func.id == "requires":
                     has_requires = True
@@ -108,7 +113,7 @@ class TestRequiresDecorator:
         )
 
     def test_finds_at_least_some_endpoints(self) -> None:
-        """Sanity check that the AST parsing actually finds endpoints."""
+        """Sanity check that the AST parsing actually finds tools."""
         count = 0
         for filepath in ENDPOINTS_DIR.glob("*.py"):
             source = filepath.read_text()
@@ -121,9 +126,9 @@ class TestRequiresDecorator:
                 for decorator in node.decorator_list:
                     if (
                         isinstance(decorator, ast.Call)
-                        and isinstance(decorator.func, ast.Attribute)
-                        and decorator.func.attr == "post"
+                        and isinstance(decorator.func, ast.Name)
+                        and decorator.func.id == "tool"
                     ):
                         count += 1
-        # We know there are many POST endpoints
-        assert count > 30, f"Expected 30+ POST endpoints, found {count}"
+        # We know there are many tools
+        assert count > 30, f"Expected 30+ tools, found {count}"

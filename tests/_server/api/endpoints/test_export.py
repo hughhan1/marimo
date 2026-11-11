@@ -35,6 +35,7 @@ from marimo._schemas.export_options import (
     PDFExportOptions,
     ServerExportFormat,
 )
+from marimo._server.api.endpoints import export as export_module
 from marimo._session.model import SessionMode
 from marimo._session.notebook.file_manager import AppFileManager
 from marimo._types.ids import CellId_t, SessionId
@@ -458,7 +459,11 @@ def test_export_html(client: TestClient) -> None:
     ):
         response = client.post(
             "/api/export/html",
-            headers={**HEADERS, "Origin": "localhost"},
+            headers={
+                **HEADERS,
+                "host": "localhost",
+                "Origin": "http://localhost",
+            },
             json={
                 "download": False,
                 "files": [],
@@ -484,8 +489,6 @@ def test_export_html(client: TestClient) -> None:
         == "inline; filename*=UTF-8''test.html"
     )
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    exposed_headers = response.headers["access-control-expose-headers"].lower()
-    assert "content-disposition" in exposed_headers
     assert parse_mount_config(response.text)["layout"] == {
         "type": "slides",
         "data": {"deck": {}},
@@ -622,7 +625,7 @@ def test_export_script(client: TestClient) -> None:
 
     response = client.post(
         "/api/export/script",
-        headers={**HEADERS, "Origin": "localhost"},
+        headers={**HEADERS, "host": "localhost", "Origin": "http://localhost"},
         json={
             "download": False,
         },
@@ -638,8 +641,6 @@ def test_export_script(client: TestClient) -> None:
         == "inline; filename*=UTF-8''test.script.py"
     )
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
-    exposed_headers = response.headers["access-control-expose-headers"].lower()
-    assert "content-disposition" in exposed_headers
 
 
 @with_session(SESSION_ID)
@@ -1022,19 +1023,29 @@ def test_auto_export_html(client: TestClient, temp_marimo_file: str) -> None:
             },
         )
 
-    response = auto_export()
-    assert response.status_code == 200
-    assert response.json() == {"success": True}
-    exported_html = (
-        Path(temp_marimo_file).parent / "__marimo__" / "notebook.html"
-    ).read_text(encoding="utf-8")
-    assert "export-current-session" in exported_html
+    # Each export runs once the reply is sent; count them.
+    with patch(
+        "marimo._server.api.endpoints.export.after_reply",
+        wraps=export_module.after_reply,
+    ) as exports:
+        response = auto_export()
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
+        exported_html = (
+            Path(temp_marimo_file).parent / "__marimo__" / "notebook.html"
+        ).read_text(encoding="utf-8")
+        assert "export-current-session" in exported_html
+        assert exports.call_count == 1
 
-    assert auto_export().status_code == 304
+        # Already exported, so nothing to do
+        assert auto_export().json() == {"success": True}
+        assert exports.call_count == 1
 
-    slides = {"type": "slides", "data": {}}
-    assert auto_export(layout=slides).status_code == 200
-    assert auto_export(layout=slides).status_code == 304
+        slides = {"type": "slides", "data": {}}
+        assert auto_export(layout=slides).json() == {"success": True}
+        assert exports.call_count == 2
+        assert auto_export(layout=slides).json() == {"success": True}
+        assert exports.call_count == 2
 
 
 @with_session(SESSION_ID)
@@ -1053,17 +1064,11 @@ def test_auto_export_html_skips_a_renamed_notebook(
 
     tasks: list[Callable[[], Awaitable[None]]] = []
 
-    class DeferredBackgroundTask:
-        def __init__(self, task: Callable[[], Awaitable[None]]) -> None:
-            tasks.append(task)
+    def defer(request: object, task: Callable[[], Awaitable[None]]) -> None:
+        del request
+        tasks.append(task)
 
-        async def __call__(self) -> None:
-            return
-
-    with patch(
-        "marimo._server.api.endpoints.export.BackgroundTask",
-        DeferredBackgroundTask,
-    ):
+    with patch("marimo._server.api.endpoints.export.after_reply", defer):
         response = client.post(
             "/api/export/auto_export/html",
             headers=HEADERS,
@@ -1117,8 +1122,9 @@ def test_auto_export_html_no_code(
             "includeCode": False,
         },
     )
-    # Not modified response
-    assert response.status_code == 304
+    # Already exported, so nothing to do
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
 
     # Assert __marimo__ file is created
     assert os.path.exists(
@@ -1144,8 +1150,9 @@ def test_auto_export_html_no_operations(
             "includeCode": True,
         },
     )
-    # Not modified response
-    assert response.status_code == 304
+    # Already exported, so nothing to do
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
 
 
 @with_session(SESSION_ID)
@@ -1173,8 +1180,9 @@ def test_auto_export_markdown(
             "download": False,
         },
     )
-    # Not modified response
-    assert response.status_code == 304
+    # Already exported, so nothing to do
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
 
     # Assert __marimo__ file is created
     assert os.path.exists(
@@ -1210,8 +1218,9 @@ def test_auto_export_ipynb(
             "download": False,
         },
     )
-    # Not modified response
-    assert response.status_code == 304
+    # Already exported, so nothing to do
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
 
     # Assert __marimo__ file is created
     assert os.path.exists(
@@ -1244,7 +1253,7 @@ def test_auto_export_ipynb_missing_nbformat_notifies_once(
             headers=HEADERS,
             json={"download": False},
         )
-        assert response.status_code == 304
+        assert response.status_code == 200
         mock_notify.assert_called_once_with(session, SESSION_ID, ["nbformat"])
 
         # Reset the export guard to exercise package notification deduplication.
@@ -1254,7 +1263,7 @@ def test_auto_export_ipynb_missing_nbformat_notifies_once(
             headers=HEADERS,
             json={"download": False},
         )
-        assert response.status_code == 304
+        assert response.status_code == 200
         assert mock_notify.call_count == 1
 
 

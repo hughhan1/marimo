@@ -12,10 +12,12 @@ from starlette.middleware.authentication import (
     AuthenticationMiddleware,
 )
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from marimo._server.api.endpoints.login import router as auth_router
 from marimo._server.api.middleware import AuthBackend
+from marimo._server.api.tools import mcp_endpoint
 from marimo._server.router import APIRouter
 from marimo._server.tokens import AuthToken
 from tests._server.mocks import get_starlette_server_state_init
@@ -27,7 +29,10 @@ def create_app(base_url: str = "") -> Starlette:
     router = APIRouter(prefix=base_url)
     router.include_router(auth_router)
     app = Starlette(
-        routes=router.routes,
+        routes=[
+            Route("/api/mcp", mcp_endpoint, methods=["POST"]),
+            *router.routes,
+        ],
         middleware=[
             Middleware(
                 SessionMiddleware,
@@ -212,17 +217,16 @@ def test_auth_token_returns_token_when_authenticated(client: TestClient):
     """Authenticated user gets the auth token."""
     # First authenticate via login
     client.post("/login", data={"password": str(AUTH_TOKEN)})
-    response = client.get("/token")
+    response = client.get("/auth/token")
     assert response.status_code == 200
     data = response.json()
     assert data["token"] == str(AUTH_TOKEN)
-    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_auth_token_unauthenticated_returns_403(client: TestClient):
     """Unauthenticated request to /token is rejected."""
-    response = client.get("/token")
-    assert response.status_code == 403
+    response = client.get("/auth/token")
+    assert response.status_code == 401
 
 
 def test_auth_token_returns_null_when_auth_disabled():
@@ -232,7 +236,7 @@ def test_auth_token_returns_null_when_auth_disabled():
     # Auth middleware still present but we authenticate first
     test_client = TestClient(app, follow_redirects=False)
     test_client.post("/login", data={"password": str(AUTH_TOKEN)})
-    response = test_client.get("/token")
+    response = test_client.get("/auth/token")
     assert response.status_code == 200
     assert response.json()["token"] is None
 
@@ -240,7 +244,7 @@ def test_auth_token_returns_null_when_auth_disabled():
 def test_bearer_auth_valid_token(client: TestClient):
     """Bearer token auth grants access."""
     response = client.get(
-        "/token",
+        "/auth/token",
         headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
     )
     assert response.status_code == 200
@@ -250,7 +254,7 @@ def test_bearer_auth_valid_token(client: TestClient):
 def test_bearer_auth_invalid_token(client: TestClient):
     """Bearer token with wrong value is rejected."""
     response = client.get(
-        "/token",
+        "/auth/token",
         headers={"Authorization": "Bearer wrong-token"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 401

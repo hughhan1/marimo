@@ -267,7 +267,6 @@ def _enrich_config_types(component_schemas: dict[str, Any]) -> None:
 
 
 def generate_server_api_schema() -> dict[str, Any]:
-    from starlette.schemas import SchemaGenerator
 
     import marimo._data._external_storage.models as storage
     import marimo._data.models as data
@@ -277,22 +276,12 @@ def generate_server_api_schema() -> dict[str, Any]:
     from marimo._config import config_schema as config
     from marimo._messaging.cell_output import CellChannel, CellOutput
     from marimo._messaging.mimetypes import KnownMimeType
-    from marimo._metadata import opengraph
-    from marimo._runtime.packages.package_manager import PackageDescription
-    from marimo._schemas import export
     from marimo._server.ai.tools.types import ToolDefinition
-    from marimo._server.api.router import build_routes
     from marimo._server.models import (
         completion,
-        files,
-        home,
-        lsp,
         models,
-        packages,
         secrets,
     )
-    from marimo._session import requests as session_requests
-    from marimo._snippets import snippets
 
     roots = [
         # Base
@@ -323,117 +312,19 @@ def generate_server_api_schema() -> dict[str, Any]:
         storage.StorageNamespace,
         # Secrets
         secrets_models.SecretKeysWithProvider,
-        secrets.CreateSecretRequest,
         # ai
         ChatMessage,
         ToolDefinition,
-        # Sub components
-        home.MarimoFile,
-        opengraph.OpenGraphMetadata,
-        files.FileInfo,
-        files.FileRoot,
-        snippets.SnippetSection,
-        snippets.Snippet,
-        snippets.Snippets,
-        # Requests/responses
+        # Requests and responses that no tool carries
         completion.VariableContext,
         completion.SchemaColumn,
         completion.SchemaTable,
         completion.AiCompletionContext,
         completion.AiCompletionRequest,
-        completion.AiInlineCompletionRequest,
         completion.ChatRequest,
-        export.AutoExportAsIPYNBRequest,
-        export.AutoExportAsMarkdownRequest,
-        export.ExportAsHTMLRequest,
-        export.ExportAsMarkdownRequest,
-        export.ExportAsScriptRequest,
-        export.ExportAsIPYNBRequest,
-        export.ExportAsPDFRequest,
-        export.ExportAvailabilityResponse,
-        export.InstallExportRequirementsRequest,
-        export.UpdateCellOutputsRequest,
-        files.FileCreateMultipartRequest,
-        files.FileCreateRequest,
-        files.FileCreateResponse,
-        files.FileDeleteRequest,
-        files.FileDeleteResponse,
-        files.FileDetailsRequest,
-        files.FileDetailsResponse,
-        files.FileListRequest,
-        files.FileListResponse,
-        files.FileRootsResponse,
-        files.FileSearchRequest,
-        files.FileSearchResponse,
-        files.FileMoveRequest,
-        files.FileMoveResponse,
-        files.FileCopyRequest,
-        files.FileCopyResponse,
-        files.FileOpenRequest,
-        files.FileUpdateRequest,
-        files.FileUpdateResponse,
-        secrets.ListSecretKeysResponse,
         secrets.DeleteSecretRequest,
-        packages.AddPackageRequest,
-        PackageDescription,
-        packages.ListPackagesResponse,
-        packages.PackageOperationResponse,
-        packages.RemovePackageRequest,
-        packages.DependencyTreeResponse,
-        packages.SandboxRequest,
-        packages.SandboxResponse,
-        packages.UpdateManifestRequest,
-        packages.SyncSandboxResponse,
-        lsp.LspHealthResponse,
-        lsp.LspRestartRequest,
-        lsp.LspRestartResponse,
-        lsp.LspServerHealth,
-        home.OpenTutorialRequest,
-        home.RecentFilesResponse,
-        home.RunningNotebooksResponse,
-        home.ShutdownSessionRequest,
-        home.WorkspaceFilesRequest,
-        home.WorkspaceFilesResponse,
-        models.BaseResponse,
-        models.ClearCacheRequest,
-        models.CodeCompletionRequest,
-        models.CopyNotebookRequest,
-        models.DebugCellRequest,
-        models.DiscoverDataSourcesRequest,
-        models.ExecuteScratchpadRequest,
-        models.FormatCellsRequest,
-        models.FormatResponse,
-        models.GetCacheInfoRequest,
-        models.InstallPackagesRequest,
-        session_requests.InstantiateNotebookRequest,
-        models.InvokeAiToolRequest,
-        models.InvokeAiToolResponse,
-        models.InvokeFunctionRequest,
-        models.KernelStatusResponse,
-        models.ListDataSourceConnectionRequest,
-        models.ListSecretKeysRequest,
-        models.ListSQLTablesRequest,
-        models.ListSQLSchemasRequest,
-        models.MCPRefreshResponse,
-        models.MCPStatusResponse,
-        models.PreviewDatasetColumnRequest,
-        models.PreviewSQLTableRequest,
-        models.SetBreakpointsRequest,
-        models.StorageListEntriesRequest,
-        models.StorageDownloadRequest,
-        models.ReadCodeResponse,
-        models.RenameNotebookRequest,
-        models.SaveAppConfigurationRequest,
-        models.SaveLayoutRequest,
-        models.SaveUserConfigurationRequest,
-        models.StdinRequest,
-        models.SuccessResponse,
-        models.FocusCellRequest,
-        session_requests.UpdateUIElementValuesRequest,
         models.UpdateUIElementRequest,
         models.UpdateUserConfigRequest,
-        models.ModelRequest,
-        models.ValidateSQLRequest,
     ]
 
     named_exports = {
@@ -467,14 +358,9 @@ def generate_server_api_schema() -> dict[str, Any]:
         "required": list(legacy_exports),
     }
 
-    schemas_generator = SchemaGenerator(
-        {
-            "openapi": "3.1.0",
-            "info": {"title": "marimo API"},
-            "components": {
-                "schemas": component_schemas,
-            },
-        }
-    )
-
-    return schemas_generator.get_schema(routes=build_routes())
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "marimo API"},
+        "components": {"schemas": component_schemas},
+        "paths": {},
+    }

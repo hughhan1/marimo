@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { getAppUrl, startServer } from "../playwright.config";
 import { maybeRestartKernel, takeScreenshot } from "./helper";
+import { waitForMarimoApp } from "./test-utils";
 
 const _filename = fileURLToPath(import.meta.url);
 
@@ -43,7 +44,7 @@ test("restart kernel", async ({ page }) => {
   await page.goto(appUrl);
 
   // Wait for page to be fully loaded
-  await page.waitForLoadState("networkidle");
+  await waitForMarimoApp(page);
 
   await page.getByTestId("notebook-menu-dropdown").click();
   // Wait for dropdown to be visible and stable
