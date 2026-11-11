@@ -258,9 +258,7 @@ export function createNetworkRequests(): EditRequests & RunRequests {
     exportAsPDF: async (request) => {
       return getTools()
         .then((tools) => tools.export_pdf(request))
-        .then((reply) =>
-          repliedFile(reply, getDefaultExportFilename("pdf")),
-        );
+        .then((reply) => repliedFile(reply, getDefaultExportFilename("pdf")));
     },
     autoExportAsHTML: async (request) => {
       return getTools()

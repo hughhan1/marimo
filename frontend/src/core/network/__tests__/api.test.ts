@@ -151,7 +151,6 @@ describe("API", () => {
     );
   });
 
-
   it("API.post handles base URL with path correctly", async () => {
     baseUrl = "http://example.com/e";
     mockFetch.mockResolvedValue({
@@ -179,13 +178,4 @@ describe("API", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
-
-
-
-
-
-
-
-
-
 });
