@@ -66,6 +66,22 @@ def test_ws(client: TestClient) -> None:
         assert_kernel_ready_response(data)
 
 
+def test_a_failed_stream_ends_the_subscription(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def stream(self: SessionEventStream) -> Any:
+        del self
+        raise RuntimeError("broken")
+        yield  # An async generator, as `stream` is.
+
+    monkeypatch.setattr(SessionEventStream, "stream", stream)
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(client, WS_URL) as websocket:
+            websocket.receive_text()
+            raise AssertionError()
+    assert exc_info.value.reason == "The session's stream failed"
+
+
 def test_a_page_from_before_a_restart_follows_its_session(
     client: TestClient,
 ) -> None:
