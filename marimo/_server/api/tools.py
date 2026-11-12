@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
 from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Any
@@ -509,6 +510,9 @@ class MCPEndpoint:
             json_response=True,
             stateless=True,
             security_settings=TRANSPORT_SECURITY,
+            # The routes took a body of any size, and `mo.ui.file` sends a
+            # file's contents inside a UI element's value.
+            max_request_body_size=sys.maxsize,
         )
         # Made here, since the events endpoint hands tools a copy of the scope.
         tasks = scope.setdefault(_AFTER_REPLY, [])

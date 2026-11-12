@@ -14,8 +14,8 @@ from holon.client import Apps
 from holon.ext.files import File, downloads
 from mcp.types import CallToolResult
 
+from marimo._server.api.endpoints.file_explorer import MAX_UPLOAD_BYTES
 from marimo._server.api.tools import contract
-from marimo._server.models.files import MAX_UPLOAD_BYTES
 from marimo._utils.platform import is_windows
 from tests._server.api.endpoints.ws_helpers import receive_notification
 from tests._server.mocks import (

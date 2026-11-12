@@ -375,6 +375,14 @@ def test_tool_failure_is_a_problem_with_its_status(
     assert "structuredContent" not in result
 
 
+def test_a_call_of_any_size_reaches_its_tool(client: TestClient) -> None:
+    # Larger than the SDK's default cap, as a file in a UI element's value is.
+    path = "/" + "x" * (5 * 1024 * 1024)
+    problem = tool_problem(_call(client, "files_file_details", {"path": path}))
+    assert problem is not None
+    assert problem["type"] == PROBLEM_KIND + "internal"
+
+
 def test_a_raised_status_is_the_problems(client: TestClient) -> None:
     problem = tool_problem(_call(client, "secrets_delete", {"key": "x"}))
     assert problem == {
