@@ -56,7 +56,7 @@ def test_config_show_environment_source_names() -> None:
             ConfigLayer(
                 {
                     "runtime": {"output_max_bytes": 1000},
-                    "server": {"transport": "sse"},
+                    "server": {"browser": "firefox"},
                 },
                 "env_var",
             )
@@ -67,7 +67,7 @@ def test_config_show_environment_source_names() -> None:
 output_max_bytes = 1000 # env var: MARIMO_RUNTIME_OUTPUT_MAX_BYTES
 
 [server]
-transport = "sse" # env var: MARIMO_SERVER_TRANSPORT""")
+browser = "firefox" # env var: MARIMO_SERVER_BROWSER""")
 
 
 def test_config_show_source_comments_are_valid_toml(tmp_path: Path) -> None:

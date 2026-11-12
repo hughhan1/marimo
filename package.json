@@ -12,6 +12,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
     "@typescript/native-preview": "7.0.0-dev.20260324.1",
+    "holon-types": "0.0.1-dev.25",
     "oxfmt": "^0.74.0",
     "turbo": "^2.11.9",
     "vitest": "^4.1.11"

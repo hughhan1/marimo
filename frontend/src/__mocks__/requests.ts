@@ -145,7 +145,7 @@ export const MockRequestClient = {
         tree: null,
         context: { kind: "package-manager", name: "pip" },
       }),
-      listSecretKeys: vi.fn().mockResolvedValue({ keys: [] }),
+      listSecretKeys: vi.fn().mockResolvedValue(null),
       writeSecret: vi.fn().mockResolvedValue({}),
       invokeAiTool: vi.fn().mockResolvedValue({}),
       clearCache: vi.fn().mockResolvedValue(null),

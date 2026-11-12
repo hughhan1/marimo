@@ -217,6 +217,12 @@ class ErrorResponse(BaseResponse):
     message: str | None = None
 
 
+class TextResponse(msgspec.Struct):
+    """A reply that is text for the caller, such as a version or some code."""
+
+    text: str
+
+
 class KernelStatusResponse(msgspec.Struct, rename="camel"):
     # `running`: at least one cell is queued or running.
     # `idle`: the kernel is alive but not executing.

@@ -1,28 +1,24 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
+import { getTools, repliedFile } from "@/core/network/holon";
 import { getRequestClient } from "@/core/network/requests";
-import { getRuntimeManager } from "@/core/runtime/config";
 import { isWasm } from "@/core/wasm/utils";
 import { deserializeBlob } from "@/utils/blob";
-import { downloadBlob, downloadByURL } from "@/utils/download";
+import { downloadBlob } from "@/utils/download";
 import { type Base64String, base64ToDataURL } from "@/utils/json/base64";
 
 /**
  * Download a workspace file by path.
  *
- * Over HTTP this navigates to a streaming download endpoint, so the
- * browser's download manager handles the transfer and no file contents
- * are buffered in memory. In WASM there is no HTTP server to stream
- * from; contents come over the pyodide bridge as base64 and are saved
- * via a Blob.
+ * Over HTTP the server replies with a download target, which the runtime
+ * fetches and checks before it is saved. In WASM there is no HTTP server;
+ * contents come over the pyodide bridge as base64.
  */
 export async function downloadFile(path: string, name: string): Promise<void> {
   if (!isWasm()) {
-    const url = getRuntimeManager().formatNavigableHttpURL(
-      "api/files/download",
-      new URLSearchParams({ path }),
-    );
-    downloadByURL(url.toString(), name);
+    const tools = await getTools();
+    const file = await repliedFile(await tools.files_download({ path }), name);
+    downloadBlob(file.contents, name);
     return;
   }
 

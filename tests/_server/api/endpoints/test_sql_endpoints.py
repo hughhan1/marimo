@@ -32,6 +32,8 @@ def test_validate_sql(client: TestClient) -> None:
 
 @with_read_session(SESSION_ID)
 def test_fails_in_read_mode(client: TestClient) -> None:
+    # A well-formed request: the arguments are checked before the handler's
+    # scope is.
     response = client.post(
         "/api/sql/validate",
         headers=HEADERS,
@@ -39,6 +41,7 @@ def test_fails_in_read_mode(client: TestClient) -> None:
             "requestId": "test_request_id",
             "engine": "test_engine",
             "query": "SELECT * FROM test",
+            "onlyParse": False,
         },
     )
     assert response.status_code == 401

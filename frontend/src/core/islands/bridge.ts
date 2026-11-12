@@ -10,7 +10,7 @@ import { jsonParseWithSpecialChar } from "@/utils/json/json-parser";
 import { generateUUID } from "@/utils/uuid";
 import { initialNotebookState, notebookAtom } from "../cells/cells";
 import type { NotebookBackend } from "../notebook/replica";
-import type { ClientCommand, NotificationMessage } from "../kernel/messages";
+import type { NotificationMessage, WireCommand } from "../kernel/messages";
 import type { EditRequests, RunRequests } from "../network/types";
 import { store as defaultStore } from "../state/jotai";
 import { getMarimoExportContext } from "../static/export-context";
@@ -438,7 +438,7 @@ export class IslandsPyodideBridge implements RunRequests, EditRequests {
   // The kernel uses msgspec to parse control requests, which requires a 'type'
   // field for discriminated union deserialization.
   private async putControlRequest(
-    operation: ClientCommand,
+    operation: WireCommand,
     session?: AppSession,
   ): Promise<void> {
     session ??= await this.getActiveSession();

@@ -70,7 +70,7 @@ def test_page_config_by_mode(
         {
             "display": {"theme": "dark", "locale": "français <>&\"'"},
             "runtime": {"show_tracebacks": True},
-            "server": {"transport": "sse"},
+            "server": {"browser": "firefox"},
             "completion": {
                 "codeium_api_key": "completion-codeium-marker",
                 "api_key": "completion-custom-marker",

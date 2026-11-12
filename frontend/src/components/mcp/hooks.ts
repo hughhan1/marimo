@@ -1,20 +1,20 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import type { components } from "@marimo-team/marimo-api";
+import type { Outputs } from "#holon-ui";
 import { useState } from "react";
-import { API } from "@/core/network/api";
+import { getTools } from "@/core/network/holon";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { toast } from "../ui/use-toast";
 
-export type MCPStatus = components["schemas"]["MCPStatusResponse"];
-export type MCPRefreshResponse = components["schemas"]["MCPRefreshResponse"];
+export type MCPStatus = Outputs["marimo"]["ai_mcp_status"];
+export type MCPRefreshResponse = Outputs["marimo"]["ai_mcp_refresh"];
 
 /**
  * Hook to fetch MCP server status
  */
 export function useMCPStatus() {
   return useAsyncData<MCPStatus>(async () => {
-    return API.get<MCPStatus>("/ai/mcp/status");
+    return (await getTools()).ai_mcp_status({});
   }, []);
 }
 
@@ -27,7 +27,7 @@ export function useMCPRefresh() {
   const refresh = async () => {
     setIsRefreshing(true);
     try {
-      await API.post<object, MCPRefreshResponse>("/ai/mcp/refresh", {});
+      await (await getTools()).ai_mcp_refresh({});
       toast({
         title: "MCP refreshed",
         description: "MCP server configuration has been refreshed successfully",

@@ -10,6 +10,8 @@ hosting. Concrete subclasses cover:
 - :class:`DirectoryWorkspace` — lazy directory scan (`marimo edit ./`)
 """
 
+from __future__ import annotations
+
 import os
 
 from marimo import _loggers

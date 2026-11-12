@@ -7,7 +7,7 @@ from starlette.authentication import requires
 
 from marimo import _loggers
 from marimo._server.api.deps import AppState
-from marimo._server.router import APIRouter
+from marimo._server.api.tools import tool
 from marimo._snippets.snippets import Snippets, read_snippets
 
 if TYPE_CHECKING:
@@ -15,34 +15,18 @@ if TYPE_CHECKING:
 
 LOGGER = _loggers.marimo_logger()
 
-# Router for documentation
-router = APIRouter()
 
 # Cache snippets once per server instance
 _SNIPPETS: list[Snippets] = []
 
 
-@router.get("/snippets")
+@tool("documentation_snippets", output=Snippets)
 @requires("edit")
 async def load_snippets(
     *,
     request: Request,
 ) -> Snippets:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Load the snippets for the documentation page
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/Snippets"
-    """
+    """List the code snippets the editor offers."""
     app_state = AppState(request)
     config = app_state.require_current_session().config_manager.get_config()
     if not _SNIPPETS:

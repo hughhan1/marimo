@@ -1,13 +1,21 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
+import base64
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+import anyio
+import httpx2
 import pytest
+from holon.client import Apps
+from holon.ext.files import File, downloads
+from mcp.types import CallToolResult
 
+from marimo._server.api.endpoints.file_explorer import MAX_UPLOAD_BYTES
+from marimo._server.api.tools import contract
 from marimo._utils.platform import is_windows
 from tests._server.api.endpoints.ws_helpers import receive_notification
 from tests._server.mocks import (
@@ -15,6 +23,7 @@ from tests._server.mocks import (
     token_header,
     workspace_scope,
 )
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.testclient import TestClient
@@ -228,18 +237,32 @@ def test_create_and_delete_file_or_directory(client: TestClient) -> None:
     assert response.json()["success"] is True
 
 
-def test_create_file_with_binary_contents(client: TestClient) -> None:
-    raw_bytes = b"\xff\xfe\xfd\x00\x80marimo"
-    response = client.post(
-        "/api/files/create",
-        headers=HEADERS,
-        data={
+def _upload(
+    client: TestClient,
+    name: str,
+    data: bytes,
+    headers: dict[str, str] = HEADERS,
+) -> Any:
+    """Upload `data` in the call itself, as a client without transfers does."""
+    return client.post(
+        "/api/files/upload",
+        headers=headers,
+        json={
             "path": test_dir,
-            "type": "file",
-            "name": "binary_upload.bin",
+            "name": name,
+            "file": {
+                "id": "f1",
+                "mimeType": "application/octet-stream",
+                "size": len(data),
+                "data": base64.b64encode(data).decode(),
+            },
         },
-        files={"file": ("binary_upload.bin", raw_bytes)},
     )
+
+
+def test_upload_file(client: TestClient) -> None:
+    raw_bytes = b"\xff\xfe\xfd\x00\x80marimo"
+    response = _upload(client, "binary_upload.bin", raw_bytes)
     assert response.status_code == 200, response.text
     assert response.json()["success"] is True
 
@@ -247,6 +270,49 @@ def test_create_file_with_binary_contents(client: TestClient) -> None:
     with open(created_path, "rb") as f:
         assert f.read() == raw_bytes
     os.remove(created_path)
+
+
+def test_upload_requires_auth(client: TestClient) -> None:
+    response = _upload(client, "unauthorized.bin", b"data", headers={})
+    assert response.status_code == 401, response.text
+    assert not os.path.exists(os.path.join(test_dir, "unauthorized.bin"))
+
+
+def test_upload_is_capped() -> None:
+    [upload] = [tool for tool in contract() if tool["name"] == "files_upload"]
+    file = upload["inputSchema"]["properties"]["file"]
+    assert file["x-mcp-file"] == {"maxSize": MAX_UPLOAD_BYTES}
+
+
+async def test_files_travel_beside_the_call(client: TestClient) -> None:
+    def http_client() -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(client.app), headers=HEADERS
+        )
+
+    apps = Apps(
+        {"name": "test", "version": "0", "requires": {}},
+        {"marimo": None},
+        {
+            "marimo": {
+                "endpoint": "http://localhost/api/mcp",
+                "http_client": http_client,
+            }
+        },
+    )
+    data = os.urandom(2 * 1024 * 1024)
+    uploaded = await apps.marimo.call_tool(
+        "files_upload", None, path=test_dir, name="big.bin", file=File(data)
+    )
+    assert isinstance(uploaded, CallToolResult)
+    path = uploaded.structured_content["info"]["path"]
+    assert await anyio.Path(path).read_bytes() == data
+
+    fetched = await apps.marimo.call_tool("files_download", None, path=path)
+    assert isinstance(fetched, CallToolResult)
+    [download] = downloads(fetched)
+    assert await download.read() == data
+    os.remove(path)
 
 
 def test_create_directory(client: TestClient) -> None:
@@ -276,10 +342,9 @@ def test_create_rejects_invalid_type(client: TestClient) -> None:
             "name": "x.txt",
         },
     )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["success"] is False
-    assert "type" in body["message"].lower()
+    # The arguments are checked before the handler runs.
+    assert response.status_code == 400, response.text
+    assert "type" in response.json()["detail"].lower()
 
 
 def test_create_rejects_missing_fields(client: TestClient) -> None:
@@ -288,48 +353,18 @@ def test_create_rejects_missing_fields(client: TestClient) -> None:
         headers=HEADERS,
         data={"type": "file"},
     )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["success"] is False
+    assert response.status_code == 400, response.text
+    assert "path" in response.json()["detail"]
 
 
-def test_create_rejects_path_traversal_name(client: TestClient) -> None:
-    response = client.post(
-        "/api/files/create",
-        headers=HEADERS,
-        data={
-            "path": test_dir,
-            "type": "file",
-            "name": "../escaped.txt",
-        },
-    )
+def test_upload_rejects_path_traversal_name(client: TestClient) -> None:
+    response = _upload(client, "../escaped.txt", b"data")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["success"] is False
     # Confirm nothing was written outside test_dir
     parent_path = os.path.join(os.path.dirname(test_dir), "escaped.txt")
     assert not os.path.exists(parent_path)
-
-
-def test_create_returns_413_when_upload_exceeds_size_cap(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Shrink the cap so a small payload trips it.
-    monkeypatch.setattr(
-        "marimo._server.files.os_file_system.MAX_UPLOAD_BYTES", 4
-    )
-    response = client.post(
-        "/api/files/create",
-        headers=HEADERS,
-        data={
-            "path": test_dir,
-            "type": "file",
-            "name": "too_big.bin",
-        },
-        files={"file": ("too_big.bin", b"way too much data")},
-    )
-    assert response.status_code == 413, response.text
-    assert not os.path.exists(os.path.join(test_dir, "too_big.bin"))
 
 
 def test_update_file(client: TestClient) -> None:
@@ -363,8 +398,8 @@ def test_update_file_with_session(client: TestClient) -> None:
     assert file_path.exists()
 
     # Create a session by connecting via websocket
-    with client.websocket_connect(
-        "/ws?session_id=test-session&access_token=fake-token"
+    with connect_session(
+        client, "/ws?session_id=test-session&access_token=fake-token"
     ) as websocket:
         # Receive kernel ready message
         data = receive_notification(websocket)
@@ -606,76 +641,36 @@ def test_search_files_with_directory_and_file_filters(
     assert data_no_filter["totalFound"] == 3
 
 
-def test_download_file_text(client: TestClient) -> None:
-    path = os.path.join(test_dir, "download_me.txt")
-    with open(path, "w") as f:
-        f.write("stream me")
-    response = client.get(
-        "/api/files/download", headers=HEADERS, params={"path": path}
+def _download(
+    client: TestClient, path: str, headers: dict[str, str] = HEADERS
+) -> Any:
+    return client.post(
+        "/api/files/download", headers=headers, json={"path": path}
     )
-    assert response.status_code == 200, response.text
-    assert response.text == "stream me"
-    disposition = response.headers["content-disposition"]
-    assert disposition.startswith("attachment")
-    assert "download_me.txt" in disposition
-    assert response.headers["x-content-type-options"] == "nosniff"
-    os.remove(path)
 
 
-def test_download_file_binary(client: TestClient) -> None:
+def test_download_file(client: TestClient) -> None:
     raw_bytes = b"\xff\xfe\xfd\x00\x80marimo"
     path = os.path.join(test_dir, "download_me.bin")
     with open(path, "wb") as f:
         f.write(raw_bytes)
-    response = client.get(
-        "/api/files/download", headers=HEADERS, params={"path": path}
-    )
+    response = _download(client, path)
     assert response.status_code == 200, response.text
     assert response.content == raw_bytes
-    assert response.headers["content-type"] == "application/octet-stream"
-    os.remove(path)
-
-
-def test_download_file_unicode_name(client: TestClient) -> None:
-    path = os.path.join(test_dir, "émoji 🎉.txt")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("unicode")
-    response = client.get(
-        "/api/files/download", headers=HEADERS, params={"path": path}
-    )
-    assert response.status_code == 200, response.text
-    disposition = response.headers["content-disposition"]
-    assert disposition.startswith("attachment")
-    assert "filename*=UTF-8''" in disposition
     os.remove(path)
 
 
 def test_download_directory_is_rejected(client: TestClient) -> None:
-    response = client.get(
-        "/api/files/download", headers=HEADERS, params={"path": test_dir}
-    )
-    assert response.status_code == 400, response.text
+    assert _download(client, test_dir).status_code == 400
 
 
 def test_download_missing_file(client: TestClient) -> None:
-    response = client.get(
-        "/api/files/download",
-        headers=HEADERS,
-        params={"path": os.path.join(test_dir, "does_not_exist.txt")},
-    )
-    assert response.status_code == 404, response.text
-
-
-def test_download_requires_path_param(client: TestClient) -> None:
-    response = client.get("/api/files/download", headers=HEADERS)
-    assert response.status_code == 400, response.text
+    missing = os.path.join(test_dir, "does_not_exist.txt")
+    assert _download(client, missing).status_code == 404
 
 
 def test_download_requires_auth(client: TestClient) -> None:
-    response = client.get(
-        "/api/files/download", params={"path": test_file_path}
-    )
-    assert response.status_code == 401, response.text
+    assert _download(client, test_file_path, headers={}).status_code == 401
 
 
 def test_download_disabled_by_config(
@@ -686,7 +681,4 @@ def test_download_disabled_by_config(
             "PartialMarimoConfig", {"server": {"disable_file_downloads": True}}
         )
     )
-    response = client.get(
-        "/api/files/download", headers=HEADERS, params={"path": test_file_path}
-    )
-    assert response.status_code == 403, response.text
+    assert _download(client, test_file_path).status_code == 403

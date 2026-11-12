@@ -21,12 +21,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/use-toast";
+import type { SecretKeysResult } from "@/core/kernel/messages";
 import { useRequestClient } from "@/core/network/requests";
-import type { ListSecretKeysResponse } from "@/core/network/types";
 import { flattenSecretValue } from "../../connections/json-credentials";
 
 // dotenv providers should be at the top
-export function sortProviders(providers: ListSecretKeysResponse["keys"]) {
+export function sortProviders(providers: SecretKeysResult["secrets"]) {
   return providers.toSorted((a, b) => {
     if (a.provider === "env") {
       return 1;

@@ -22,6 +22,7 @@ from marimo._cli.pair.connection import ConnectionStore, connection_identity
 from marimo._cli.pair.delivery import DeliveryTarget, ProcessHandle
 from marimo._cli.pair.forwarder import ForwarderConfig
 from tests._cli._pair_server import pair_test_server
+from tests.mcp_request import tool_request, tool_result, tool_status
 
 
 def wait_messages(path: Path, count: int) -> list[dict[str, str]]:
@@ -103,14 +104,13 @@ def test_detached_delivery_replacement_and_files(
                 records.append(record)
 
             def send(payload: object) -> None:
-                request = urllib.request.Request(
-                    f"{server.url}/api/pair/notebooks/{server.stable_session_id}/messages",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
+                request = tool_request(
+                    server.url,
+                    "pair_notebooks_messages",
+                    {"id": server.stable_session_id, "message": payload},
                 )
                 with urllib.request.urlopen(request, timeout=5) as response:
-                    assert response.status == 202
+                    assert tool_status(tool_result(response)) == 200
 
             send(
                 {
@@ -266,14 +266,13 @@ def test_subprocess_reconnect_replays_messages_and_server_detach(
             raise AssertionError("No forwarder attachment")
 
         def send(message: str) -> None:
-            request = urllib.request.Request(
-                f"{server.url}/api/pair/notebooks/{server.stable_session_id}/messages",
-                method="POST",
-                data=json.dumps(message).encode(),
-                headers={"Content-Type": "application/json"},
+            request = tool_request(
+                server.url,
+                "pair_notebooks_messages",
+                {"id": server.stable_session_id, "message": message},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
-                assert response.status == 202
+                assert tool_status(tool_result(response)) == 200
 
         assert process.stdout is not None
         output = process.stdout
@@ -321,14 +320,13 @@ def test_subprocess_reconnect_replays_messages_and_server_detach(
             assert [
                 message["message"].rsplit("\n", 1)[1] for message in messages
             ] == ["before drop", "during gap", "after reconnect"]
-            request = urllib.request.Request(
-                f"{server.url}/api/pair/notebooks/{server.stable_session_id}/attachments/detach",
-                method="POST",
-                data=json.dumps({"attachment_id": second_id}).encode(),
-                headers={"Content-Type": "application/json"},
+            request = tool_request(
+                server.url,
+                "pair_notebooks_attachments_detach",
+                {"id": server.stable_session_id, "attachment_id": second_id},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
-                assert response.status == 204
+                assert tool_status(tool_result(response)) == 200
             stdout, stderr = process.communicate(timeout=10)
             assert process.returncode == 0, stderr.decode()
             assert stdout == b""

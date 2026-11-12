@@ -36,7 +36,6 @@ import {
 } from "../codemirror/cells/debugger-state";
 import { notebookCells } from "../cells/utils";
 import { capabilitiesAtom } from "../config/capabilities";
-import { connectionTransportTypeAtom } from "../config/config";
 import { useDataSourceActions } from "../datasets/data-source-connections";
 import { invalidateDataSourceDiscovery } from "../datasets/data-source-discovery";
 import type { ConnectionName } from "../datasets/engines";
@@ -116,7 +115,6 @@ export function useNotebookSession(opts: {
   const setStableSessionId = useSetAtom(stableSessionIdAtom);
   const setCapabilities = useSetAtom(capabilitiesAtom);
   const runtimeManager = useRuntimeManager();
-  const transportType = useAtomValue(connectionTransportTypeAtom);
   const setCacheInfo = useSetAtom(cacheInfoAtom);
   const setKernelStartupError = useSetAtom(kernelStartupErrorAtom);
   const {
@@ -388,15 +386,11 @@ export function useNotebookSession(opts: {
   const replica = useNotebookReplica({
     static: isStaticNotebook(),
     snapshot: useAtomValue(embeddedSnapshotAtom),
-    transportType,
-    url: () =>
-      transportType === "sse"
-        ? runtimeManager.getSseURL(sessionId).toString()
-        : runtimeManager.getWsURL(sessionId).toString(),
-    // SSE uses headers for auth. WebSockets carry the token in the URL.
+    sessionArguments: () => runtimeManager.getSessionArguments(sessionId),
     headers: () => runtimeManager.headers(),
     notebookUrl: (notebookId) => runtimeManager.getNotebookURL(notebookId),
-    // Only the host's transports read the URL, so static and WASM never wait.
+    // Only the server's transport reads the session's arguments, so static
+    // and WASM never wait.
     waitUntilReady: async () => {
       if (!runtimeManager.isSameOrigin) {
         await runtimeManager.waitForHealthy();

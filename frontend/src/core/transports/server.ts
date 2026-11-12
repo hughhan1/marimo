@@ -1,41 +1,37 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import {
-  type NotebookTransport,
-  sse,
-  StreamStopped,
-  type StreamUrl,
-} from "@marimo-team/client";
+import { type NotebookTransport, StreamStopped } from "@marimo-team/client";
+import type { EventArguments, EventData } from "#holon-ui";
 import { jsonParseWithSpecialChar } from "@/utils/json/json-parser";
 import { classifyCloseEvent } from "./connection-state";
+import {
+  type StreamSlots,
+  sharesConnections,
+  streamSlots,
+  unlimited,
+} from "./stream-slots";
 
-/** The server can be slow to accept when many notebooks are open. */
-const CONNECT_MS = 10_000;
+// The draft's Forbidden: the caller may not follow the session.
+const FORBIDDEN = -32024;
 
 /**
- * The error that ends a stream on this close, or none to retry.
+ * The error that ends a stream on this failure, or none to retry.
  *
- * `cause` is the connection status the editor shows.
+ * A terminated subscription carries the reason the session would have
+ * closed its socket with. `cause` is the connection status the editor shows.
  */
-function stopOn(close: { code?: number; reason?: string }) {
-  const decision = classifyCloseEvent(close);
+function stopOnFailure(error: unknown) {
+  const { code, data } = (error ?? {}) as {
+    code?: unknown;
+    data?: { reason?: string };
+  };
+  const reason = code === FORBIDDEN ? "MARIMO_UNAUTHORIZED" : data?.reason;
+  const decision = classifyCloseEvent({ reason });
   if (decision.kind === "retry") {
     return undefined;
   }
-  const reason = "reason" in decision.status ? decision.status.reason : "";
-  return new StreamStopped(reason, { cause: decision.status });
-}
-
-/** Read a URL provider, stopping the stream when it gives up. */
-async function resolve(url: StreamUrl): Promise<URL | undefined> {
-  try {
-    return new URL(typeof url === "function" ? await url() : url);
-  } catch (error) {
-    if (error instanceof StreamStopped) {
-      throw error;
-    }
-    return undefined;
-  }
+  const message = "reason" in decision.status ? decision.status.reason : "";
+  return new StreamStopped(message, { cause: decision.status });
 }
 
 /** Send each request with the runtime's headers, read before each request. */
@@ -51,102 +47,56 @@ export function withHeaders(
   };
 }
 
-/** A resume cursor and replica belong to the session that produced them. */
-function withSessionIdentity(
-  url: StreamUrl,
-  connect: (target: URL) => NotebookTransport,
+/** What a page subscribes to its session with, as the server declares it. */
+export type SessionArguments = EventArguments["marimo"]["session"];
+
+/** Subscribe to the server's `session` event. */
+export type SubscribeSession = (
+  args: SessionArguments,
+  options: { signal: AbortSignal },
+) => Promise<AsyncIterable<{ data: EventData["marimo"]["session"] }>>;
+
+let shared: StreamSlots | undefined;
+
+/** This page's slots: limited where the browser shares HTTP/1.1 connections. */
+function pageSlots(): StreamSlots {
+  shared ??= sharesConnections() ? streamSlots() : unlimited;
+  return shared;
+}
+
+/**
+ * Follow a marimo session through its `session` MCP event.
+ *
+ * Subscribing connects to the session, as opening its socket did. Each
+ * subscription starts the page over with a reset and a snapshot, so the
+ * cursor goes unused. An event carries one frame's text, read by marimo's
+ * parser, which reads `NaN`; a frame it cannot read arrives as an empty
+ * object, which `NotebookEvents` rejects as not an event.
+ */
+export function sessionEvents(
+  args: () => Promise<SessionArguments>,
+  subscribe: SubscribeSession,
+  slots: StreamSlots = pageSlots(),
 ): NotebookTransport {
-  let previous: string | undefined;
-  return async (attempt, handlers) => {
-    const target = await resolve(url);
-    if (target === undefined || attempt.signal.aborted) {
-      return;
-    }
-    target.searchParams.delete("cursor");
-    const identity = new URL(target);
-    identity.searchParams.delete("access_token");
-    identity.searchParams.sort();
-    identity.hash = "";
-    const key = identity.toString();
-    let { cursor } = attempt;
-    if (previous !== undefined && previous !== key) {
-      // Reset both the stream's cursor and its subscribers' state.
-      handlers.message({ event: "reset", data: {} });
-      cursor = null;
-    }
-    previous = key;
-    if (!attempt.signal.aborted) {
-      return connect(target)({ ...attempt, cursor }, handlers);
+  return async ({ signal }, { open, message }) => {
+    let held: AbortSignal | undefined;
+    try {
+      held = await slots.hold(signal);
+      const events = await subscribe(await args(), { signal: held });
+      open();
+      for await (const { data } of events) {
+        message(jsonParseWithSpecialChar(data.frame));
+      }
+    } catch (error) {
+      if (error instanceof StreamStopped) {
+        throw error;
+      }
+      // A stream another tab needs follows the session again once it may.
+      const stopped =
+        signal.aborted || held?.aborted ? undefined : stopOnFailure(error);
+      if (stopped !== undefined) {
+        throw stopped;
+      }
     }
   };
-}
-
-/**
- * Follow a marimo session over its WebSocket route.
- *
- * Each attempt opens one socket with the cursor as a query parameter. The
- * editor's close policy decides which closes end the stream.
- *
- * TODO: Notice a connection that died without closing, such as after a laptop
- * sleeps. `/sse` sends a heartbeat that its silence limit relies on, and
- * `/ws` drops it. Sending it on `/ws` would let this transport close a
- * silent socket.
- */
-export function websocket(url: StreamUrl): NotebookTransport {
-  return withSessionIdentity(
-    url,
-    (target) =>
-      async ({ cursor, signal }, { open, message }) => {
-        if (cursor !== null) {
-          target.searchParams.set("cursor", cursor);
-        }
-        await new Promise<void>((settle, reject) => {
-          const socket = new WebSocket(target);
-          const timeout = setTimeout(() => socket.close(), CONNECT_MS);
-          const abort = () => socket.close();
-          signal.addEventListener("abort", abort, { once: true });
-          socket.addEventListener("open", () => {
-            clearTimeout(timeout);
-            open();
-          });
-          socket.addEventListener("message", ({ data }) =>
-            // marimo's parser reads `NaN`. A message it cannot read arrives as an
-            // empty object, which `NotebookEvents` rejects as not an event.
-            message(jsonParseWithSpecialChar(String(data))),
-          );
-          socket.addEventListener("close", (event) => {
-            clearTimeout(timeout);
-            signal.removeEventListener("abort", abort);
-            const stopped = signal.aborted ? undefined : stopOn(event);
-            if (stopped === undefined) {
-              settle();
-            } else {
-              reject(stopped);
-            }
-          });
-        });
-      },
-  );
-}
-
-/**
- * Follow a marimo session over its server-sent events route.
- *
- * The session's `close` frames carry the same reasons as WebSocket closes.
- * marimo's parser decodes tagged bigints and non-finite numbers in every frame.
- */
-export function sessionSse(
-  url: StreamUrl,
-  headers: () => Record<string, string>,
-): NotebookTransport {
-  return withSessionIdentity(url, (target) =>
-    sse(target, {
-      parseData: jsonParseWithSpecialChar,
-      fetch: withHeaders(headers),
-      stop: (frame) =>
-        frame.event === "close"
-          ? stopOn(frame.data as { code?: number; reason?: string })
-          : undefined,
-    }),
-  );
 }

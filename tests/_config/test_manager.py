@@ -1536,27 +1536,6 @@ def test_env_config_manager_no_env_vars() -> None:
     assert config == {}
 
 
-@pytest.mark.parametrize("transport", ["websocket", "sse"])
-def test_env_config_manager_server_transport(
-    monkeypatch: pytest.MonkeyPatch, transport: str
-) -> None:
-    """MARIMO_SERVER_TRANSPORT selects the kernel-connection transport"""
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", transport)
-    manager = EnvVarReader()
-    config = manager.read()
-    assert config == {"server": {"transport": transport}}
-
-
-def test_env_config_manager_server_transport_invalid(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Invalid MARIMO_SERVER_TRANSPORT values are ignored with a warning"""
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", "carrier-pigeon")
-    manager = EnvVarReader()
-    config = manager.read()
-    assert config == {}
-
-
 RESTRICTED_SHARING = {"wasm": False, "html": False, "molab": False}
 
 

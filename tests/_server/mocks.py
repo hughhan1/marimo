@@ -24,6 +24,7 @@ from marimo._server.workspace import (
 from marimo._session.model import SessionMode
 from marimo._types.ids import CellId_t
 from marimo._utils.marimo_path import MarimoPath
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -196,8 +197,8 @@ def with_session(
             headers = token_header(auth_token)
 
             try:
-                with client.websocket_connect(
-                    f"/ws?session_id={session_id}", headers=headers
+                with connect_session(
+                    client, f"/ws?session_id={session_id}", headers=headers
                 ) as websocket:
                     from tests._server.api.endpoints.ws_helpers import (
                         receive_until,
@@ -237,8 +238,8 @@ def with_websocket_session(
             headers = token_header(auth_token)
 
             try:
-                with client.websocket_connect(
-                    f"/ws?session_id={session_id}", headers=headers
+                with connect_session(
+                    client, f"/ws?session_id={session_id}", headers=headers
                 ) as websocket:
                     from tests._server.api.endpoints.ws_helpers import (
                         receive_until,
@@ -278,8 +279,8 @@ def with_read_session(
             headers = token_header(session_manager.auth_token)
 
             try:
-                with client.websocket_connect(
-                    f"/ws?session_id={session_id}", headers=headers
+                with connect_session(
+                    client, f"/ws?session_id={session_id}", headers=headers
                 ) as websocket:
                     from tests._server.api.endpoints.ws_helpers import (
                         receive_until,

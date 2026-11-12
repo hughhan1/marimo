@@ -1,7 +1,7 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
 import msgspec
 
@@ -64,32 +64,6 @@ class FileCreateRequest(msgspec.Struct, rename="camel"):
     type: FileCreateType
     # The name of the file or directory
     name: str
-    # The contents of the file, base64-encoded. Used by the WASM/Pyodide RPC
-    # bridge, which cannot send multipart over the JS<->Py JSON boundary.
-    # The HTTP endpoint instead receives the raw file bytes via multipart/form-data.
-    contents: str | None = None
-
-
-class FileCreateMultipartRequest(msgspec.Struct, rename="camel"):
-    """multipart/form-data body for POST /api/files/create.
-
-    Schema-only: this struct exists to describe the multipart shape in
-    OpenAPI. At runtime, the endpoint reads the string fields from
-    `MultipartRequest.body` and the uploaded bytes from
-    `MultipartRequest.files["file"]` — `body.file` is never populated.
-    """
-
-    # The path where to create the file or directory
-    path: str
-    # 'file', 'directory', or 'notebook'
-    type: FileCreateType
-    # The name of the file or directory
-    name: str
-    # OpenAPI-only (see class docstring). `format: binary` makes the
-    # generated spec emit a file-upload schema rather than a base64 string.
-    file: Annotated[
-        str | None, msgspec.Meta(extra_json_schema={"format": "binary"})
-    ] = None
 
 
 class FileSearchRequest(msgspec.Struct, rename="camel"):

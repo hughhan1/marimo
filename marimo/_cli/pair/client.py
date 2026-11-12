@@ -479,19 +479,47 @@ def resolve_host(url: str, *, root: Path | None = None) -> HostEndpoint:
     return host
 
 
-def list_sessions(
-    *, url: str, token: str | None
-) -> dict[str, dict[str, str | None]]:
-    request_url = _endpoint_url(url, "/api/sessions")
-    headers = {}
+_PROTOCOL_VERSION = "2026-07-28"
+
+
+def call_tool(
+    *,
+    url: str,
+    token: str | None,
+    name: str,
+    arguments: dict[str, object] | None = None,
+) -> object:
+    """Call one of the editor's tools and return its structured result."""
+    request_url = _endpoint_url(url, "/api/mcp")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "MCP-Protocol-Version": _PROTOCOL_VERSION,
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": name,
+    }
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": name,
+            "arguments": arguments or {},
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": _PROTOCOL_VERSION,
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+        },
+    }
     response = open_response(
-        method="GET",
+        method="POST",
         url=request_url,
         headers=headers,
-        body=None,
+        body=json.dumps(body).encode(),
     )
+    unexpected = f"Unexpected response from {display_url(request_url)}."
     try:
         try:
             payload = json.load(response.response)
@@ -501,13 +529,47 @@ def list_sessions(
             json.JSONDecodeError,
             http.client.HTTPException,
         ) as error:
-            raise PairError(
-                f"Unexpected response from {display_url(request_url)}."
-            ) from error
+            raise PairError(unexpected) from error
     finally:
         response.close()
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, dict):
+        raise PairError(unexpected)
+    if result.get("isError"):
+        raise _tool_error(result)
+    return result.get("structuredContent")
 
-    message = f"Unexpected response from {display_url(request_url)}."
+
+def _tool_error(result: dict[str, object]) -> PairError:
+    """The error a failed tool call's problem describes."""
+    content = result.get("content")
+    text = (
+        content[0].get("text")
+        if isinstance(content, list)
+        and content
+        and isinstance(content[0], dict)
+        else None
+    )
+    try:
+        problem = json.loads(text) if isinstance(text, str) else None
+    except ValueError:
+        problem = None
+    if not isinstance(problem, dict):
+        return PairError(text if isinstance(text, str) else "The call failed.")
+    if problem.get("status") in (401, 403):
+        return PairError("Authentication failed.")
+    detail = problem.get("detail") or problem.get("title")
+    return PairError(str(detail) if detail else "The call failed.")
+
+
+def list_sessions(
+    *, url: str, token: str | None
+) -> dict[str, dict[str, str | None]]:
+    payload = call_tool(url=url, token=token, name="sessions")
+    message = (
+        "Unexpected response from "
+        f"{display_url(_endpoint_url(url, '/api/mcp'))}."
+    )
     if not isinstance(payload, dict):
         raise PairError(message)
 

@@ -1,9 +1,10 @@
 /* Copyright 2026 Marimo. All rights reserved. */
-import type { components, paths } from "@marimo-team/marimo-api";
+import type { components } from "@marimo-team/marimo-api";
+import type { Inputs, Outputs, OutputTypes } from "#holon-ui";
 
 export type schemas = components["schemas"];
 export type AiCompletionRequest = schemas["AiCompletionRequest"];
-export type BaseResponse = schemas["BaseResponse"];
+export type BaseResponse = Outputs["marimo"]["files_open"];
 export type CellConfig = schemas["CellConfig"];
 /**
  * The status of a cell.
@@ -14,22 +15,26 @@ export type CellConfig = schemas["CellConfig"];
  * disabled-transitively: disabled because an ancestor was disabled.
  */
 export type RuntimeState = schemas["CellNotification"]["status"];
-export type CodeCompletionRequest = schemas["CodeCompletionRequest"];
-export type AutoExportAsIPYNBRequest = schemas["AutoExportAsIPYNBRequest"];
+export type CodeCompletionRequest =
+  Inputs["marimo"]["kernel_code_autocomplete"];
+export type AutoExportAsIPYNBRequest =
+  Inputs["marimo"]["export_auto_export_ipynb"];
 export type AutoExportAsMarkdownRequest =
-  schemas["AutoExportAsMarkdownRequest"];
-export type ExportAsHTMLRequest = schemas["ExportAsHTMLRequest"];
-export type ExportAsMarkdownRequest = schemas["ExportAsMarkdownRequest"];
+  Inputs["marimo"]["export_auto_export_markdown"];
+export type ExportAsHTMLRequest = Inputs["marimo"]["export_auto_export_html"];
+export type ExportAsMarkdownRequest = Inputs["marimo"]["export_markdown"];
 export type MarkdownExportFlavor = NonNullable<
   ExportAsMarkdownRequest["flavor"]
 >;
-export type ExportAsIPYNBRequest = schemas["ExportAsIPYNBRequest"];
-export type ExportAsScriptRequest = schemas["ExportAsScriptRequest"];
-export type ExportAsPDFRequest = schemas["ExportAsPDFRequest"];
-export type ExportAvailabilityResponse = schemas["ExportAvailabilityResponse"];
+export type ExportAsIPYNBRequest = Inputs["marimo"]["export_ipynb"];
+export type ExportAsScriptRequest = Inputs["marimo"]["export_script"];
+export type ExportAsPDFRequest = Inputs["marimo"]["export_pdf"];
+export type ExportAvailabilityResponse =
+  Outputs["marimo"]["export_availability"];
 export type InstallExportRequirementsRequest =
-  schemas["InstallExportRequirementsRequest"];
-export type UpdateCellOutputsRequest = schemas["UpdateCellOutputsRequest"];
+  Inputs["marimo"]["export_requirements_install"];
+export type UpdateCellOutputsRequest =
+  Inputs["marimo"]["export_update_cell_outputs"];
 
 export interface ExportedFile<T extends BlobPart = BlobPart> {
   contents: T;
@@ -37,71 +42,77 @@ export interface ExportedFile<T extends BlobPart = BlobPart> {
   mediaType: string;
 }
 
-export type FileCopyRequest = schemas["FileCopyRequest"];
-export type FileCopyResponse = schemas["FileCopyResponse"];
-export type FileCreateRequest = schemas["FileCreateRequest"];
-export type FileCreateResponse = schemas["FileCreateResponse"];
-export type FileDeleteRequest = schemas["FileDeleteRequest"];
-export type FileDeleteResponse = schemas["FileDeleteResponse"];
-export type FileDetailsRequest = schemas["FileDetailsRequest"];
-export type FileDetailsResponse = schemas["FileDetailsResponse"];
-export type FileInfo = schemas["FileInfo"];
-export type FileListRequest = schemas["FileListRequest"];
-export type FileListResponse = schemas["FileListResponse"];
-export type FileRoot = schemas["FileRoot"];
-export type FileRootsResponse = schemas["FileRootsResponse"];
-export type FileSearchRequest = schemas["FileSearchRequest"];
-export type FileSearchResponse = schemas["FileSearchResponse"];
-export type FileMoveRequest = schemas["FileMoveRequest"];
-export type FileMoveResponse = schemas["FileMoveResponse"];
-export type FileUpdateRequest = schemas["FileUpdateRequest"];
-export type FileUpdateResponse = schemas["FileUpdateResponse"];
-export type FormatCellsRequest = schemas["FormatCellsRequest"];
-export type FormatResponse = schemas["FormatResponse"];
-export type InvokeFunctionRequest = schemas["InvokeFunctionRequest"];
-export type ListSecretKeysResponse = schemas["ListSecretKeysResponse"];
-export type InstallPackagesRequest = schemas["InstallPackagesRequest"];
-export type AddPackageRequest = schemas["AddPackageRequest"];
-export type RemovePackageRequest = schemas["RemovePackageRequest"];
-export type ListPackagesResponse = schemas["ListPackagesResponse"];
-export type DependencyTreeResponse = schemas["DependencyTreeResponse"];
-export type DependencyTreeNode = schemas["DependencyTreeNode"];
+export type FileCopyRequest = Inputs["marimo"]["files_copy"];
+export type FileCopyResponse = Outputs["marimo"]["files_copy"];
+export type FileCreateRequest = Inputs["marimo"]["files_create"];
+export type FileCreateResponse = Outputs["marimo"]["files_create"];
+export type FileDeleteRequest = Inputs["marimo"]["files_delete"];
+export type FileDeleteResponse = Outputs["marimo"]["files_delete"];
+export type FileDetailsRequest = Inputs["marimo"]["files_file_details"];
+export type FileDetailsResponse = Outputs["marimo"]["files_file_details"];
+export type FileInfo = OutputTypes["marimo"]["files_copy"]["FileInfo"];
+export type FileListRequest = Inputs["marimo"]["files_list_files"];
+export type FileListResponse = Outputs["marimo"]["files_list_files"];
+export type FileRoot = OutputTypes["marimo"]["files_roots"]["FileRoot"];
+export type FileRootsResponse = Outputs["marimo"]["files_roots"];
+export type FileSearchRequest = Inputs["marimo"]["files_search"];
+export type FileSearchResponse = Outputs["marimo"]["files_search"];
+export type FileMoveRequest = Inputs["marimo"]["files_move"];
+export type FileMoveResponse = Outputs["marimo"]["files_move"];
+export type FileUpdateRequest = Inputs["marimo"]["files_update"];
+export type FileUpdateResponse = Outputs["marimo"]["files_update"];
+export type FormatCellsRequest = Inputs["marimo"]["kernel_format"];
+export type FormatResponse = Outputs["marimo"]["kernel_format"];
+export type InvokeFunctionRequest = Inputs["marimo"]["kernel_function_call"];
+export type InstallPackagesRequest =
+  Inputs["marimo"]["kernel_install_missing_packages"];
+export type AddPackageRequest = Inputs["marimo"]["packages_add"];
+export type RemovePackageRequest = Inputs["marimo"]["packages_remove"];
+export type ListPackagesResponse = Outputs["marimo"]["packages_list"];
+export type DependencyTreeResponse = Outputs["marimo"]["packages_tree"];
+export type DependencyTreeNode =
+  OutputTypes["marimo"]["packages_tree"]["DependencyTreeNode"];
 
-export type SandboxRequest = schemas["SandboxRequest"];
-export type SandboxResponse = schemas["SandboxResponse"];
-export type UpdateManifestRequest = schemas["UpdateManifestRequest"];
-export type SyncSandboxResponse = schemas["SyncSandboxResponse"];
-export type PackageOperationResponse = schemas["PackageOperationResponse"];
-export type InstantiateNotebookRequest = schemas["InstantiateNotebookRequest"];
+export type SandboxRequest = Inputs["marimo"]["packages_sandbox"];
+export type SandboxResponse = Outputs["marimo"]["packages_manifest"];
+export type UpdateManifestRequest = Inputs["marimo"]["packages_manifest"];
+export type SyncSandboxResponse = Outputs["marimo"]["packages_sync"];
+export type PackageOperationResponse = Outputs["marimo"]["packages_add"];
+export type InstantiateNotebookRequest = Inputs["marimo"]["kernel_instantiate"];
 export type MarimoConfig = schemas["MarimoConfig"];
-export type MarimoFile = schemas["MarimoFile"];
-export type ListSecretKeysRequest = schemas["ListSecretKeysRequest"];
-export type CreateSecretRequest = schemas["CreateSecretRequest"];
+export type MarimoFile = Outputs["marimo"]["home_tutorial_open"];
+export type ListSecretKeysRequest = Inputs["marimo"]["secrets_keys"];
+export type CreateSecretRequest = Inputs["marimo"]["secrets_create"];
 export type PreviewDatasetColumnRequest =
-  schemas["PreviewDatasetColumnRequest"];
-export type PreviewSQLTableRequest = schemas["PreviewSQLTableRequest"];
-export type ListSQLTablesRequest = schemas["ListSQLTablesRequest"];
-export type ListSQLSchemasRequest = schemas["ListSQLSchemasRequest"];
+  Inputs["marimo"]["datasources_preview_column"];
+export type PreviewSQLTableRequest =
+  Inputs["marimo"]["datasources_preview_sql_table"];
+export type ListSQLTablesRequest =
+  Inputs["marimo"]["datasources_preview_sql_table_list"];
+export type ListSQLSchemasRequest =
+  Inputs["marimo"]["datasources_preview_sql_schema_list"];
 export type ListDataSourceConnectionRequest =
-  schemas["ListDataSourceConnectionRequest"];
-export type DiscoverDataSourcesRequest = schemas["DiscoverDataSourcesRequest"];
-export type ValidateSQLRequest = schemas["ValidateSQLRequest"];
-export type DebugCellRequest = schemas["DebugCellRequest"];
-export type SetBreakpointsRequest = schemas["SetBreakpointsRequest"];
-export type ReadCodeResponse = schemas["ReadCodeResponse"];
-export type RecentFilesResponse = schemas["RecentFilesResponse"];
-export type RenameNotebookRequest = schemas["RenameNotebookRequest"];
-export type ExecuteScratchpadRequest = schemas["ExecuteScratchpadRequest"];
+  Inputs["marimo"]["datasources_preview_datasource_connection"];
+export type DiscoverDataSourcesRequest =
+  Inputs["marimo"]["datasources_discover"];
+export type ValidateSQLRequest = Inputs["marimo"]["sql_validate"];
+export type DebugCellRequest = Inputs["marimo"]["kernel_pdb_pm"];
+export type SetBreakpointsRequest = Inputs["marimo"]["kernel_pdb_breakpoints"];
+export type ReadCodeResponse = Outputs["marimo"]["kernel_read_code"];
+export type RecentFilesResponse = Outputs["marimo"]["home_recent_files"];
+export type RenameNotebookRequest = Inputs["marimo"]["kernel_rename"];
+export type ExecuteScratchpadRequest =
+  Inputs["marimo"]["kernel_scratchpad_run"];
 export type SaveAppConfigurationRequest =
-  schemas["SaveAppConfigurationRequest"];
-export type SaveLayoutRequest = schemas["SaveLayoutRequest"];
-export type CopyNotebookRequest = schemas["CopyNotebookRequest"];
+  Inputs["marimo"]["kernel_save_app_config"];
+export type SaveLayoutRequest = Inputs["marimo"]["kernel_save_layout"];
+export type CopyNotebookRequest = Inputs["marimo"]["kernel_copy"];
 export type SaveUserConfigurationRequest =
-  schemas["SaveUserConfigurationRequest"];
+  Inputs["marimo"]["kernel_save_user_config"];
 /**
  * Client-side shape for creating a file/directory/notebook. The HTTP
- * transport sends this as multipart/form-data; the WASM bridge base64-encodes
- * `file` internally and crosses the JS<->Py boundary as JSON.
+ * transport uploads `file` as the body of `/api/files/upload`; the WASM bridge
+ * base64-encodes it and crosses the JS<->Py boundary as JSON.
  */
 export interface FileCreateInput {
   path: string;
@@ -110,37 +121,40 @@ export interface FileCreateInput {
   file?: Blob;
 }
 export type UpdateUIElementRequest = schemas["UpdateUIElementRequest"];
-export type ModelRequest = schemas["ModelRequest"];
+export type ModelRequest = Inputs["marimo"]["kernel_set_model_value"];
 export type UpdateUserConfigRequest = schemas["UpdateUserConfigRequest"];
-export type ShutdownSessionRequest = schemas["ShutdownSessionRequest"];
-export type Snippet = schemas["Snippet"];
-export type SnippetSection = schemas["SnippetSection"];
-export type Snippets = schemas["Snippets"];
-export type StdinRequest = schemas["StdinRequest"];
-export type SuccessResponse = schemas["SuccessResponse"];
+export type ShutdownSessionRequest = Inputs["marimo"]["home_shutdown_session"];
+export type Snippet =
+  OutputTypes["marimo"]["documentation_snippets"]["Snippet"];
+export type SnippetSection =
+  OutputTypes["marimo"]["documentation_snippets"]["SnippetSection"];
+export type Snippets = Outputs["marimo"]["documentation_snippets"];
+export type StdinRequest = Inputs["marimo"]["kernel_stdin"];
+export type SuccessResponse = Outputs["marimo"]["cache_clear"];
 export type UpdateUIElementValuesRequest =
-  schemas["UpdateUIElementValuesRequest"];
-export type UsageResponse =
-  paths["/api/usage"]["get"]["responses"]["200"]["content"]["application/json"];
-export type EnvironmentInfo =
-  paths["/api/environment"]["get"]["responses"]["200"]["content"]["application/json"];
-export type WorkspaceFilesRequest = schemas["WorkspaceFilesRequest"];
-export type WorkspaceFilesResponse = schemas["WorkspaceFilesResponse"];
-export type RunningNotebooksResponse = schemas["RunningNotebooksResponse"];
-export type OpenTutorialRequest = schemas["OpenTutorialRequest"];
+  Inputs["marimo"]["kernel_set_ui_element_value"];
+export type UsageResponse = Outputs["marimo"]["usage"];
+export type EnvironmentInfo = Outputs["marimo"]["environment"];
+export type WorkspaceFilesRequest = Inputs["marimo"]["home_workspace_files"];
+export type WorkspaceFilesResponse = Outputs["marimo"]["home_workspace_files"];
+export type RunningNotebooksResponse =
+  Outputs["marimo"]["home_running_notebooks"];
+export type OpenTutorialRequest = Inputs["marimo"]["home_tutorial_open"];
 export type TutorialId = OpenTutorialRequest["tutorialId"];
-export type InvokeAiToolRequest = schemas["InvokeAiToolRequest"];
-export type InvokeAiToolResponse = schemas["InvokeAiToolResponse"];
+export type InvokeAiToolRequest = Inputs["marimo"]["ai_invoke_tool"];
+export type InvokeAiToolResponse = Outputs["marimo"]["ai_invoke_tool"];
 export type ChatOptions = schemas["ChatOptions"];
-export type ClearCacheRequest = schemas["ClearCacheRequest"];
-export type GetCacheInfoRequest = schemas["GetCacheInfoRequest"];
-export type LspHealthResponse = schemas["LspHealthResponse"];
-export type LspRestartRequest = schemas["LspRestartRequest"];
-export type LspRestartResponse = schemas["LspRestartResponse"];
-export type LspServerHealth = schemas["LspServerHealth"];
+export type ClearCacheRequest = Inputs["marimo"]["cache_clear"];
+export type GetCacheInfoRequest = Inputs["marimo"]["cache_info"];
+export type LspHealthResponse = Outputs["marimo"]["lsp_health"];
+export type LspRestartRequest = Inputs["marimo"]["lsp_restart"];
+export type LspRestartResponse = Outputs["marimo"]["lsp_restart"];
+export type LspServerHealth =
+  OutputTypes["marimo"]["lsp_health"]["LspServerHealth"];
 
-export type StorageListEntriesRequest = schemas["StorageListEntriesRequest"];
-export type StorageDownloadRequest = schemas["StorageDownloadRequest"];
+export type StorageListEntriesRequest =
+  Inputs["marimo"]["storage_list_entries"];
+export type StorageDownloadRequest = Inputs["marimo"]["storage_download"];
 
 /**
  * Requests sent to the BE during run/edit mode.

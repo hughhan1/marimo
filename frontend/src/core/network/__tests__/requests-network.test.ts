@@ -3,7 +3,6 @@
 /* oxlint-disable typescript/no-explicit-any */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as apiModule from "../api";
 import { createNetworkRequests } from "../requests-network";
 
 // Mock dependencies
@@ -13,18 +12,32 @@ vi.mock("../../runtime/config", () => ({
   })),
 }));
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual<typeof apiModule>("../api");
-  return {
-    ...actual,
-    API: {
-      handleExportResponse: vi.fn((response) => response.data),
-      handleResponse: vi.fn((response) => response.data),
-      handleResponseReturnNull: vi.fn(() => null),
-    },
-    createClientWithRuntimeManager: vi.fn(),
-  };
+const calls = vi.hoisted(() => new Map<string, ReturnType<typeof vi.fn>>());
+const tool = vi.hoisted(() => (name: string) => {
+  if (!calls.has(name)) {
+    calls.set(
+      name,
+      vi.fn(() =>
+        Promise.resolve({
+          downloads: [
+            { mimeType: "text/plain", blob: async () => new Blob([""]) },
+          ],
+        }),
+      ),
+    );
+  }
+  return calls.get(name)!;
 });
+vi.mock("../holon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../holon")>()),
+  getTools: async () =>
+    new Proxy(
+      {},
+      {
+        get: (_, name) => (name === "then" ? undefined : tool(String(name))),
+      },
+    ),
+}));
 
 vi.mock("../connection", () => ({
   isConnectedAtom: { read: vi.fn(() => true) },
@@ -33,31 +46,9 @@ vi.mock("../connection", () => ({
 }));
 
 describe("createNetworkRequests", () => {
-  let mockClient: any;
-  let capturedCalls: Map<string, { hasParams: boolean; endpoint: string }>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    capturedCalls = new Map();
-
-    // Create mock client that captures all calls
-    const createMockMethod = (endpoint: string) => {
-      return vi.fn((_route: string, options?: any) => {
-        const hasParams = options?.params !== undefined;
-        capturedCalls.set(endpoint, { hasParams, endpoint });
-        return Promise.resolve({ data: null, error: undefined });
-      });
-    };
-
-    mockClient = {
-      POST: createMockMethod("POST"),
-      GET: createMockMethod("GET"),
-    };
-
-    // Mock createClientWithRuntimeManager to return our mock client
-    vi.mocked(apiModule.createClientWithRuntimeManager).mockReturnValue(
-      mockClient,
-    );
+    calls.clear();
   });
 
   describe("special behavior", () => {
@@ -68,19 +59,22 @@ describe("createNetworkRequests", () => {
       const requests = createNetworkRequests();
       await requests.exportAsHTML({} as any);
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/html",
-        expect.objectContaining({
-          body: expect.objectContaining({
-            assetUrl: window.location.origin,
-          }),
-        }),
+      expect(tool("export_html")).toHaveBeenCalledWith(
+        expect.objectContaining({ assetUrl: window.location.origin }),
       );
 
       process.env.NODE_ENV = originalEnv;
     });
 
     it("exportAsPDF should pass preset through to the API", async () => {
+      tool("export_pdf").mockResolvedValue({
+        downloads: [
+          {
+            mimeType: "application/pdf",
+            blob: async () => new Blob(["%PDF"]),
+          },
+        ],
+      });
       const requests = createNetworkRequests();
       await requests.exportAsPDF({
         webpdf: false,
@@ -88,15 +82,11 @@ describe("createNetworkRequests", () => {
         includeInputs: false,
       } as any);
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/pdf",
+      expect(tool("export_pdf")).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: expect.objectContaining({
-            webpdf: false,
-            preset: "slides",
-            includeInputs: false,
-          }),
-          parseAs: "blob",
+          webpdf: false,
+          preset: "slides",
+          includeInputs: false,
         }),
       );
     });
@@ -105,47 +95,37 @@ describe("createNetworkRequests", () => {
       const requests = createNetworkRequests();
       await requests.exportAsScript({ download: false });
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/script",
-        expect.objectContaining({
-          body: { download: false },
-          parseAs: "text",
-        }),
-      );
+      expect(tool("export_script")).toHaveBeenCalledWith({ download: false });
     });
 
-    it("getEnvironmentInfo should GET /api/environment", async () => {
+    it("getEnvironmentInfo should read the environment", async () => {
       const requests = createNetworkRequests();
       await requests.getEnvironmentInfo();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/environment");
+      expect(tool("environment")).toHaveBeenCalled();
     });
 
-    it("getFileRoots should GET /api/files/roots", async () => {
+    it("getFileRoots should read the file roots", async () => {
       const requests = createNetworkRequests();
       await requests.getFileRoots();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/files/roots");
+      expect(tool("files_roots")).toHaveBeenCalled();
     });
 
-    it("getExportAvailability should GET /api/export/availability", async () => {
+    it("getExportAvailability should read export availability", async () => {
       const requests = createNetworkRequests();
       await requests.getExportAvailability();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/export/availability");
+      expect(tool("export_availability")).toHaveBeenCalled();
     });
 
     it("installExportRequirements should POST the export format", async () => {
       const requests = createNetworkRequests();
       await requests.installExportRequirements({ format: "pdf" });
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/requirements/install",
-        expect.objectContaining({
-          body: { format: "pdf" },
-          params: expect.anything(),
-        }),
-      );
+      expect(tool("export_requirements_install")).toHaveBeenCalledWith({
+        format: "pdf",
+      });
     });
 
     it("discoverDataSources should POST to the discovery endpoint", async () => {
@@ -153,13 +133,7 @@ describe("createNetworkRequests", () => {
       const request = { requestId: "discovery-request" } as any;
       await requests.discoverDataSources(request);
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/datasources/discover",
-        expect.objectContaining({
-          body: request,
-          params: expect.anything(),
-        }),
-      );
+      expect(tool("datasources_discover")).toHaveBeenCalledWith(request);
     });
 
     it("getPackageList should not require a kernel connection", async () => {
@@ -169,9 +143,36 @@ describe("createNetworkRequests", () => {
       const requests = createNetworkRequests();
       await requests.getPackageList();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/packages/list");
+      expect(tool("packages_list")).toHaveBeenCalled();
       expect(waitForConnectionOpenIfNotebook).toHaveBeenCalled();
       expect(waitForConnectionOpen).not.toHaveBeenCalled();
+    });
+
+    it("sendCreateFileOrFolder sends a file with the upload tool", async () => {
+      const requests = createNetworkRequests();
+      const file = new Blob(["bytes"]);
+      await requests.sendCreateFileOrFolder({
+        path: "/dir",
+        type: "file",
+        name: "a.bin",
+        file,
+      });
+      await requests.sendCreateFileOrFolder({
+        path: "/dir",
+        type: "directory",
+        name: "sub",
+      });
+
+      expect(tool("files_upload")).toHaveBeenCalledWith({
+        path: "/dir",
+        name: "a.bin",
+        file,
+      });
+      expect(tool("files_create")).toHaveBeenCalledWith({
+        path: "/dir",
+        type: "directory",
+        name: "sub",
+      });
     });
 
     it("exportAsIPYNB should call the new endpoint as text", async () => {
@@ -180,14 +181,8 @@ describe("createNetworkRequests", () => {
         download: false,
       } as any);
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/ipynb",
-        expect.objectContaining({
-          body: expect.objectContaining({
-            download: false,
-          }),
-          parseAs: "text",
-        }),
+      expect(tool("export_ipynb")).toHaveBeenCalledWith(
+        expect.objectContaining({ download: false }),
       );
     });
   });

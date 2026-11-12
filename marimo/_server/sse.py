@@ -1,13 +1,12 @@
 # Copyright 2026 Marimo. All rights reserved.
 """Server-sent events (SSE) framing and connection utilities.
 
-Shared by every endpoint that streams `text/event-stream` responses (the
-session `/sse` transport and the scratchpad `/api/kernel/execute` stream).
+Shared by the endpoints that stream `text/event-stream` responses (the
+scratchpad `/api/kernel/execute` stream and the host API's event streams).
 """
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,27 +17,6 @@ SSE_HEADERS = {
     # Disable proxy buffering (nginx) so events are delivered immediately
     "X-Accel-Buffering": "no",
 }
-
-HEARTBEAT_EVENT = ": keep-alive\n\n"
-
-
-def format_sse_event(data: str, event: str | None = None) -> str:
-    """Frame `data` as a server-sent event.
-
-    Multi-line payloads are split into one `data:` line each, per the SSE
-    spec; clients rejoin them with newlines.
-    """
-    lines = "".join(f"data: {line}\n" for line in data.split("\n"))
-    if event is None:
-        return f"{lines}\n"
-    return f"event: {event}\n{lines}\n"
-
-
-def format_close_event(code: int, reason: str) -> str:
-    """Frame the SSE equivalent of a WebSocket close frame."""
-    return format_sse_event(
-        json.dumps({"code": code, "reason": reason}), event="close"
-    )
 
 
 async def wait_for_http_disconnect(request: Request) -> None:

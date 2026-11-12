@@ -30,7 +30,7 @@ const sqlTableContext: SQLTableContext = {
 function renderDeferredTableList(settle?: (requestId: RequestId) => void) {
   const client = MockRequestClient.create();
   client.previewSQLTableList.mockImplementation(async ({ requestId }) => {
-    settle?.(requestId);
+    settle?.(requestId as RequestId);
     return null;
   });
   store.set(requestClientAtom, client);

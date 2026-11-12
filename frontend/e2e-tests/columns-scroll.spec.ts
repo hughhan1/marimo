@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { getAppUrl } from "../playwright.config";
 import { maybeRestartKernel, pressShortcut } from "./helper";
+import { waitForMarimoApp } from "./test-utils";
 
 const appUrl = getAppUrl("columns.py");
 
@@ -19,7 +20,7 @@ test.beforeEach(async ({ page }, info) => {
 });
 
 async function waitForCellsToRun(page: Page): Promise<void> {
-  await page.waitForLoadState("networkidle");
+  await waitForMarimoApp(page);
 
   const app = page.locator("#App");
   await expect(app).toHaveAttribute("data-config-width", "columns");

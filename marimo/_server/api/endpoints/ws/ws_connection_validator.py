@@ -2,12 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from starlette.websockets import WebSocket
-
-from marimo._server.api.auth import validate_auth
 from marimo._server.api.deps import AppState
 from marimo._server.codes import WebSocketCloseReason, WebSocketCodes
 from marimo._server.workspace import MarimoFileKey
@@ -81,40 +76,3 @@ def parse_connection_params(
         kiosk=kiosk,
         auto_instantiate=auto_instantiate,
     )
-
-
-class WebSocketConnectionValidator:
-    """Validates and extracts connection parameters from WebSocket requests."""
-
-    def __init__(self, websocket: WebSocket, app_state: AppState):
-        self.websocket = websocket
-        self.app_state = app_state
-
-    async def validate_auth(self) -> bool:
-        """Validate authentication, close socket if invalid.
-
-        Returns:
-            True if authentication is valid or not required, False otherwise.
-        """
-        if self.app_state.enable_auth and not validate_auth(self.websocket):
-            await self.websocket.close(
-                WebSocketCodes.UNAUTHORIZED, WebSocketCloseReason.UNAUTHORIZED
-            )
-            return False
-        return True
-
-    async def extract_connection_params(
-        self,
-    ) -> ConnectionParams | None:
-        """Extract and validate connection parameters.
-
-        Closes the socket on invalid parameters.
-
-        Returns:
-            ConnectionParams if all parameters are valid, None otherwise.
-        """
-        result = parse_connection_params(self.app_state)
-        if isinstance(result, ConnectionRejection):
-            await self.websocket.close(result.code, result.reason)
-            return None
-        return result

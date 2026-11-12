@@ -50,8 +50,7 @@ function setup(strict = false) {
   const options = {
     static: false,
     snapshot: null,
-    transportType: "websocket" as const,
-    url: () => "ws://localhost/ws",
+    sessionArguments: () => ({ session_id: "s1", query_params: "" }),
     headers: () => ({}),
     notebookUrl: (id: string) => new URL(`http://localhost/notebooks/${id}`),
     waitUntilReady: async () => undefined,
@@ -141,7 +140,7 @@ describe("useNotebookReplica", () => {
     attachments.unmount();
   });
 
-  it("uses current callbacks and URL providers without reconnecting on a rerender", async () => {
+  it("uses current callbacks and session arguments without reconnecting on a rerender", async () => {
     const fake = makeTransport();
     vi.mocked(createEditorBackend).mockReturnValue(
       fakeBackend({ transport: fake.transport }),
@@ -149,14 +148,18 @@ describe("useNotebookReplica", () => {
     const { rerender, options, unmount } = setup();
     await act(async () => Promise.resolve());
     const onNotification = vi.fn();
-    rerender({ ...options, onNotification, url: () => "ws://redirected/ws" });
+    rerender({
+      ...options,
+      onNotification,
+      sessionArguments: () => ({ session_id: "s2", query_params: "" }),
+    });
     act(() => fake.notify());
     expect(options.onNotification).not.toHaveBeenCalled();
     expect(onNotification).toHaveBeenCalledExactlyOnceWith({
       data: { op: "interrupted" },
     });
-    const [{ url }] = vi.mocked(createEditorBackend).mock.calls[0];
-    expect(url()).toBe("ws://redirected/ws");
+    const [{ sessionArguments }] = vi.mocked(createEditorBackend).mock.calls[0];
+    expect(sessionArguments().session_id).toBe("s2");
     expect(fake.opened).toHaveLength(1);
     unmount();
   });

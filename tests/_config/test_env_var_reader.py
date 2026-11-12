@@ -100,9 +100,9 @@ def test_malformed_value_is_skipped_independently(
     monkeypatch: pytest.MonkeyPatch, variable: str, raw: str
 ) -> None:
     monkeypatch.setenv(variable, raw)
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", "sse")
+    monkeypatch.setenv("MARIMO_SERVER_BROWSER", "firefox")
     with _loggers.capture_output() as (_, _, records):
-        assert EnvVarReader().read() == {"server": {"transport": "sse"}}
+        assert EnvVarReader().read() == {"server": {"browser": "firefox"}}
     assert len(records) == 1
     message = records[0].getMessage()
     assert variable in message
@@ -116,7 +116,7 @@ def test_only_declared_leaves_are_addressable(
     monkeypatch.setenv("MARIMO_DISPLAY", '{"theme":"dark"}')
     monkeypatch.setenv("MARIMO_KEYMAP_OVERRIDES_RUN_CELL", "Shift-Enter")
     monkeypatch.setenv("MARIMO_UNKNOWN_OPTION", "true")
-    monkeypatch.setenv("MARIMO_CONFIG_SERVER_TRANSPORT", "sse")
+    monkeypatch.setenv("MARIMO_CONFIG_SERVER_BROWSER", "firefox")
     assert EnvVarReader().read() == {}
 
 

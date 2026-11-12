@@ -254,7 +254,7 @@ def test_bound_host_does_not_allow_other_origins(host: str) -> None:
     app = create_starlette_app(base_url="", host=host, enable_auth=False)
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with TestClient(app).websocket_connect(
-            "ws://localhost:2718/ws",
+            "ws://localhost:2718/terminal/ws",
             headers={"Origin": "http://localhost:8080"},
         ):
             pytest.fail("Unexpected connection")
@@ -271,7 +271,7 @@ def test_matching_headers_require_a_configured_host(
     app.state.session_manager = get_mock_session_manager()
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with TestClient(app).websocket_connect(
-            "ws://127.0.0.1:2718/ws?access_token=fake-token",
+            "ws://127.0.0.1:2718/terminal/ws?access_token=fake-token",
             headers={
                 "Host": f"{request_host}:2718",
                 "Origin": f"http://{request_host}:2718",
@@ -370,7 +370,6 @@ def test_forwarded_headers_are_not_used_directly() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "/ws",
         "/terminal/ws",
         "/lsp/pylsp",
         "/api/marimo/v1/notebooks/test/events/ws",

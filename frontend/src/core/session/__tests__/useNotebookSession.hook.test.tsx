@@ -144,7 +144,10 @@ function makeRuntimeManager(
     reconcileFromHealth,
   );
   vi.spyOn(runtime, "probeHealth").mockResolvedValue(true);
-  vi.spyOn(runtime, "getWsURL").mockReturnValue(new URL("ws://localhost/ws"));
+  vi.spyOn(runtime, "getSessionArguments").mockReturnValue({
+    session_id: "s1",
+    query_params: "",
+  });
   // Keep the initial connection pending; these tests exercise session retries.
   vi.spyOn(runtime, "waitForHealthy").mockReturnValue(
     new Deferred<void>().promise,

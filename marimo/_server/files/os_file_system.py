@@ -7,12 +7,11 @@ import os
 import platform
 import shutil
 import subprocess
-import tempfile
 import time
 from collections import deque
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from marimo import _loggers
 from marimo._server.files.file_system import FileSystem
@@ -23,6 +22,8 @@ from marimo._utils.mime import guess_mime_type
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from holon.ext.files import ReceivedFile
 
 LOGGER = _loggers.marimo_logger()
 
@@ -45,29 +46,6 @@ DISALLOWED_NAMES = [
     ".",
     "..",
 ]
-
-# 1 MiB. Large enough to amortize syscall overhead, small enough to keep
-# peak memory bounded when streaming.
-_STREAM_CHUNK_SIZE = 1024 * 1024
-
-# Hard cap on streamed uploads. Streaming removes the implicit OOM ceiling
-# that buffered uploads had, so without a cap an authenticated client could
-# exhaust disk. 1 GiB covers normal notebook-data use cases with margin.
-MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
-
-
-class UploadTooLargeError(ValueError):
-    """Raised when a streamed upload exceeds `MAX_UPLOAD_BYTES`.
-
-    Separate type (vs. a bare `ValueError`) so the HTTP layer can map it
-    to a 413 response instead of the generic error path.
-    """
-
-
-class AsyncByteSource(Protocol):
-    """Structural type for things like Starlette's `UploadFile`."""
-
-    async def read(self, size: int = -1, /) -> bytes: ...
 
 
 class OSFileSystem(FileSystem):
@@ -255,65 +233,21 @@ class OSFileSystem(FileSystem):
             full_path.write_bytes(contents or b"")
         return self.get_info(str(full_path))
 
-    async def stream_create_file(
-        self,
-        path: str,
-        name: str,
-        source: AsyncByteSource,
+    async def add_file(
+        self, path: str, name: str, received: ReceivedFile
     ) -> FileInfo:
-        """Stream-write an uploaded file to disk, chunk by chunk.
-
-        Avoids loading the full payload into memory (the HTTP multipart
-        path can otherwise buffer 100 MB at once). Writes to a `.part`
-        temp file and atomically renames on success so a failed upload
-        doesn't leave a half-written file at the final path.
-        """
+        """Put an uploaded file in `path` as `name`, or as a free variant of it."""
         self._validate_create_name(name)
-
         parent = Path(path)
         os.makedirs(parent, exist_ok=True)
-
         # Atomic O_CREAT|O_EXCL reservation closes the TOCTOU window between
         # picking a unique name and writing to it.
         full_path = _claim_unique_path(parent / name)
-
-        tmp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(
-                dir=full_path.parent,
-                prefix=full_path.name + ".",
-                suffix=".part",
-                delete=False,
-            ) as tmp:
-                tmp_path = tmp.name
-                # Sync writes are bounded to one chunk between awaits, so event
-                # loop blockage stays small without pulling in aiofiles.
-                written = 0
-                while chunk := await source.read(_STREAM_CHUNK_SIZE):
-                    written += len(chunk)
-                    if written > MAX_UPLOAD_BYTES:
-                        raise UploadTooLargeError(
-                            f"Upload exceeds maximum size of "
-                            f"{MAX_UPLOAD_BYTES} bytes"
-                        )
-                    tmp.write(chunk)
-            assert tmp_path is not None
-            os.replace(tmp_path, full_path)
+            await received.save(full_path, overwrite=True)
         except BaseException:
-            # Both paths may or may not exist depending on where we failed;
-            # FileNotFoundError on either is expected.
-            paths = (
-                [str(full_path)]
-                if tmp_path is None
-                else [tmp_path, str(full_path)]
-            )
-            for p in paths:
-                try:
-                    os.unlink(p)
-                except FileNotFoundError:
-                    pass
+            full_path.unlink(missing_ok=True)
             raise
-
         return self.get_info(str(full_path))
 
     def delete_file_or_directory(self, path: str) -> bool:

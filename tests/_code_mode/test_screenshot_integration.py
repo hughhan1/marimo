@@ -15,16 +15,37 @@ import signal
 import socket
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 import pytest
 
+from tests.mcp_request import request_headers, tool_payload
+
 if TYPE_CHECKING:
     from pathlib import Path
 
     from playwright.async_api import Page, WebSocket
+
+
+async def _call_sessions(
+    client: httpx.AsyncClient, url: str
+) -> httpx.Response:
+    """Call the editor's `sessions` tool at `url`."""
+    return await client.post(
+        url,
+        json=tool_payload("sessions"),
+        headers=request_headers("tools/call", "sessions"),
+    )
+
+
+async def _sessions(client: httpx.AsyncClient) -> dict[str, Any]:
+    """The server's sessions, by session id, from its `sessions` tool."""
+    response = await _call_sessions(client, "/api/mcp")
+    response.raise_for_status()
+    sessions: dict[str, Any] = response.json()["result"]["structuredContent"]
+    return sessions
 
 
 async def _execute(
@@ -125,7 +146,7 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                 deadline = time.monotonic() + 30
                 while True:
                     try:
-                        response = await client.get("/api/sessions")
+                        response = await _call_sessions(client, "/api/mcp")
                         if response.status_code == 200:
                             break
                     except httpx.TransportError:
@@ -135,7 +156,7 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                     await asyncio.sleep(0.1)
                 async with httpx.AsyncClient() as anonymous:
                     assert (
-                        await anonymous.get(base + "/api/sessions")
+                        await _call_sessions(anonymous, base + "/api/mcp")
                     ).status_code != 200
 
                 async with async_playwright() as playwright:
@@ -158,22 +179,16 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                             + urlencode({"file": key, "access_token": token})
                         )
                         deadline = time.monotonic() + 30
-                        while (
-                            not sockets
-                            or parse_qs(urlsplit(sockets[0].url).query)[
-                                "session_id"
-                            ][0]
-                            not in (await client.get("/api/sessions")).json()
-                        ):
+                        while not sockets or parse_qs(
+                            urlsplit(sockets[0].url).query
+                        )["session_id"][0] not in await _sessions(client):
                             assert time.monotonic() < deadline
                             await asyncio.sleep(0.1)
                         session_id = parse_qs(urlsplit(sockets[0].url).query)[
                             "session_id"
                         ][0]
                         editors.append((key, page, sockets[0], session_id))
-                    sessions_before = (
-                        await client.get("/api/sessions")
-                    ).json()
+                    sessions_before = await _sessions(client)
                     assert len(sessions_before) == 3
                     for index, (key, page, websocket, session_id) in enumerate(
                         editors
@@ -257,9 +272,7 @@ image
                             await page.locator("#output-" + cell_id).count()
                             == 1
                         )
-                    assert set(sessions_before) == set(
-                        (await client.get("/api/sessions")).json()
-                    )
+                    assert set(sessions_before) == set(await _sessions(client))
                     await browser.close()
         finally:
             if server.returncode is None:

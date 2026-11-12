@@ -23,6 +23,7 @@ from marimo._cli.pair.forwarder import ForwarderConfig, start_forwarder
 from marimo._cli.pair.harnesses import detect_target, harness_for
 from marimo._cli.pair.harnesses.opencode import OpenCodeHarness
 from tests._cli._pair_server import pair_test_server
+from tests.mcp_request import tool_request, tool_result, tool_status
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -360,14 +361,13 @@ def test_detached_forwarder_to_opencode(
                     "text": f"Notebook error {sequence}",
                     "opaque": [sequence],
                 }
-                request = urllib.request.Request(
-                    f"{notebook.url}/api/pair/notebooks/{notebook.stable_session_id}/messages",
-                    data=json.dumps(message).encode(),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
+                request = tool_request(
+                    notebook.url,
+                    "pair_notebooks_messages",
+                    {"id": notebook.stable_session_id, "message": message},
                 )
                 with urllib.request.urlopen(request, timeout=5) as response:
-                    assert response.status == 202
+                    assert tool_status(tool_result(response)) == 200
                 received = state.messages.get(timeout=5)
                 assert received["delivery"] == "queue"
                 assert (

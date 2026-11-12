@@ -56,7 +56,6 @@ const MemoryUsageBar: React.FC<{
   server: UsageResponse["server"];
 }> = ({ memory, kernel, server }) => {
   const { percent, total, available, has_cgroup_mem_limit } = memory;
-  const roundedPercent = Math.round(percent);
   const memoryLabel = has_cgroup_mem_limit
     ? "container memory"
     : "computer memory";
@@ -67,6 +66,12 @@ const MemoryUsageBar: React.FC<{
   const mbFormatter = useNumberFormatter({
     maximumFractionDigits: 0,
   });
+
+  // The server reports no memory without psutil.
+  if (percent === null || total === null || available === null) {
+    return null;
+  }
+  const roundedPercent = Math.round(percent);
 
   const formatBytes = (bytes: number): string => {
     if (bytes > 1024 * 1024 * 1024) {
@@ -111,6 +116,9 @@ const MemoryUsageBar: React.FC<{
 
 const CPUBar: React.FC<{ cpu: UsageResponse["cpu"] }> = ({ cpu }) => {
   const { percent } = cpu;
+  if (percent === null) {
+    return null;
+  }
   const roundedPercent = Math.round(percent);
   return (
     <Tooltip

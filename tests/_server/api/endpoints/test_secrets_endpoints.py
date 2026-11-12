@@ -4,8 +4,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import pytest
-
 from marimo._types.ids import SessionId
 from tests._server.mocks import token_header, with_read_session, with_session
 
@@ -87,14 +85,11 @@ def test_secrets_forbidden_in_read_mode(client: TestClient) -> None:
 @with_session(SESSION_ID)
 def test_create_secret_write_failure(client: TestClient) -> None:
     """Test handling when write_secret fails."""
-    with (
-        patch(
-            "marimo._server.api.endpoints.secrets.write_secret",
-            side_effect=Exception("Write failed"),
-        ),
-        pytest.raises(Exception, match="Write failed"),
+    with patch(
+        "marimo._server.api.endpoints.secrets.write_secret",
+        side_effect=Exception("Write failed"),
     ):
-        client.post(
+        response = client.post(
             "/api/secrets/create",
             headers=HEADERS,
             json={
@@ -104,3 +99,5 @@ def test_create_secret_write_failure(client: TestClient) -> None:
                 "name": "test",
             },
         )
+    assert response.status_code == 500
+    assert "Write failed" in response.json()["detail"]

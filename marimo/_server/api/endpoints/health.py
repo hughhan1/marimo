@@ -3,15 +3,19 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal
 
+import msgspec
 from starlette.authentication import requires
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse
 
 from marimo import _loggers
 from marimo._dependencies.dependencies import DependencyManager
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import tool
+from marimo._server.models.models import TextResponse
 from marimo._server.router import APIRouter
+from marimo._types.ids import StableSessionId
 from marimo._utils.diagnostics import get_system_info
 from marimo._utils.health import (
     get_cgroup_cpu_percent,
@@ -24,8 +28,6 @@ from marimo._version import __version__
 
 if TYPE_CHECKING:
     from starlette.requests import Request
-
-    from marimo._types.ids import StableSessionId
 
 LOGGER = _loggers.marimo_logger()
 
@@ -43,74 +45,50 @@ router.add_route("/health", health_check, methods=["GET"])
 router.add_route("/healthz", health_check, methods=["GET"])
 
 
-@router.get("/api/status")
+class ServerStatus(msgspec.Struct):
+    status: Literal["healthy"]
+    filenames: list[str]
+    mode: str
+    sessions: int
+    version: str
+    python_version: str
+    requirements: dict[str, str]
+    node_version: str | None
+    lsp_running: bool
+
+
+@tool("status", output=ServerStatus)
 @requires("edit")
-async def status(request: Request) -> JSONResponse:
-    """
-    responses:
-        200:
-            description: Get the status of the application
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            status:
-                                type: string
-                            filenames:
-                                type: array
-                                items:
-                                    type: string
-                            mode:
-                                type: string
-                            sessions:
-                                type: integer
-                            version:
-                                type: string
-                            requirements:
-                                type: array
-                                items:
-                                    type: string
-                            node_version:
-                                type: string
-                            lsp_running:
-                                type: boolean
-    """
+async def status(*, request: Request) -> ServerStatus:
+    """Report the server's health, open notebooks, mode and versions."""
     app_state = AppState(request)
     files = [
         session.app_file_manager.filename or "__new__"
         for session in app_state.session_manager.sessions.values()
     ]
-    return JSONResponse(
-        {
-            "status": "healthy",
-            "filenames": files,
-            "mode": app_state.mode,
-            "sessions": len(app_state.session_manager.sessions),
-            "version": __version__,
-            "python_version": get_python_version(),
-            "requirements": get_required_modules_list(),
-            "node_version": get_node_version(),
-            "lsp_running": app_state.session_manager.lsp_server.is_running(),
-        }
+    return ServerStatus(
+        status="healthy",
+        filenames=files,
+        mode=app_state.mode.value,
+        sessions=len(app_state.session_manager.sessions),
+        version=__version__,
+        python_version=get_python_version(),
+        requirements=get_required_modules_list(),
+        node_version=get_node_version(),
+        lsp_running=app_state.session_manager.lsp_server.is_running(),
     )
 
 
-class SessionInfo(TypedDict):
+class SessionInfo(msgspec.Struct):
     session_id: StableSessionId
     notebook_id: str | None
     filename: str | None
     path: str | None
 
 
-@router.get("/api/sessions", include_in_schema=False)
-@requires("edit")
-async def list_sessions(request: Request) -> JSONResponse:
-    """List active session IDs and their notebook paths."""
-
+def _sessions(request: Request) -> dict[str, SessionInfo]:
     state = AppState(request)
-
-    sessions = {
+    return {
         session_id: SessionInfo(
             session_id=session.stable_id,
             notebook_id=(
@@ -124,177 +102,106 @@ async def list_sessions(request: Request) -> JSONResponse:
         )
         for session_id, session in state.session_manager.sessions.items()
     }
-    return JSONResponse(sessions)
 
 
-@router.get("/api/version")
-@requires("read")
-async def version(request: Request) -> PlainTextResponse:
-    """
-    responses:
-        200:
-            description: Get the version of the application
-            content:
-                text/plain:
-                    schema:
-                        type: string
-    """
-    del request  # Unused
-    return PlainTextResponse(__version__)
-
-
-@router.get("/api/environment")
+@tool("sessions", output=dict[str, SessionInfo])
 @requires("edit")
-async def environment(request: Request) -> JSONResponse:
-    """
-    responses:
-        200:
-            description: Environment information for issue reporting
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            marimo:
-                                type: string
-                            editable:
-                                type: boolean
-                            location:
-                                type: string
-                            OS:
-                                type: string
-                            OS Version:
-                                type: string
-                            Processor:
-                                type: string
-                            Python Version:
-                                type: string
-                            Locale:
-                                type: string
-                            Binaries:
-                                type: object
-                                additionalProperties:
-                                    type: string
-                            Dependencies:
-                                type: object
-                                additionalProperties:
-                                    type: string
-                            Optional Dependencies:
-                                type: object
-                                additionalProperties:
-                                    type: string
-                            Experimental Flags:
-                                type: object
-                                additionalProperties: {}
-                        required:
-                            - marimo
-                            - editable
-                            - location
-                            - OS
-                            - OS Version
-                            - Processor
-                            - Python Version
-                            - Locale
-                            - Binaries
-                            - Dependencies
-                            - Optional Dependencies
-                            - Experimental Flags
-    """
+async def list_sessions(*, request: Request) -> dict[str, SessionInfo]:
+    """List active session IDs and their notebook paths."""
+    return _sessions(request)
+
+
+@tool("version", output=TextResponse)
+@requires("read")
+async def version(*, request: Request) -> TextResponse:
+    """The server's marimo version."""
+    del request  # Unused
+    return TextResponse(text=__version__)
+
+
+class Environment(
+    msgspec.Struct,
+    rename={
+        "os": "OS",
+        "os_version": "OS Version",
+        "processor": "Processor",
+        "python_version": "Python Version",
+        "locale": "Locale",
+        "binaries": "Binaries",
+        "dependencies": "Dependencies",
+        "optional_dependencies": "Optional Dependencies",
+        "experimental_flags": "Experimental Flags",
+    },
+):
+    marimo: str
+    editable: bool
+    location: str
+    os: str
+    os_version: str
+    processor: str
+    python_version: str
+    locale: str
+    binaries: dict[str, str]
+    dependencies: dict[str, str]
+    optional_dependencies: dict[str, str]
+    experimental_flags: dict[str, Any]
+
+
+@tool("environment", output=Environment)
+@requires("edit")
+async def environment(*, request: Request) -> Environment:
+    """Describe the server's Python environment and platform."""
     del request  # Unused
     # Collect off the event loop; the install-location and dependency scans
     # touch the filesystem and can block.
     info = await asyncio.to_thread(get_system_info, redact_home=True)
-    return JSONResponse(info)
+    return msgspec.convert(info, Environment)
 
 
-@router.get("/api/usage")
+class MemoryUsage(msgspec.Struct):
+    """The machine's or the container's memory; unknown without psutil."""
+
+    total: int | None
+    available: int | None
+    percent: float | None
+    used: int | None
+    free: int | None
+    has_cgroup_mem_limit: bool
+
+
+class ProcessUsage(msgspec.Struct):
+    memory: int | None
+
+
+class CpuUsage(msgspec.Struct):
+    percent: float | None
+
+
+class GpuMemory(msgspec.Struct):
+    total: int
+    used: int
+    free: int
+    percent: float
+
+
+class GpuUsage(msgspec.Struct):
+    index: int
+    name: str
+    memory: GpuMemory
+
+
+class Usage(msgspec.Struct):
+    memory: MemoryUsage
+    server: ProcessUsage
+    kernel: ProcessUsage
+    cpu: CpuUsage
+    gpu: list[GpuUsage]
+
+
+@tool("usage", output=Usage)
 @requires("edit")
-async def usage(request: Request) -> JSONResponse:
-    """
-    responses:
-        200:
-            description: Get the current memory and CPU usage of the application
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            memory:
-                                type: object
-                                properties:
-                                    total:
-                                        type: integer
-                                    available:
-                                        type: integer
-                                    percent:
-                                        type: number
-                                    used:
-                                        type: integer
-                                    free:
-                                        type: integer
-                                    has_cgroup_mem_limit:
-                                        type: boolean
-                                required:
-                                    - total
-                                    - available
-                                    - percent
-                                    - used
-                                    - free
-                                    - has_cgroup_mem_limit
-                            server:
-                                type: object
-                                properties:
-                                    memory:
-                                        type: integer
-                                required:
-                                    - memory
-                            kernel:
-                                type: object
-                                properties:
-                                    memory:
-                                        type: integer
-                            cpu:
-                                type: object
-                                properties:
-                                    percent:
-                                        type: number
-                                required:
-                                    - percent
-                            gpu:
-                                type: array
-                                items:
-                                    type: object
-                                    properties:
-                                        index:
-                                            type: integer
-                                        name:
-                                            type: string
-                                        memory:
-                                            type: object
-                                            properties:
-                                                total:
-                                                    type: integer
-                                                used:
-                                                    type: integer
-                                                free:
-                                                    type: integer
-                                                percent:
-                                                    type: number
-                                            required:
-                                                - total
-                                                - used
-                                                - free
-                                                - percent
-                                    required:
-                                        - index
-                                        - memory
-                                        - name
-                        required:
-                            - memory
-                            - cpu
-
-    """
-
+async def usage(*, request: Request) -> Usage:
+    """Report the memory, CPU and GPU use of the server and kernel."""
     try:
         import psutil
 
@@ -303,29 +210,28 @@ async def usage(request: Request) -> JSONResponse:
         has_psutil = False
 
     if cgroup_mem_stats := get_cgroup_mem_stats():
-        memory_stats = {
-            "has_cgroup_mem_limit": True,
-            **cgroup_mem_stats,
-        }
+        memory_stats = MemoryUsage(
+            has_cgroup_mem_limit=True, **cgroup_mem_stats
+        )
     elif has_psutil:
         memory = psutil.virtual_memory()
-        memory_stats = {
-            "total": memory.total,
-            "available": memory.available,
-            "percent": memory.percent,
-            "used": memory.used,
-            "free": memory.free,
-            "has_cgroup_mem_limit": False,
-        }
+        memory_stats = MemoryUsage(
+            total=memory.total,
+            available=memory.available,
+            percent=memory.percent,
+            used=memory.used,
+            free=memory.free,
+            has_cgroup_mem_limit=False,
+        )
     else:
-        memory_stats = {
-            "total": None,
-            "available": None,
-            "percent": None,
-            "used": None,
-            "free": None,
-            "has_cgroup_mem_limit": False,
-        }
+        memory_stats = MemoryUsage(
+            total=None,
+            available=None,
+            percent=None,
+            used=None,
+            free=None,
+            has_cgroup_mem_limit=False,
+        )
 
     cpu = get_cgroup_cpu_percent()
     if cpu is None and has_psutil:
@@ -376,44 +282,27 @@ async def usage(request: Request) -> JSONResponse:
     elif gpu_available == "amd":
         gpu_stats = _parse_amd_smi_stats()
 
-    return JSONResponse(
-        {
-            # computer memory or container memory
-            "memory": memory_stats,
-            # marimo server
-            "server": {
-                "memory": server_memory,
-            },
-            # marimo kernel (for the given session)
-            "kernel": {
-                "memory": kernel_memory,
-            },
-            "cpu": {
-                "percent": cpu,
-            },
-            "gpu": gpu_stats,
-        }
+    return Usage(
+        memory=memory_stats,
+        server=ProcessUsage(memory=server_memory),
+        # The kernel of the caller's session
+        kernel=ProcessUsage(memory=kernel_memory),
+        cpu=CpuUsage(percent=cpu),
+        gpu=msgspec.convert(gpu_stats, list[GpuUsage]),
     )
 
 
-@router.get("/api/status/connections")
+class Connections(msgspec.Struct):
+    active: int
+
+
+@tool("status_connections", output=Connections)
 @requires("read")
-async def connections(request: Request) -> JSONResponse:
-    """
-    responses:
-        200:
-            description: Get the number of active websocket connections
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            active:
-                                type: integer
-    """
+async def connections(*, request: Request) -> Connections:
+    """Count the clients connected to the server."""
     app_state = AppState(request)
-    return JSONResponse(
-        {"active": app_state.session_manager.get_active_connection_count()}
+    return Connections(
+        active=app_state.session_manager.get_active_connection_count()
     )
 
 

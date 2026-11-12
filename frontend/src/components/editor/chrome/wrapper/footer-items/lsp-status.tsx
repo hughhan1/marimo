@@ -6,13 +6,9 @@ import type React from "react";
 import { Spinner } from "@/components/icons/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
-import { API } from "@/core/network/api";
+import { getTools } from "@/core/network/holon";
 import { connectionAtom } from "@/core/network/connection";
-import type {
-  LspHealthResponse,
-  LspRestartRequest,
-  LspRestartResponse,
-} from "@/core/network/types";
+import type { LspHealthResponse } from "@/core/network/types";
 import { isWasm } from "@/core/wasm/utils";
 import { isAppConnected } from "@/core/session/connection-utils";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -32,7 +28,7 @@ export const LspStatus: React.FC = () => {
     }
 
     try {
-      const health = await API.get<LspHealthResponse>("/lsp/health");
+      const health = await (await getTools()).lsp_health({});
       setLspHealth(health);
       return health;
     } catch {
@@ -47,10 +43,7 @@ export const LspStatus: React.FC = () => {
 
   const handleRestart = async () => {
     try {
-      const result = await API.post<LspRestartRequest, LspRestartResponse>(
-        "/lsp/restart",
-        {},
-      );
+      const result = await (await getTools()).lsp_restart({});
 
       if (result.success) {
         toast({

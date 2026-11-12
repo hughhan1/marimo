@@ -32,8 +32,8 @@ def test_cli_development_openapi() -> None:
         capture_output=True,
     )
     assert p.returncode == 0
-    # Check a random endpoint
-    assert "/api/export/html" in p.stdout.decode()
+    # Check a shared type
+    assert "NotificationMessage" in p.stdout.decode()
 
 
 def test_openapi_up_to_date() -> None:

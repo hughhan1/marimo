@@ -23,12 +23,6 @@ from marimo._server.host.events import (
     MarimoEvent,
     notification_event,
     serialize_event,
-    serialize_sse_event,
-)
-from marimo._server.sse import (
-    HEARTBEAT_EVENT,
-    format_close_event,
-    wait_for_http_disconnect,
 )
 from marimo._session.managers.ipc import KernelStartupError
 from marimo._utils.asyncio_utils import cancel_and_wait
@@ -49,7 +43,9 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class _Close:
+class Close:
+    """Ends a stream with a WebSocket close code and reason."""
+
     code: int
     reason: str
 
@@ -67,7 +63,6 @@ class SessionEventStream(SessionHandler):
         params: ConnectionParams,
         types: set[str] | None,
         cursor: str | None,
-        heartbeat_seconds: float = 20.0,
     ) -> None:
         super().__init__(
             manager=manager,
@@ -75,7 +70,6 @@ class SessionEventStream(SessionHandler):
             mode=manager.mode,
         )
         self.connection = connection
-        self.heartbeat_seconds = heartbeat_seconds
         self._stream_finished = False
         self.notebook = notebook
         self.bridge = bridge
@@ -84,7 +78,7 @@ class SessionEventStream(SessionHandler):
         self._attachment: protocol.Attachment | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._ready_id = 0
-        self._events: asyncio.Queue[RoutedEvent | _Close | None] = (
+        self._events: asyncio.Queue[RoutedEvent | Close | None] = (
             asyncio.Queue()
         )
 
@@ -140,7 +134,7 @@ class SessionEventStream(SessionHandler):
 
     async def stream(
         self,
-    ) -> AsyncGenerator[RoutedEvent | _Close | None, None]:
+    ) -> AsyncGenerator[RoutedEvent | Close, None]:
         """Broker the session and deliver its host events until disconnect."""
         try:
             if self.notebook is not None:
@@ -170,17 +164,11 @@ class SessionEventStream(SessionHandler):
                 listening = asyncio.create_task(connect_and_listen())
                 try:
                     while True:
-                        try:
-                            event = await asyncio.wait_for(
-                                self._events.get(), self.heartbeat_seconds
-                            )
-                        except TimeoutError:
-                            yield None
-                            continue
+                        event = await self._events.get()
                         if event is None:
                             await listening
                             return
-                        if isinstance(event, _Close):
+                        if isinstance(event, Close):
                             yield event
                             return
                         if isinstance(event.event, MarimoEvent):
@@ -201,7 +189,8 @@ class SessionEventStream(SessionHandler):
             if self.notebook is not None and self._attachment is not None:
                 self.notebook.detach(self._attachment.id)
 
-    def _serialize(self, event: RoutedEvent) -> str:
+    def serialize(self, event: RoutedEvent) -> str:
+        """An event as the text of one frame, with code when it may be sent."""
         return serialize_event(
             event, include_code=self.manager.should_send_code_to_frontend()
         )
@@ -214,42 +203,26 @@ class SessionEventStream(SessionHandler):
         try:
             async with aclosing(self.stream()) as events:
                 async for event in events:
-                    if isinstance(event, _Close):
+                    if isinstance(event, Close):
                         if (
                             websocket.client_state
                             is not WebSocketState.DISCONNECTED
                         ):
                             await websocket.close(event.code, event.reason)
-                    elif event is not None:
-                        await websocket.send_text(self._serialize(event))
+                    else:
+                        await websocket.send_text(self.serialize(event))
         except WebSocketDisconnect:
             pass
 
-    async def sse(self) -> AsyncGenerator[str, None]:
-        """Frame the same host envelopes as SSE, including close and heartbeat."""
-        async with aclosing(self.stream()) as events:
-            async for event in events:
-                if isinstance(event, _Close):
-                    yield format_close_event(event.code, event.reason)
-                elif event is None:
-                    yield HEARTBEAT_EVENT
-                else:
-                    yield serialize_sse_event(
-                        event,
-                        include_code=self.manager.should_send_code_to_frontend(),
-                    )
-
     async def _wait_for_disconnect(self) -> None:
-        if isinstance(self.connection, WebSocket):
-            while True:
-                message = await self.connection.receive()
-                if message["type"] == "websocket.disconnect":
-                    return
-        else:
-            await wait_for_http_disconnect(self.connection)
+        assert isinstance(self.connection, WebSocket)
+        while True:
+            message = await self.connection.receive()
+            if message["type"] == "websocket.disconnect":
+                return
 
     def _request_close(self, code: int, reason: str) -> None:
-        self._events.put_nowait(_Close(code, reason))
+        self._events.put_nowait(Close(code, reason))
 
     def _is_transport_connected(self) -> bool:
         return not self._stream_finished

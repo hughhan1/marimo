@@ -18,18 +18,32 @@ vi.mock("../../wasm/utils", () => ({ isWasm: () => wasm.enabled }));
 vi.mock("../../wasm/bridge", () => ({
   PyodideBridge: { INSTANCE: { createNotebookBackend: wasm.create } },
 }));
+// Each subscription to the session event, which never confirms.
+const subscribed = vi.hoisted((): unknown[] => []);
+vi.mock("../../network/holon", () => ({
+  getMarimo: async () => ({
+    ext: {
+      events: {
+        subscribe: (_name: string, args: unknown) => {
+          subscribed.push(args);
+          return new Promise(() => undefined);
+        },
+      },
+    },
+  }),
+}));
 
 afterEach(() => {
   wasm.enabled = false;
   wasm.create.mockReset();
+  subscribed.length = 0;
   vi.unstubAllGlobals();
 });
 
 const options = {
   static: false,
   snapshot: null,
-  transportType: "websocket" as const,
-  url: () => "ws://localhost/ws",
+  sessionArguments: () => ({ session_id: "s1", query_params: "" }),
   headers: () => ({}),
   notebookUrl: (id: string) =>
     new URL(`http://localhost/api/marimo/v1/notebooks/${id}`),
@@ -37,43 +51,22 @@ const options = {
   checkHealth: async () => true,
 };
 
-/** Record each socket the transport opens. They never connect. */
-function sockets() {
-  const opened: string[] = [];
-  vi.stubGlobal(
-    "WebSocket",
-    class extends EventTarget {
-      public constructor(url: URL) {
-        super();
-        opened.push(String(url));
-      }
-      public close() {}
-    },
-  );
-  return opened;
-}
-
 describe("createEditorBackend", () => {
   it.each([
     ["a static notebook", { ...options, static: true }, "idle"],
     ["WASM", options, "wasm"],
-    ["SSE", { ...options, transportType: "sse" as const }, "fetch"],
-    ["the default", options, "socket"],
+    ["the server", options, "events"],
   ] as const)("follows %s", async (_name, chosen, expected) => {
     wasm.enabled = expected === "wasm";
     const worker = vi.fn(() => new Promise<void>(() => undefined));
     wasm.create.mockResolvedValue(fakeBackend({ transport: worker }));
-    const fetch = vi.fn(() => new Promise<Response>(() => undefined));
-    const opened = sockets();
-    vi.stubGlobal("fetch", fetch);
     const events = new NotebookEvents(createEditorBackend(chosen).transport);
     await vi.waitFor(() =>
       expect(
         {
           idle: events.status === "connected" && !wasm.create.mock.calls.length,
           wasm: worker.mock.calls.length === 1,
-          fetch: fetch.mock.calls.length === 1,
-          socket: opened.length === 1,
+          events: subscribed.length === 1,
         }[expected],
       ).toBe(true),
     );
@@ -162,7 +155,7 @@ describe("the session backend's startup", () => {
   it.each([true, false])(
     "rechecks health after failed startup (healthy: %s)",
     async (healthy) => {
-      const opened = sockets();
+      const opened = subscribed;
       const waitUntilReady = vi
         .fn()
         .mockRejectedValue(new Error("Startup gave up"));
@@ -196,7 +189,7 @@ describe("the session backend's startup", () => {
   );
 
   it("shares one startup wait across connections", async () => {
-    const opened = sockets();
+    const opened = subscribed;
     const ready = new Deferred<void>();
     const waitUntilReady = vi.fn(() => ready.promise);
     const backend = createEditorBackend({ ...options, waitUntilReady });
@@ -213,7 +206,7 @@ describe("the session backend's startup", () => {
   });
 
   it("opens nothing for a connection that ended during startup", async () => {
-    const opened = sockets();
+    const opened = subscribed;
     const ready = new Deferred<void>();
     const store = createStore();
     const client = createNotebookReplica(store);

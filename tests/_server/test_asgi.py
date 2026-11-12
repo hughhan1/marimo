@@ -20,6 +20,7 @@ from marimo._server.asgi import (
     create_asgi_app,
 )
 from tests._server.conftest import join_kernel_thread_tasks
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -86,11 +87,11 @@ class TestASGIAppBuilder(unittest.TestCase):
         with TestClient(app) as client:
             try:
                 with (
-                    client.websocket_connect(
-                        "/one/ws?session_id=visitor"
+                    connect_session(
+                        client, "/one/ws?session_id=visitor"
                     ) as one,
-                    client.websocket_connect(
-                        "/two/ws?session_id=visitor"
+                    connect_session(
+                        client, "/two/ws?session_id=visitor"
                     ) as two,
                 ):
                     snapshots = [socket_snapshot(ws) for ws in (one, two)]
@@ -432,9 +433,9 @@ class TestASGIAppBuilder(unittest.TestCase):
         assert response.status_code == 200
         assert custom_head in response.text
 
-    def test_asgi_auth_middleware_propagates_to_http_and_websocket(self):
+    def test_asgi_auth_middleware_propagates_to_http_and_session_events(self):
         """Test that a pure ASGI middleware sets scope['user'] and scope['meta']
-        for both HTTP and WebSocket connections (the recommended pattern)."""
+        for pages and the session's event stream (the recommended pattern)."""
 
         # Track which scope types the middleware was invoked for
         invoked_for: list[str] = []
@@ -471,8 +472,8 @@ class TestASGIAppBuilder(unittest.TestCase):
                 assert response.status_code == 200
                 assert "http" in invoked_for
 
-                # WebSocket should also have user/meta in scope.
-                with client.websocket_connect("/ws?session_id=test123") as ws:
+                # The session's events should also have user/meta in scope.
+                with connect_session(client, "/ws?session_id=test123") as ws:
                     data = ws.receive_text()
                     assert data  # kernel-ready message
             finally:
@@ -482,7 +483,7 @@ class TestASGIAppBuilder(unittest.TestCase):
                 client.portal.call(join_kernel_thread_tasks, session_manager)
 
         assert not session_manager.sessions
-        assert "websocket" in invoked_for
+        assert invoked_for == ["http", "http"]
 
 
 class TestDynamicDirectoryMiddleware(unittest.TestCase):

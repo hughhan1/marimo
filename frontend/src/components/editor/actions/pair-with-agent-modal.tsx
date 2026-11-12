@@ -15,8 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copyToClipboard } from "@/utils/copy";
 import { Events } from "@/utils/events";
 import { Tooltip } from "@/components/ui/tooltip";
-import { asRemoteURL, useRuntimeManager } from "@/core/runtime/config";
-import { API } from "@/core/network/api";
+import { useRuntimeManager } from "@/core/runtime/config";
+import { getTools } from "@/core/network/holon";
 import { pairConfigAtom } from "@/core/config/pair";
 import { stableSessionIdAtom } from "@/core/kernel/session";
 import {
@@ -33,12 +33,8 @@ import {
 function useAuthToken(): string | null {
   const [token, setToken] = useState<string | null>(null);
   useEffect(() => {
-    fetch(asRemoteURL("/auth/token").href, {
-      headers: API.headers(),
-    })
-      .then((res) =>
-        res.ok ? (res.json() as Promise<{ token: string | null }>) : null,
-      )
+    getTools()
+      .then((tools) => tools.auth_token({}))
       .then((data) => setToken(data?.token ?? null))
       .catch(() => setToken(null));
   }, []);
@@ -68,9 +64,8 @@ export const PairWithAgentModal: React.FC<{
       return;
     }
     let cancelled = false;
-    API.get<Record<string, { session_id: string; notebook_id: string | null }>>(
-      "/sessions",
-    )
+    getTools()
+      .then((tools) => tools.sessions({}))
       .then((sessions) => {
         if (!cancelled) {
           const session = Object.values(sessions).find(

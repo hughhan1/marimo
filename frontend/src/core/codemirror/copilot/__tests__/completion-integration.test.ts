@@ -20,6 +20,22 @@ const fixture: { client?: CopilotLanguageServerClient } = vi.hoisted(
   () => ({}),
 );
 
+// The tool answers as the existing `API.post` spies do.
+vi.mock("@/core/network/holon", async (importOriginal) => {
+  const { API } = await import("@/core/network/api");
+  return {
+    ...(await importOriginal<typeof import("@/core/network/holon")>()),
+    getTools: async () => ({
+      ai_inline_completion: async (
+        body: unknown,
+        options: { signal?: AbortSignal },
+      ) => ({
+        text: await API.post("/ai/inline_completion", body, options),
+      }),
+    }),
+  };
+});
+
 vi.mock("../client", () => ({
   COPILOT_FILENAME: "/__marimo_copilot__.py",
   getCopilotClient: () => fixture.client,

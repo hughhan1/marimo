@@ -29,6 +29,23 @@ import { PairWithAgentModal } from "../pair-with-agent-modal";
 import { Deferred } from "@/utils/Deferred";
 import { copyToClipboard } from "@/utils/copy";
 
+// The tools answer as the existing fetch mocks do, by the route they replaced.
+vi.mock("@/core/network/holon", () => {
+  const read = (route: string) => async () => {
+    const response = await fetch(route);
+    if (!response.ok) {
+      throw new Error(`Failed to read ${route}`);
+    }
+    return response.json();
+  };
+  return {
+    getTools: async () => ({
+      sessions: read("/api/sessions"),
+      auth_token: read("/auth/token"),
+    }),
+  };
+});
+
 vi.mock("@/utils/copy", () => ({
   copyToClipboard: vi.fn().mockResolvedValue(undefined),
 }));

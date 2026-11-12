@@ -14,6 +14,7 @@ from typing import (
 )
 from urllib.parse import quote, urljoin, urlparse
 
+from mcp.shared.inbound import MCP_METHOD_HEADER
 from starlette import status
 from starlette.authentication import (
     AuthCredentials,
@@ -110,17 +111,15 @@ class AuthBackend(AuthenticationBackend):
         raise ValueError(f"Invalid session mode: {mode}")
 
 
-class WebSocketOriginMiddleware:
-    """Apply the server's origin policy to WebSocket handshakes."""
+class OriginPolicy:
+    """Which browser origins may open a socket or call a tool endpoint.
+
+    Non-browser clients send no Origin and are not restricted here.
+    """
 
     def __init__(
-        self,
-        app: ASGIApp,
-        *,
-        allow_origins: tuple[str, ...] = (),
-        host: str | None = None,
+        self, allow_origins: tuple[str, ...] = (), host: str | None = None
     ) -> None:
-        self.app = app
         self.trusted_hosts = {"localhost", "127.0.0.1", "::1"}
         if host is not None:
             self.trusted_hosts.add(host.strip("[]").lower())
@@ -188,6 +187,40 @@ class WebSocketOriginMiddleware:
         except ValueError:
             return False
 
+    def allows(
+        self, origins: list[str], host: str, scheme: str, scope: Scope
+    ) -> bool:
+        """Whether a request with these Origin headers may proceed."""
+        if not origins:
+            return True
+        origin = self._parse_origin(origins[0]) if len(origins) == 1 else None
+        if origin is None:
+            return False
+        server_origin = self._parse_origin(f"{scheme}://{host}")
+        return (
+            (
+                origin == server_origin
+                and self._is_trusted_host(origin[1], scope)
+            )
+            or origin in self.allow_origins
+            or self.allow_all_origins
+        )
+
+
+class WebSocketOriginMiddleware:
+    """Apply the server's origin policy to WebSocket handshakes."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        allow_origins: tuple[str, ...] = (),
+        host: str | None = None,
+        policy: OriginPolicy | None = None,
+    ) -> None:
+        self.app = app
+        self.policy = policy or OriginPolicy(allow_origins, host)
+
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
@@ -195,23 +228,12 @@ class WebSocketOriginMiddleware:
             return await self.app(scope, receive, send)
 
         websocket = WebSocket(scope, receive, send)
-        origins = websocket.headers.getlist("origin")
-        # Non-browser clients may omit Origin.
-        if not origins:
-            return await self.app(scope, receive, send)
-
-        origin = self._parse_origin(origins[0]) if len(origins) == 1 else None
         scheme = "https" if scope["scheme"] == "wss" else "http"
-        server_origin = self._parse_origin(
-            f"{scheme}://{websocket.headers.get('host', '')}"
-        )
-        if origin is not None and (
-            (
-                origin == server_origin
-                and self._is_trusted_host(origin[1], scope)
-            )
-            or origin in self.allow_origins
-            or self.allow_all_origins
+        if self.policy.allows(
+            websocket.headers.getlist("origin"),
+            websocket.headers.get("host", ""),
+            scheme,
+            scope,
         ):
             return await self.app(scope, receive, send)
 
@@ -221,6 +243,15 @@ class WebSocketOriginMiddleware:
 
 
 class SkewProtectionMiddleware:
+    """Refuse a page built for another server, and a cross-site form.
+
+    The page embeds its server's token, and the editor sends it with every
+    request that changes state. A request with a different token comes from
+    a page that outlived the server it was loaded from. A request without
+    one, to a route a form could reach, may be a cross-site form, which
+    cannot read the page and so cannot send the token.
+    """
+
     HEADER_NAME: Final[str] = "Marimo-Server-Token"
 
     def __init__(self, app: ASGIApp) -> None:
@@ -234,26 +265,43 @@ class SkewProtectionMiddleware:
 
         request = Request(scope)
         state = AppState.from_app(request.app)
+        path = request.url.path.rstrip("/")
 
         # Only requests that change state need the token
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return await self.app(scope, receive, send)
         # Skip the login form submission. The login page is a server-rendered
         # plain HTML form and does not attach the server token header.
-        if request.url.path.rstrip("/").endswith("/auth/login"):
+        if path.endswith("/auth/login"):
             return await self.app(scope, receive, send)
         # If /api/kernel/execute, skip (agent-only endpoint)
-        if request.url.path.rstrip("/").endswith("/api/kernel/execute"):
+        if path.endswith("/api/kernel/execute"):
             return await self.app(scope, receive, send)
         # If ws, skip
         if request.url.path.startswith("/ws") or request.url.path.endswith(
             "/ws"
         ):
             return await self.app(scope, receive, send)
+        # On the tool endpoint only a tool call changes state, so a page
+        # follows its session onto a restarted server, as its socket did.
+        if (
+            path.endswith("/api/mcp")
+            and request.headers.get(MCP_METHOD_HEADER, "tools/call")
+            != "tools/call"
+        ):
+            return await self.app(scope, receive, send)
+        if "/api/mcp/files/" in request.url.path:
+            return await self.app(scope, receive, send)
 
         expected = state.session_manager.skew_protection_token
         server_token = request.headers.get(self.HEADER_NAME)
         if server_token is None:
+            # Programs call the tools without a page. The tool endpoints
+            # refuse a browser at another origin themselves, and their
+            # transport refuses what a form can send, so there the token
+            # only marks the page the editor was loaded from.
+            if path.endswith("/mcp"):
+                return await self.app(scope, receive, send)
             LOGGER.warning(
                 "Received request with no server token (skew protection token). "
                 "This could mean the header is being stripped by a proxy. "

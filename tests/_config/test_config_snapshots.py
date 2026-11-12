@@ -48,7 +48,7 @@ def config_tree(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / "xdg"))
     monkeypatch.chdir(project)
     monkeypatch.delenv("MARIMO_RUNTIME_AUTO_INSTANTIATE", raising=False)
-    monkeypatch.delenv("MARIMO_SERVER_TRANSPORT", raising=False)
+    monkeypatch.delenv("MARIMO_RUNTIME_ON_CELL_CHANGE", raising=False)
     monkeypatch.setattr(GLOBAL_SETTINGS, "RESTRICT_SHARING", False)
     # These defaults are inferred at module import, before fixture isolation.
     # Package-manager inference has its own suite in test_config_packages.py.
@@ -239,7 +239,6 @@ def test_layered_configuration_snapshot(
         '[tool.marimo.ai.open_ai]\napi_key = "ignored-script-secret"\n',
     )
     monkeypatch.setenv("MARIMO_RUNTIME_AUTO_INSTANTIATE", "true")
-    monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", "sse")
     manager = get_default_config_manager(
         current_path=str(notebook)
     ).with_overrides(
@@ -314,7 +313,6 @@ def test_layered_configuration_snapshot(
                     "browser": "default",
                     "session_cookie_secure": False,
                     "disable_file_downloads": False,
-                    "transport": "sse",
                 },
                 "snippets": {
                     "custom_paths": [],
@@ -426,7 +424,6 @@ def test_layered_configuration_snapshot(
                     "browser": "default",
                     "session_cookie_secure": False,
                     "disable_file_downloads": False,
-                    "transport": "sse",
                 },
                 "snippets": {
                     "custom_paths": [],
@@ -605,7 +602,6 @@ def test_layered_configuration_snapshot(
                     "auto_instantiate": True,
                     "pythonpath": ["<root>/home/project/src"],
                 },
-                "server": {"transport": "sse"},
             },
             "script_unmasked": {
                 "formatting": {"line_length": 110},
@@ -923,23 +919,27 @@ def test_environment_snapshot(
 ) -> None:
     del config_tree
     cases: dict[str, Any] = {}
-    for transport, instantiate in [
-        ("sse", "true"),
-        ("websocket", "false"),
+    for on_cell_change, instantiate in [
+        ("lazy", "true"),
+        ("autorun", "false"),
         ("invalid", "true"),
     ]:
-        monkeypatch.setenv("MARIMO_SERVER_TRANSPORT", transport)
+        monkeypatch.setenv("MARIMO_RUNTIME_ON_CELL_CHANGE", on_cell_change)
         monkeypatch.setenv("MARIMO_RUNTIME_AUTO_INSTANTIATE", instantiate)
-        cases[transport] = EnvVarReader().read()
+        cases[on_cell_change] = EnvVarReader().read()
     assert cases == snapshot(
         {
-            "sse": {
-                "runtime": {"auto_instantiate": True},
-                "server": {"transport": "sse"},
+            "lazy": {
+                "runtime": {
+                    "auto_instantiate": True,
+                    "on_cell_change": "lazy",
+                },
             },
-            "websocket": {
-                "runtime": {"auto_instantiate": False},
-                "server": {"transport": "websocket"},
+            "autorun": {
+                "runtime": {
+                    "auto_instantiate": False,
+                    "on_cell_change": "autorun",
+                },
             },
             "invalid": {"runtime": {"auto_instantiate": True}},
         }

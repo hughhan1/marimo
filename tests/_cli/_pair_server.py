@@ -12,13 +12,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import websockets.sync.client
+from tests.mcp_request import (
+    SessionEvents,
+    connect_session,
+    tool_request,
+    tool_result,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
-
-    from websockets.sync.client import ClientConnection
 
 
 @dataclass(frozen=True)
@@ -28,7 +31,7 @@ class PairTestServer:
     stable_session_id: str
     notebook_id: str
     _process: subprocess.Popen[bytes]
-    _websocket: ClientConnection
+    _session: SessionEvents
     _stderr_path: Path
     _token: str | None = None
 
@@ -51,8 +54,9 @@ class PairTestServer:
                     "marimo server exited with code "
                     f"{self._process.returncode}:\n{_tail(self._stderr_path)}"
                 )
-            request = urllib.request.Request(
-                f"{self.url}/api/kernel/status",
+            request = tool_request(
+                self.url,
+                "kernel_status",
                 headers={
                     **self._headers,
                     "Marimo-Session-Id": self.session_id,
@@ -60,7 +64,9 @@ class PairTestServer:
             )
             try:
                 with urllib.request.urlopen(request, timeout=1) as response:
-                    current = json.load(response)["state"]
+                    current = tool_result(response)["structuredContent"][
+                        "state"
+                    ]
                 if current == state:
                     return
             except (OSError, KeyError, ValueError):
@@ -72,13 +78,11 @@ class PairTestServer:
 
     def close(self) -> None:
         try:
-            request = urllib.request.Request(
-                f"{self.url}/api/kernel/restart_session",
-                method="POST",
-                data=b"{}",
+            request = tool_request(
+                self.url,
+                "kernel_restart_session",
                 headers={
                     **self._headers,
-                    "Content-Type": "application/json",
                     "Marimo-Session-Id": self.session_id,
                 },
             )
@@ -86,10 +90,7 @@ class PairTestServer:
                 pass
         except OSError:
             pass
-        try:
-            self._websocket.close()
-        except OSError:
-            pass
+        self._session.close()
         _stop_process(self._process)
 
 
@@ -138,7 +139,7 @@ def _wait_for_server(
 
 
 def _wait_for_kernel_ready(
-    websocket: ClientConnection,
+    session: SessionEvents,
     *,
     timeout: float = 10.0,
 ) -> str:
@@ -148,7 +149,7 @@ def _wait_for_kernel_ready(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("kernel did not become ready")
-        event = json.loads(websocket.recv(timeout=remaining))
+        event = json.loads(session.recv(timeout=remaining))
         if event["event"] == "notebook":
             notebook_id = event["data"]["notebook"]["id"]
         if event["event"] != "marimo":
@@ -194,7 +195,6 @@ def _start_server(
                         if token
                         else ["--no-token"]
                     ),
-                    "--no-skew-protection",
                     "--port",
                     str(port),
                 ],
@@ -225,20 +225,19 @@ def pair_test_server(
     process, url = _start_server(notebook, stderr_path, token=token)
     try:
         session_id = f"pair_{uuid.uuid4().hex[:8]}"
-        websocket = websockets.sync.client.connect(
-            f"{url.replace('http://', 'ws://', 1)}/ws?session_id={session_id}",
-            open_timeout=5,
-            additional_headers={"Authorization": f"Bearer {token}"}
-            if token
-            else {},
+        session = connect_session(
+            url,
+            session_id,
+            headers={"Authorization": f"Bearer {token}"} if token else {},
         )
-        notebook_id = _wait_for_kernel_ready(websocket)
-        request = urllib.request.Request(
-            f"{url}/api/sessions",
+        notebook_id = _wait_for_kernel_ready(session)
+        request = tool_request(
+            url,
+            "sessions",
             headers={"Authorization": f"Bearer {token}"} if token else {},
         )
         with urllib.request.urlopen(request, timeout=5) as response:
-            sessions = json.load(response)
+            sessions = tool_result(response)["structuredContent"]
         assert sessions[session_id]["notebook_id"] == notebook_id
         stable_session_id = sessions[session_id]["session_id"]
         server = PairTestServer(
@@ -247,7 +246,7 @@ def pair_test_server(
             stable_session_id=stable_session_id,
             notebook_id=notebook_id,
             _process=process,
-            _websocket=websocket,
+            _session=session,
             _stderr_path=stderr_path,
             _token=token,
         )

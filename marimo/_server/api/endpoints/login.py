@@ -4,16 +4,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlparse
 
+import msgspec
 from starlette.authentication import requires
 from starlette.responses import (
     HTMLResponse,
-    JSONResponse,
     RedirectResponse,
     Response,
 )
 
 from marimo._server.api.auth import validate_auth
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import tool
 from marimo._server.router import APIRouter
 
 if TYPE_CHECKING:
@@ -76,32 +77,7 @@ LOGIN_PAGE = """
 
 @router.post("/login")
 async def login_submit(request: Request) -> Response:
-    """
-    tags: [auth]
-    summary: Submit login form
-    requestBody:
-        content:
-            application/x-www-form-urlencoded:
-                schema:
-                    type: object
-                    properties:
-                        password:
-                            type: string
-                            description: Access token or password
-    responses:
-        302:
-            description: Redirect to the next URL
-            headers:
-                Location:
-                    schema:
-                        type: string
-        200:
-            description: Login page
-            content:
-                text/html:
-                    schema:
-                        type: string
-    """
+    """Submit the login form."""
     base_url = AppState(request).base_url or "/"
     base_url = _with_trailing_slash(base_url)
 
@@ -154,31 +130,18 @@ async def login_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/token")
+class AuthTokenResponse(msgspec.Struct):
+    token: str | None
+
+
+@tool("auth_token", output=AuthTokenResponse)
 @requires("edit")
-async def auth_token(request: Request) -> JSONResponse:
-    """
-    tags: [auth]
-    summary: Get the auth token for the current session
-    responses:
-        200:
-            description: The auth token (null if auth is disabled)
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            token:
-                                type: string
-                                nullable: true
-    """
+async def auth_token(*, request: Request) -> AuthTokenResponse:
+    """Get the auth token for the current session, null when auth is off."""
     state = AppState(request)
-    no_cache = {"Cache-Control": "no-store"}
     if not state.enable_auth:
-        return JSONResponse({"token": None}, headers=no_cache)
-    return JSONResponse(
-        {"token": str(state.session_manager.auth_token)}, headers=no_cache
-    )
+        return AuthTokenResponse(token=None)
+    return AuthTokenResponse(token=str(state.session_manager.auth_token))
 
 
 def _with_trailing_slash(url: str) -> str:

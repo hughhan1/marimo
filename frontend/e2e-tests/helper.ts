@@ -102,8 +102,7 @@ export async function pressShortcut(page: Page, action: HotkeyAction) {
  * Download HTML of the current notebook and take a screenshot
  */
 export async function exportAsHTMLAndTakeScreenshot(page: Page) {
-  // Wait for networkidle so that the notebook is fully loaded
-  await page.waitForLoadState("networkidle");
+  await waitForMarimoApp(page);
 
   await openCommandPalette({ page, command: "Download as HTML" });
 
@@ -148,8 +147,7 @@ export async function exportAsHTMLAndTakeScreenshot(page: Page) {
 }
 
 export async function exportAsPNG(page: Page) {
-  // Wait for networkidle so that the notebook is fully loaded
-  await page.waitForLoadState("networkidle");
+  await waitForMarimoApp(page);
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),

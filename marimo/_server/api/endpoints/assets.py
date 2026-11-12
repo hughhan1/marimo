@@ -538,26 +538,6 @@ STATIC_FILES = [
 def virtual_file(
     request: Request,
 ) -> Response:
-    """
-    parameters:
-        - in: path
-          name: filename_and_length
-          required: true
-          schema:
-            type: string
-          description: The filename and byte length of the virtual file
-    responses:
-        200:
-            description: Get a virtual file
-            content:
-                application/octet-stream:
-                    schema:
-                        type: string
-        404:
-            description: Invalid virtual file request
-        404:
-            description: Invalid byte length in virtual file request
-    """
     # Auth is normally required via `@requires("read")`, but can be bypassed
     # with the `_MARIMO_DISABLE_AUTH_ON_VIRTUAL_FILES` env var for
     # sandboxed/embedded deployments where virtual file URLs must be

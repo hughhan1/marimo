@@ -107,9 +107,9 @@ def test_base_url() -> None:
     assert response.status_code == 404, response.text
 
     # API, fails when missing base_url
-    response = client.get("/foo/api/status")
+    response = client.get("/foo/api/status", headers=token_header())
     assert response.status_code == 200, response.text
-    response = client.get("/api/status")
+    response = client.get("/api/status", headers=token_header())
     assert response.status_code == 404, response.text
 
 
@@ -147,21 +147,31 @@ def with_server(app: Starlette) -> Starlette:
     return app
 
 
-def test_skew_protection_skips_execute(edit_app: Starlette) -> None:
-    """POST /api/kernel/execute is exempt from skew protection."""
-    client = TestClient(edit_app, raise_server_exceptions=False)
+def test_skew_protection_admits_a_caller_without_a_token(
+    edit_app: Starlette,
+) -> None:
+    """A program calling a tool has no page, so it sends no server token."""
+    client = TestClient(edit_app)
+    headers = token_header("fake-token")
+    del headers["Marimo-Server-Token"]
+    response = client.post("/api/home/running_notebooks", headers=headers)
+    assert response.status_code == 200, response.text
 
-    # An invalid skew token would normally return 401, but the execute
-    # endpoint is exempt.  The endpoint itself will fail (no session),
-    # but it should NOT be blocked by skew protection (401).
-    response = client.post(
-        "/api/kernel/execute",
-        headers=token_header("fake-token", "wrong-skew-id"),
-        json={"code": "1+1"},
-    )
-    assert response.status_code != 401, (
-        "skew protection should not gate /api/kernel/execute"
-    )
+
+def test_skew_protection_still_guards_marimos_own_mcp_server(
+    edit_app: Starlette,
+) -> None:
+    """Only the tool endpoints admit a caller without a token.
+
+    marimo's own MCP server is not one of them, so the startup banner
+    prints the token for an agent to send.
+    """
+    client = TestClient(edit_app)
+    headers = token_header("fake-token")
+    del headers["Marimo-Server-Token"]
+    response = client.post("/mcp/server", headers=headers, json={})
+    assert response.status_code == 401, response.text
+    assert response.json() == {"error": "Missing server token"}
 
 
 def test_skew_protection_enforced_for_form_content_type(
@@ -179,11 +189,12 @@ def test_skew_protection_enforced_for_form_content_type(
     )
     assert response.status_code == 401, response.text
 
-    # And a valid skew token still passes.
+    # And a valid skew token still passes. The tool takes no arguments, so
+    # the form is empty.
     response = client.post(
         "/api/home/running_notebooks",
         headers=token_header("fake-token"),
-        data={"foo": "bar"},
+        data={},
     )
     assert response.status_code == 200, response.text
 

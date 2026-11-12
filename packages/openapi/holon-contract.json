@@ -1,0 +1,5992 @@
+{
+  "identity": {
+    "name": "io.marimo/editor",
+    "version": "0.0.0"
+  },
+  "schema": {
+    "tools": [
+      {
+        "name": "ai_inline_completion",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prefix": {
+              "type": "string"
+            },
+            "suffix": {
+              "type": "string"
+            },
+            "language": {
+              "enum": [
+                "markdown",
+                "python",
+                "sql"
+              ],
+              "default": "python"
+            }
+          },
+          "required": [
+            "prefix",
+            "suffix"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "TextResponse",
+          "description": "A reply that is text for the caller, such as a version or some code.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "ai_invoke_tool",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "toolName",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "InvokeAiToolResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "toolName": {
+              "type": "string"
+            },
+            "result": {},
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success",
+            "toolName",
+            "result"
+          ]
+        }
+      },
+      {
+        "name": "ai_mcp_refresh",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "MCPRefreshResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "servers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "default": {}
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "ai_mcp_status",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "MCPStatusResponse",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "ok",
+                "partial"
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "servers": {
+              "type": "object",
+              "additionalProperties": {
+                "enum": [
+                  "connected",
+                  "disconnected",
+                  "failed",
+                  "pending"
+                ]
+              },
+              "default": {}
+            }
+          },
+          "required": [
+            "status"
+          ]
+        }
+      },
+      {
+        "name": "auth_token",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "AuthTokenResponse",
+          "type": "object",
+          "properties": {
+            "token": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "token"
+          ]
+        }
+      },
+      {
+        "name": "cache_clear",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "cache_info",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_discover",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_preview_column",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sourceType": {
+              "enum": [
+                "catalog",
+                "connection",
+                "duckdb",
+                "local"
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "tableName": {
+              "type": "string"
+            },
+            "columnName": {
+              "type": "string"
+            },
+            "fullyQualifiedTableName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "sourceType",
+            "source",
+            "tableName",
+            "columnName"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_preview_datasource_connection",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "engine": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "engine"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_preview_sql_schema_list",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "database": {
+              "type": "string"
+            },
+            "schemaPath": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "requestId",
+            "engine",
+            "database"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_preview_sql_table",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "database": {
+              "type": "string"
+            },
+            "schema": {
+              "type": "string"
+            },
+            "tableName": {
+              "type": "string"
+            },
+            "schemaPath": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "requestId",
+            "engine",
+            "database",
+            "schema",
+            "tableName"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "datasources_preview_sql_table_list",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "database": {
+              "type": "string"
+            },
+            "schema": {
+              "type": "string"
+            },
+            "schemaPath": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "requestId",
+            "engine",
+            "database",
+            "schema"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "documentation_snippets",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "Snippets",
+          "type": "object",
+          "properties": {
+            "snippets": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Snippet"
+              }
+            }
+          },
+          "required": [
+            "snippets"
+          ],
+          "$defs": {
+            "Snippet": {
+              "title": "Snippet",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/SnippetSection"
+                  }
+                }
+              },
+              "required": [
+                "title",
+                "sections"
+              ]
+            },
+            "SnippetSection": {
+              "title": "SnippetSection",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "html": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "code": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "environment",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "Environment",
+          "type": "object",
+          "properties": {
+            "marimo": {
+              "type": "string"
+            },
+            "editable": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": "string"
+            },
+            "OS": {
+              "type": "string"
+            },
+            "OS Version": {
+              "type": "string"
+            },
+            "Processor": {
+              "type": "string"
+            },
+            "Python Version": {
+              "type": "string"
+            },
+            "Locale": {
+              "type": "string"
+            },
+            "Binaries": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "Dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "Optional Dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "Experimental Flags": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "marimo",
+            "editable",
+            "location",
+            "OS",
+            "OS Version",
+            "Processor",
+            "Python Version",
+            "Locale",
+            "Binaries",
+            "Dependencies",
+            "Optional Dependencies",
+            "Experimental Flags"
+          ]
+        }
+      },
+      {
+        "name": "export_auto_export_html",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "includeCode": {
+              "type": "boolean"
+            },
+            "assetUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "layout": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LayoutConfig"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "download",
+            "files",
+            "includeCode"
+          ],
+          "$defs": {
+            "LayoutConfig": {
+              "title": "LayoutConfig",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "export_auto_export_ipynb",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "download"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "export_auto_export_markdown",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "download"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "export_availability",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "ExportAvailabilityResponse",
+          "type": "object",
+          "properties": {
+            "source": {
+              "enum": [
+                "server"
+              ]
+            },
+            "formats": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ExportFormatAvailability"
+              }
+            }
+          },
+          "required": [
+            "source",
+            "formats"
+          ],
+          "$defs": {
+            "ExportFormatAvailability": {
+              "title": "ExportFormatAvailability",
+              "type": "object",
+              "properties": {
+                "format": {
+                  "enum": [
+                    "html",
+                    "ipynb",
+                    "markdown",
+                    "pdf",
+                    "script"
+                  ]
+                },
+                "dependenciesAvailable": {
+                  "type": "boolean"
+                },
+                "missingPackages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "missingSetup": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ExportSetupRequirement"
+                  }
+                }
+              },
+              "required": [
+                "format",
+                "dependenciesAvailable",
+                "missingPackages",
+                "missingSetup"
+              ]
+            },
+            "ExportSetupRequirement": {
+              "title": "ExportSetupRequirement",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "enum": [
+                    "playwright-chromium"
+                  ]
+                },
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "command"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "export_html",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "includeCode": {
+              "type": "boolean"
+            },
+            "assetUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "layout": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LayoutConfig"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "download",
+            "files",
+            "includeCode"
+          ],
+          "$defs": {
+            "LayoutConfig": {
+              "title": "LayoutConfig",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "export_ipynb",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            },
+            "sortMode": {
+              "enum": [
+                "top-down",
+                "topological"
+              ],
+              "default": "top-down"
+            },
+            "includeOutputs": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": [
+            "download"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "export_markdown",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            },
+            "flavor": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "mdx",
+                    "mystmd",
+                    "pymdown",
+                    "qmd"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "download"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "export_pdf",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "webpdf": {
+              "type": "boolean"
+            },
+            "preset": {
+              "enum": [
+                "document",
+                "slides"
+              ],
+              "default": "document"
+            },
+            "includeInputs": {
+              "type": "boolean",
+              "default": false
+            },
+            "includeOutputs": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": [
+            "webpdf"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "export_requirements_install",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "enum": [
+                "html",
+                "ipynb",
+                "markdown",
+                "pdf",
+                "script"
+              ]
+            }
+          },
+          "required": [
+            "format"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "ExportAvailabilityResponse",
+          "type": "object",
+          "properties": {
+            "source": {
+              "enum": [
+                "server"
+              ]
+            },
+            "formats": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ExportFormatAvailability"
+              }
+            }
+          },
+          "required": [
+            "source",
+            "formats"
+          ],
+          "$defs": {
+            "ExportFormatAvailability": {
+              "title": "ExportFormatAvailability",
+              "type": "object",
+              "properties": {
+                "format": {
+                  "enum": [
+                    "html",
+                    "ipynb",
+                    "markdown",
+                    "pdf",
+                    "script"
+                  ]
+                },
+                "dependenciesAvailable": {
+                  "type": "boolean"
+                },
+                "missingPackages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "missingSetup": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ExportSetupRequirement"
+                  }
+                }
+              },
+              "required": [
+                "format",
+                "dependenciesAvailable",
+                "missingPackages",
+                "missingSetup"
+              ]
+            },
+            "ExportSetupRequirement": {
+              "title": "ExportSetupRequirement",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "enum": [
+                    "playwright-chromium"
+                  ]
+                },
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "command"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "export_script",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "download"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "export_update_cell_outputs",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "cellIdsToOutput": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  {
+                    "enum": [
+                      "application/json",
+                      "application/vnd.jupyter.widget-view+json",
+                      "application/vnd.marimo+error",
+                      "application/vnd.marimo+mimebundle",
+                      "application/vnd.marimo+traceback",
+                      "application/vnd.vega.v5+json",
+                      "application/vnd.vega.v6+json",
+                      "application/vnd.vegalite.v5+json",
+                      "application/vnd.vegalite.v6+json",
+                      "image/avif",
+                      "image/bmp",
+                      "image/gif",
+                      "image/jpeg",
+                      "image/png",
+                      "image/svg+xml",
+                      "image/tiff",
+                      "text/csv",
+                      "text/html",
+                      "text/latex",
+                      "text/markdown",
+                      "text/password",
+                      "text/plain",
+                      "video/mp4",
+                      "video/mpeg"
+                    ]
+                  },
+                  {}
+                ],
+                "items": false
+              }
+            }
+          },
+          "required": [
+            "cellIdsToOutput"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "files_copy",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "newPath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "newPath"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileCopyResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_create",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "directory",
+                "file",
+                "notebook"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "type",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileCreateResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_delete",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileDeleteResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "files_download",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "files_file_details",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "maxBytes": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileDetailsResponse",
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/FileInfo"
+            },
+            "contents": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "mimeType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "isBase64": {
+              "type": "boolean",
+              "default": false
+            },
+            "isTooLarge": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_list_files",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileListResponse",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileInfo"
+              }
+            },
+            "root": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "files",
+            "root"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_move",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "newPath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "newPath"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileMoveResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_open",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "lineNumber": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "BaseResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "files_roots",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileRootsResponse",
+          "type": "object",
+          "properties": {
+            "roots": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileRoot"
+              }
+            }
+          },
+          "required": [
+            "roots"
+          ],
+          "$defs": {
+            "FileRoot": {
+              "title": "FileRoot",
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "name",
+                "isPrimary"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "files_search",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "includeDirectories": {
+              "type": "boolean",
+              "default": true
+            },
+            "includeFiles": {
+              "type": "boolean",
+              "default": true
+            },
+            "includeHidden": {
+              "type": "boolean",
+              "default": true
+            },
+            "depth": {
+              "type": "integer",
+              "default": 3
+            },
+            "limit": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileSearchResponse",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileInfo"
+              }
+            },
+            "query": {
+              "type": "string"
+            },
+            "totalFound": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "files",
+            "query",
+            "totalFound"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_update",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "contents": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "contents"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileUpdateResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "files_upload",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "file": {
+              "type": "object",
+              "x-mcp-file": {
+                "maxSize": 1073741824
+              },
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "name": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "digest": {
+                  "type": "object",
+                  "properties": {
+                    "algorithm": {
+                      "const": "sha-256"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "algorithm",
+                    "value"
+                  ]
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "mimeType",
+                "size"
+              ]
+            }
+          },
+          "required": [
+            "path",
+            "name",
+            "file"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FileCreateResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FileInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "home_recent_files",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "RecentFilesResponse",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MarimoFile"
+              }
+            }
+          },
+          "required": [
+            "files"
+          ],
+          "$defs": {
+            "MarimoFile": {
+              "title": "MarimoFile",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "sessionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "initializationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "path"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "home_running_notebooks",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "RunningNotebooksResponse",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MarimoFile"
+              }
+            }
+          },
+          "required": [
+            "files"
+          ],
+          "$defs": {
+            "MarimoFile": {
+              "title": "MarimoFile",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "sessionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "initializationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "path"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "home_shutdown_session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "RunningNotebooksResponse",
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MarimoFile"
+              }
+            }
+          },
+          "required": [
+            "files"
+          ],
+          "$defs": {
+            "MarimoFile": {
+              "title": "MarimoFile",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "sessionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "initializationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "path"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "home_tutorial_open",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tutorialId": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "dataflow",
+                    "external-dependencies",
+                    "fileformat",
+                    "for-jupyter-users",
+                    "intro",
+                    "layout",
+                    "markdown",
+                    "plots",
+                    "sql",
+                    "ui"
+                  ]
+                },
+                {
+                  "enum": [
+                    "markdown-format"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "tutorialId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "MarimoFile",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "lastModified": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "sessionId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "initializationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "name",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "home_workspace_files",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "includeMarkdown": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "WorkspaceFilesResponse",
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileInfo"
+              }
+            },
+            "hasMore": {
+              "type": "boolean",
+              "default": false
+            },
+            "fileCount": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          "required": [
+            "root",
+            "files"
+          ],
+          "$defs": {
+            "FileInfo": {
+              "title": "FileInfo",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isDirectory": {
+                  "type": "boolean"
+                },
+                "isMarimoFile": {
+                  "type": "boolean"
+                },
+                "lastModified": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/FileInfo"
+                  },
+                  "default": []
+                },
+                "opengraph": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/OpenGraphMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "name",
+                "isDirectory",
+                "isMarimoFile"
+              ]
+            },
+            "OpenGraphMetadata": {
+              "title": "OpenGraphMetadata",
+              "description": "OpenGraph-style metadata for a notebook.\n\nThe `image` field may be either:\n- a relative path (typically under `__marimo__/`), or\n- an absolute HTTPS URL.",
+              "type": "object",
+              "properties": {
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "image": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "kernel_code_autocomplete",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "document": {
+              "type": "string"
+            },
+            "cellId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "document",
+            "cellId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_copy",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "destination": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "TextResponse",
+          "description": "A reply that is text for the caller, such as a version or some code.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "kernel_focus_cell",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "cellId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cellId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_format",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "codes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "lineLength": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "codes",
+            "lineLength"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "FormatResponse",
+          "type": "object",
+          "properties": {
+            "codes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "codes"
+          ]
+        }
+      },
+      {
+        "name": "kernel_function_call",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "functionCallId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "functionName": {
+              "type": "string"
+            },
+            "args": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "functionCallId",
+            "namespace",
+            "functionName",
+            "args"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_install_missing_packages",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "manager": {
+              "type": "string"
+            },
+            "versions": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "indexUrls": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "source": {
+              "enum": [
+                "kernel",
+                "server"
+              ],
+              "default": "kernel"
+            }
+          },
+          "required": [
+            "manager",
+            "versions"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_instantiate",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "objectIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "values": {
+              "type": "array"
+            },
+            "autoRun": {
+              "type": "boolean",
+              "default": true
+            },
+            "codes": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "objectIds",
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_pdb_breakpoints",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "breakpoints": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "breakpoints"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_pdb_pm",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "cellId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cellId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_read_code",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "ReadCodeResponse",
+          "type": "object",
+          "properties": {
+            "contents": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contents"
+          ]
+        }
+      },
+      {
+        "name": "kernel_rename",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "filename": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "filename"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_restart_session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_save_app_config",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "config": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "config"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "TextResponse",
+          "description": "A reply that is text for the caller, such as a version or some code.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "kernel_save_layout",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "layout": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_save_user_config",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "config": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "config"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_scratchpad_run",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "notebookCells": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/NotebookCell"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "cellOutputs": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CellOutputs"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "runId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "allowStdin": {
+              "type": "boolean",
+              "default": true
+            },
+            "codeFingerprint": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "$defs": {
+            "NotebookCell": {
+              "title": "NotebookCell",
+              "description": "A single cell in the document. Mutable \u2014 owned by the document.\n\n`version` increments on each `SetCode` that actually changes\n`code`. Other property changes don't bump it.",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "config": {
+                  "$ref": "#/$defs/CellConfig"
+                },
+                "version": {
+                  "type": "integer",
+                  "default": 0
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "config"
+              ]
+            },
+            "CellConfig": {
+              "title": "CellConfig",
+              "description": "Internal representation of a cell's configuration.\nThis is not part of the public API.",
+              "type": "object",
+              "properties": {
+                "column": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "disabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "hide_code": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "expand_output": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": []
+            },
+            "CellOutputs": {
+              "title": "CellOutputs",
+              "description": "Per-cell output snapshot delivered alongside the document snapshot.\n\n`output` carries the cell's last main (rich display) output;\n`console_outputs` carries the buffered stdout/stderr stream from\nits last execution.  Both are keyed by cell id; missing keys mean\n\"no output captured\" (the cell never ran, or produced nothing on\nthat channel).",
+              "type": "object",
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/CellOutput"
+                  }
+                },
+                "console_outputs": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/CellOutput"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "output",
+                "console_outputs"
+              ]
+            },
+            "CellOutput": {
+              "title": "CellOutput",
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "$ref": "#/$defs/CellChannel"
+                },
+                "mimetype": {
+                  "enum": [
+                    "application/json",
+                    "application/vnd.jupyter.widget-view+json",
+                    "application/vnd.marimo+error",
+                    "application/vnd.marimo+mimebundle",
+                    "application/vnd.marimo+traceback",
+                    "application/vnd.vega.v5+json",
+                    "application/vnd.vega.v6+json",
+                    "application/vnd.vegalite.v5+json",
+                    "application/vnd.vegalite.v6+json",
+                    "image/avif",
+                    "image/bmp",
+                    "image/gif",
+                    "image/jpeg",
+                    "image/png",
+                    "image/svg+xml",
+                    "image/tiff",
+                    "text/csv",
+                    "text/html",
+                    "text/latex",
+                    "text/markdown",
+                    "text/password",
+                    "text/plain",
+                    "video/mp4",
+                    "video/mpeg"
+                  ]
+                },
+                "data": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/SetupRootError"
+                          },
+                          {
+                            "$ref": "#/$defs/CycleError"
+                          },
+                          {
+                            "$ref": "#/$defs/MultipleDefinitionError"
+                          },
+                          {
+                            "$ref": "#/$defs/ImportStarError"
+                          },
+                          {
+                            "$ref": "#/$defs/LazyImportError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoAncestorStoppedError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoAncestorPreventedError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoExceptionRaisedError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoStrictExecutionError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoInterruptionError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoSyntaxError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoInternalError"
+                          },
+                          {
+                            "$ref": "#/$defs/MarimoSQLError"
+                          },
+                          {
+                            "$ref": "#/$defs/UnknownError"
+                          }
+                        ],
+                        "discriminator": {
+                          "propertyName": "type",
+                          "mapping": {
+                            "setup-refs": "#/$defs/SetupRootError",
+                            "cycle": "#/$defs/CycleError",
+                            "multiple-defs": "#/$defs/MultipleDefinitionError",
+                            "import-star": "#/$defs/ImportStarError",
+                            "lazy-import": "#/$defs/LazyImportError",
+                            "ancestor-stopped": "#/$defs/MarimoAncestorStoppedError",
+                            "ancestor-prevented": "#/$defs/MarimoAncestorPreventedError",
+                            "exception": "#/$defs/MarimoExceptionRaisedError",
+                            "strict-exception": "#/$defs/MarimoStrictExecutionError",
+                            "interruption": "#/$defs/MarimoInterruptionError",
+                            "syntax": "#/$defs/MarimoSyntaxError",
+                            "internal": "#/$defs/MarimoInternalError",
+                            "sql-error": "#/$defs/MarimoSQLError",
+                            "unknown": "#/$defs/UnknownError"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ]
+                },
+                "timestamp": {
+                  "type": "number"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "input_id": {
+                  "type": "string"
+                },
+                "traceback_format": {
+                  "enum": [
+                    "html",
+                    "text"
+                  ]
+                }
+              },
+              "required": [
+                "channel",
+                "mimetype",
+                "data"
+              ]
+            },
+            "CellChannel": {
+              "title": "CellChannel",
+              "description": "The channel of a cell's output.",
+              "enum": [
+                "marimo-error",
+                "media",
+                "output",
+                "pdb",
+                "stderr",
+                "stdin",
+                "stdout"
+              ]
+            },
+            "SetupRootError": {
+              "title": "SetupRootError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "setup-refs"
+                  ]
+                },
+                "edges_with_vars": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "prefixItems": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "items": false
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "edges_with_vars"
+              ]
+            },
+            "CycleError": {
+              "title": "CycleError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "cycle"
+                  ]
+                },
+                "edges_with_vars": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "prefixItems": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "items": false
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "edges_with_vars"
+              ]
+            },
+            "MultipleDefinitionError": {
+              "title": "MultipleDefinitionError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "multiple-defs"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "cells": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "name",
+                "cells"
+              ]
+            },
+            "ImportStarError": {
+              "title": "ImportStarError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "import-star"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "lineno": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "type",
+                "msg"
+              ]
+            },
+            "LazyImportError": {
+              "title": "LazyImportError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "lazy-import"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "lineno": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "type",
+                "msg"
+              ]
+            },
+            "MarimoAncestorStoppedError": {
+              "title": "MarimoAncestorStoppedError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "ancestor-stopped"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "raising_cell": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "msg",
+                "raising_cell"
+              ]
+            },
+            "MarimoAncestorPreventedError": {
+              "title": "MarimoAncestorPreventedError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "ancestor-prevented"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "raising_cell": {
+                  "type": "string"
+                },
+                "blamed_cell": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "msg",
+                "raising_cell",
+                "blamed_cell"
+              ]
+            },
+            "MarimoExceptionRaisedError": {
+              "title": "MarimoExceptionRaisedError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "exception"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "exception_type": {
+                  "type": "string"
+                },
+                "raising_cell": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "traceback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "type",
+                "msg",
+                "exception_type",
+                "raising_cell"
+              ]
+            },
+            "MarimoStrictExecutionError": {
+              "title": "MarimoStrictExecutionError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "strict-exception"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "blamed_cell": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "msg",
+                "ref",
+                "blamed_cell"
+              ]
+            },
+            "MarimoInterruptionError": {
+              "title": "MarimoInterruptionError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "interruption"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "MarimoSyntaxError": {
+              "title": "MarimoSyntaxError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "syntax"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "lineno": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "type",
+                "msg"
+              ]
+            },
+            "MarimoInternalError": {
+              "title": "MarimoInternalError",
+              "description": "An internal error that should be hidden from the user.\nThe error is logged to the console and then a new error is broadcasted\nsuch that the data is hidden.\n\nThey can be linked back to the original error by the error_id.",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "internal"
+                  ]
+                },
+                "error_id": {
+                  "type": "string"
+                },
+                "msg": {
+                  "type": "string",
+                  "default": ""
+                }
+              },
+              "required": [
+                "type",
+                "error_id"
+              ]
+            },
+            "MarimoSQLError": {
+              "title": "MarimoSQLError",
+              "description": "SQL-specific error with enhanced metadata for debugging.",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "sql-error"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "sql_statement": {
+                  "type": "string"
+                },
+                "hint": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "sql_line": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "sql_col": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "node_lineno": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "node_col_offset": {
+                  "type": "integer",
+                  "default": 0
+                }
+              },
+              "required": [
+                "type",
+                "msg",
+                "sql_statement"
+              ]
+            },
+            "UnknownError": {
+              "title": "UnknownError",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "unknown"
+                  ]
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "error_type": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "type",
+                "msg"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_set_model_value",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "modelId": {
+              "type": "string"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ModelUpdateMessage"
+                },
+                {
+                  "$ref": "#/$defs/ModelCustomMessage"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "method",
+                "mapping": {
+                  "update": "#/$defs/ModelUpdateMessage",
+                  "custom": "#/$defs/ModelCustomMessage"
+                }
+              }
+            },
+            "buffers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "contentEncoding": "base64"
+              }
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "modelId",
+            "message",
+            "buffers"
+          ],
+          "$defs": {
+            "ModelUpdateMessage": {
+              "title": "ModelUpdateMessage",
+              "description": "Widget model state update message.\n\nAttributes:\n    state: Model state updates.\n    buffer_paths: Paths within state dict pointing to binary buffers.",
+              "type": "object",
+              "properties": {
+                "method": {
+                  "enum": [
+                    "update"
+                  ]
+                },
+                "state": {
+                  "type": "object"
+                },
+                "bufferPaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "required": [
+                "method",
+                "state",
+                "bufferPaths"
+              ]
+            },
+            "ModelCustomMessage": {
+              "title": "ModelCustomMessage",
+              "description": "Custom widget message.\n\nAttributes:\n    content: Arbitrary content for the custom message.",
+              "type": "object",
+              "properties": {
+                "method": {
+                  "enum": [
+                    "custom"
+                  ]
+                },
+                "content": {}
+              },
+              "required": [
+                "method",
+                "content"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_set_ui_element_value",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "objectIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "values": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "objectIds",
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_shutdown",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_status",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "KernelStatusResponse",
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "idle",
+                "running",
+                "stopped"
+              ]
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      },
+      {
+        "name": "kernel_stdin",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "kernel_takeover",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "lsp_health",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "LspHealthResponse",
+          "description": "Aggregated health response for all LSP servers.",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "degraded",
+                "healthy",
+                "unhealthy"
+              ]
+            },
+            "servers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LspServerHealth"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "servers"
+          ],
+          "$defs": {
+            "LspServerHealth": {
+              "title": "LspServerHealth",
+              "description": "Health status for a single LSP server.\n\nStatus meanings:\n- starting: process launched, initializing\n- running: healthy and responsive to pings\n- stopped: not running (never started or cleanly stopped)\n- crashed: exited with non-zero code\n- unresponsive: process alive but not responding to pings",
+              "type": "object",
+              "properties": {
+                "serverId": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "crashed",
+                    "running",
+                    "starting",
+                    "stopped",
+                    "unresponsive"
+                  ]
+                },
+                "port": {
+                  "type": "integer"
+                },
+                "lastPingMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "serverId",
+                "status",
+                "port"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "lsp_restart",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "serverIds": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "LspRestartResponse",
+          "description": "Response from restart operation.",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "restarted": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "errors": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {}
+            }
+          },
+          "required": [
+            "success",
+            "restarted"
+          ]
+        }
+      },
+      {
+        "name": "packages_add",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "upgrade": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": false
+            },
+            "group": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "PackageOperationResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "restartRequired": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "packages_list",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "ListPackagesResponse",
+          "type": "object",
+          "properties": {
+            "packages": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PackageDescription"
+              }
+            }
+          },
+          "required": [
+            "packages"
+          ],
+          "$defs": {
+            "PackageDescription": {
+              "title": "PackageDescription",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "version"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "packages_manifest",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "contents": {
+              "type": "string"
+            },
+            "previous": {
+              "type": "string"
+            },
+            "fileKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "contents",
+            "previous"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SandboxResponse",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pixi",
+                    "uv"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifest": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "filename": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "manifest",
+            "filename"
+          ]
+        }
+      },
+      {
+        "name": "packages_remove",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "group": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "PackageOperationResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "restartRequired": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "packages_sandbox",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "fileKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SandboxResponse",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pixi",
+                    "uv"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifest": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "filename": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "manifest",
+            "filename"
+          ]
+        }
+      },
+      {
+        "name": "packages_sync",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "fileKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SyncSandboxResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "restartRequired": {
+              "type": "boolean",
+              "default": false
+            },
+            "reconnect": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "packages_tree",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "DependencyTreeResponse",
+          "type": "object",
+          "properties": {
+            "tree": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DependencyTreeNode"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SandboxPackageContext"
+                },
+                {
+                  "$ref": "#/$defs/PackageManagerContext"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "sandbox": "#/$defs/SandboxPackageContext",
+                  "package-manager": "#/$defs/PackageManagerContext"
+                }
+              }
+            }
+          },
+          "required": [
+            "tree",
+            "context"
+          ],
+          "$defs": {
+            "DependencyTreeNode": {
+              "title": "DependencyTreeNode",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DependencyTag"
+                  }
+                },
+                "dependencies": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DependencyTreeNode"
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "version",
+                "tags",
+                "dependencies"
+              ]
+            },
+            "DependencyTag": {
+              "title": "DependencyTag",
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "value"
+              ]
+            },
+            "SandboxPackageContext": {
+              "title": "SandboxPackageContext",
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "sandbox"
+                  ]
+                },
+                "backend": {
+                  "enum": [
+                    "pixi",
+                    "uv"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "backend"
+              ]
+            },
+            "PackageManagerContext": {
+              "title": "PackageManagerContext",
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "package-manager"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "name"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "pair_notebooks_attachments_detach",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "attachment_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "attachment_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "pair_notebooks_messages",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "message": {}
+          },
+          "required": [
+            "id",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "secrets_create",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "dotenv",
+                "env"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "value",
+            "provider",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "BaseResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "secrets_delete",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "BaseResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
+        "name": "secrets_keys",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "sessions",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SessionInfo"
+          },
+          "$defs": {
+            "SessionInfo": {
+              "title": "SessionInfo",
+              "type": "object",
+              "properties": {
+                "session_id": {
+                  "type": "string"
+                },
+                "notebook_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "filename": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "session_id",
+                "notebook_id",
+                "filename",
+                "path"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "sql_validate",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            },
+            "onlyParse": {
+              "type": "boolean"
+            },
+            "engine": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "dialect": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "requestId",
+            "query",
+            "onlyParse"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "status",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "ServerStatus",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "healthy"
+              ]
+            },
+            "filenames": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "mode": {
+              "type": "string"
+            },
+            "sessions": {
+              "type": "integer"
+            },
+            "version": {
+              "type": "string"
+            },
+            "python_version": {
+              "type": "string"
+            },
+            "requirements": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "node_version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lsp_running": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status",
+            "filenames",
+            "mode",
+            "sessions",
+            "version",
+            "python_version",
+            "requirements",
+            "node_version",
+            "lsp_running"
+          ]
+        }
+      },
+      {
+        "name": "status_connections",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "Connections",
+          "type": "object",
+          "properties": {
+            "active": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "active"
+          ]
+        }
+      },
+      {
+        "name": "storage_download",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "preview": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "requestId",
+            "namespace",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "storage_list_entries",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            },
+            "prefix": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "pageToken": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "requestId",
+            "namespace",
+            "limit"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "SuccessResponse",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "usage",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "Usage",
+          "type": "object",
+          "properties": {
+            "memory": {
+              "$ref": "#/$defs/MemoryUsage"
+            },
+            "server": {
+              "$ref": "#/$defs/ProcessUsage"
+            },
+            "kernel": {
+              "$ref": "#/$defs/ProcessUsage"
+            },
+            "cpu": {
+              "$ref": "#/$defs/CpuUsage"
+            },
+            "gpu": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/GpuUsage"
+              }
+            }
+          },
+          "required": [
+            "memory",
+            "server",
+            "kernel",
+            "cpu",
+            "gpu"
+          ],
+          "$defs": {
+            "MemoryUsage": {
+              "title": "MemoryUsage",
+              "description": "The machine's or the container's memory; unknown without psutil.",
+              "type": "object",
+              "properties": {
+                "total": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "available": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "percent": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "used": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "free": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "has_cgroup_mem_limit": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "total",
+                "available",
+                "percent",
+                "used",
+                "free",
+                "has_cgroup_mem_limit"
+              ]
+            },
+            "ProcessUsage": {
+              "title": "ProcessUsage",
+              "type": "object",
+              "properties": {
+                "memory": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "memory"
+              ]
+            },
+            "CpuUsage": {
+              "title": "CpuUsage",
+              "type": "object",
+              "properties": {
+                "percent": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "percent"
+              ]
+            },
+            "GpuUsage": {
+              "title": "GpuUsage",
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "memory": {
+                  "$ref": "#/$defs/GpuMemory"
+                }
+              },
+              "required": [
+                "index",
+                "name",
+                "memory"
+              ]
+            },
+            "GpuMemory": {
+              "title": "GpuMemory",
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer"
+                },
+                "used": {
+                  "type": "integer"
+                },
+                "free": {
+                  "type": "integer"
+                },
+                "percent": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "used",
+                "free",
+                "percent"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "version",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "TextResponse",
+          "description": "A reply that is text for the caller, such as a version or some code.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
+    ],
+    "events": [
+      {
+        "name": "session",
+        "inputSchema": {
+          "additionalProperties": false,
+          "description": "What a page subscribes to its session with.",
+          "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
+            "file": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "File"
+            },
+            "kiosk": {
+              "default": false,
+              "title": "Kiosk",
+              "type": "boolean"
+            },
+            "query_params": {
+              "default": "",
+              "title": "Query Params",
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "title": "SessionArguments",
+          "type": "object"
+        },
+        "payloadSchema": {
+          "description": "One frame of the session, as the text its socket sent.",
+          "properties": {
+            "frame": {
+              "title": "Frame",
+              "type": "string"
+            }
+          },
+          "required": [
+            "frame"
+          ],
+          "title": "SessionFrame",
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

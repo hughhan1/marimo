@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 import os
 import sys
 import tempfile
@@ -23,10 +22,10 @@ from marimo._server.workspace import (
 )
 from marimo._session.model import SessionMode
 from marimo._utils.marimo_path import MarimoPath
-from tests._server.api.endpoints.test_sse import SSETestConnection
 from tests._server.host.drive import socket_snapshot
 from tests._server.host.test_editor_websocket import receive_notification
 from tests._server.mocks import get_session_manager, token_header, with_session
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from starlette.testclient import TestClient
@@ -48,7 +47,7 @@ def test_workspace_files(client: TestClient) -> None:
     response = client.post(
         "/api/home/workspace_files",
         headers=HEADERS,
-        json={"include_markdown": False},
+        json={"includeMarkdown": False},
     )
     body = response.json()
     files = body["files"]
@@ -124,7 +123,8 @@ def test_cant_open_non_tutorial(client: TestClient) -> None:
         json={"tutorialId": "non-tutorial"},
     )
     assert response.status_code == 400
-    assert response.json() == {"detail": "Tutorial not found"}
+    # The argument is checked against the tutorials before the handler runs.
+    assert "'non-tutorial'" in response.json()["detail"]
 
 
 @with_session(SESSION_ID)
@@ -161,7 +161,7 @@ def generate_opengraph(context, parent):
         response = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body = response.json()
         files = body["files"]
@@ -192,7 +192,7 @@ def test_workspace_files_run_mode_watch_directory_refreshes_add_remove(
         response_initial = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body_initial = response_initial.json()
         assert response_initial.status_code == 200
@@ -207,7 +207,7 @@ def test_workspace_files_run_mode_watch_directory_refreshes_add_remove(
         response_after_add = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body_after_add = response_after_add.json()
         assert response_after_add.status_code == 200
@@ -221,7 +221,7 @@ def test_workspace_files_run_mode_watch_directory_refreshes_add_remove(
         response_after_remove = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body_after_remove = response_after_remove.json()
         assert response_after_remove.status_code == 200
@@ -243,7 +243,7 @@ def test_workspace_files_empty_directory(client: TestClient) -> None:
         response = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body = response.json()
         files = body["files"]
@@ -281,7 +281,7 @@ def test_workspace_files_run_mode_allowlist(client: TestClient) -> None:
         response = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body = response.json()
         files = body["files"]
@@ -327,7 +327,7 @@ def test_workspace_files_run_mode_allowlist_skips_deleted_file(
         response = client.post(
             "/api/home/workspace_files",
             headers=HEADERS,
-            json={"include_markdown": False},
+            json={"includeMarkdown": False},
         )
         body = response.json()
         files = body["files"]
@@ -544,8 +544,8 @@ def test_running_notebooks_handles_files_outside_directory(
     headers = token_header(auth_token)
 
     # Connect a session
-    with client.websocket_connect(
-        f"/ws?session_id={SESSION_ID}", headers=headers
+    with connect_session(
+        client, f"/ws?session_id={SESSION_ID}", headers=headers
     ) as websocket:
         data = websocket.receive_text()
         assert data
@@ -604,10 +604,9 @@ def test_running_notebooks_handles_files_outside_directory(
                     session.app_file_manager.filename = original_filename
 
 
-@pytest.mark.parametrize("transport", ["ws", "sse"])
 @pytest.mark.parametrize("source", ["tutorial", "single-file", "empty"])
 def test_open_notebook_connects_and_reconnects_to_host(
-    client: TestClient, tmp_path: Path, transport: str, source: str
+    client: TestClient, tmp_path: Path, source: str
 ) -> None:
     manager = get_session_manager(client)
     root = tmp_path / "workspace"
@@ -646,34 +645,9 @@ def test_open_notebook_connects_and_reconnects_to_host(
         notebook = None
         # The second connection rejoins the session and is told so.
         for notification in ("kernel-ready", "alert"):
-            if transport == "ws":
-                with client.websocket_connect(f"/ws?{query}") as socket:
-                    snapshot = socket_snapshot(socket)
-                    ready = receive_notification(socket, notification)
-            else:
-
-                async def read_sse():
-                    async with SSETestConnection(
-                        client.app, query
-                    ) as connection:
-                        snapshot = []
-                        while True:
-                            event = await connection.next_event()
-                            snapshot.append(
-                                {
-                                    "event": event["event"],
-                                    "data": json.loads(event["data"]),
-                                }
-                            )
-                            if event["event"] == "ready":
-                                break
-                        ready = json.loads(
-                            (await connection.next_notification())["data"]
-                        )["data"]
-                        return snapshot, ready
-
-                assert client.portal is not None
-                snapshot, ready = client.portal.call(read_sse)
+            with connect_session(client, f"/ws?{query}") as socket:
+                snapshot = socket_snapshot(socket)
+                ready = receive_notification(socket, notification)
             bridge = client.app.state.host_context.bridge
             record = bridge.index.notebook_for(path)
             assert record is not None
@@ -691,7 +665,9 @@ def test_open_notebook_connects_and_reconnects_to_host(
                 None,
                 None,
             )
-            assert snapshot[0]["data"]["notebook"]["id"] == record.id
+            # Each subscription starts the page over.
+            assert snapshot[0] == {"event": "reset", "data": {}}
+            assert snapshot[1]["data"]["notebook"]["id"] == record.id
             assert ready["op"] == notification
             if notification == "kernel-ready":
                 assert ready["consumer_capabilities"]["edit"] is True

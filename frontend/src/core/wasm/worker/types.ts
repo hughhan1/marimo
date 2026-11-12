@@ -2,7 +2,7 @@
 import type { PyodideInterface } from "pyodide";
 import type { WasmRuntimeConfig } from "../runtime-config";
 import type { UserConfig } from "@/core/config/config-schema";
-import type { ClientCommand } from "@/core/kernel/messages";
+import type { WireCommand } from "@/core/kernel/messages";
 import type {
   CodeCompletionRequest,
   CopyNotebookRequest,
@@ -71,7 +71,7 @@ export interface WasmSession {
 }
 
 export interface RawBridge {
-  put_control_request(operation: ClientCommand): Promise<string>;
+  put_control_request(operation: WireCommand): Promise<string>;
   put_input(input: string): Promise<string>;
   code_complete(request: CodeCompletionRequest): Promise<string>;
   read_code(): Promise<{ contents: string }>;
@@ -87,7 +87,7 @@ export interface RawBridge {
   search_files(request: FileSearchRequest): Promise<FileSearchResponse>;
   file_details(request: { path: string }): Promise<FileDetailsResponse>;
   create_file_or_directory(
-    request: FileCreateRequest,
+    request: FileCreateRequest & { contents: string | null },
   ): Promise<FileCreateResponse>;
   delete_file_or_directory(
     request: FileDeleteRequest,

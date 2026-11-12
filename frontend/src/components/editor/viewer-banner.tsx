@@ -5,7 +5,7 @@ import { ArrowRightSquareIcon, EyeIcon } from "lucide-react";
 import { KnownQueryParams } from "@/core/constants";
 import { useLayoutState } from "@/core/layout/state";
 import { kioskModeAtom, viewStateAtom } from "@/core/mode";
-import { API } from "@/core/network/api";
+import { getTools } from "@/core/network/holon";
 import { Banner } from "@/plugins/impl/common/error-banner";
 import { prettyError } from "@/utils/errors";
 import { Button } from "../ui/button";
@@ -38,10 +38,9 @@ export const ViewerBanner = () => {
 
   const handleTakeover = async () => {
     try {
-      const searchParams = new URL(window.location.href).searchParams;
       // No reload: the server replies with consumer-capabilities
       // (edit: true), which flips kiosk mode off and hides this banner.
-      await API.post(`/kernel/takeover?${searchParams.toString()}`, {});
+      await (await getTools()).kernel_takeover({});
     } catch (error) {
       toast({
         title: "Failed to take over session",

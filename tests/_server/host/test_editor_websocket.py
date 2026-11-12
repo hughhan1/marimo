@@ -27,12 +27,15 @@ from marimo._types.ids import CellId_t, ConsumerId, SessionId
 from tests._server.api.endpoints.ws_helpers import headers
 from tests._server.host.drive import socket_snapshot
 from tests._server.mocks import get_session_manager, run_cells
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
     from starlette.testclient import TestClient, WebSocketTestSession
+
+    from tests._server.session_events import SessionEvents
 
 
 def first_cell_id(client: TestClient, session_id: str) -> CellId_t:
@@ -63,7 +66,7 @@ def socket_url(bridge: SessionBridge, session_id: str = "s1") -> str:
 
 
 def receive_notification(
-    websocket: WebSocketTestSession, op: str
+    websocket: WebSocketTestSession | SessionEvents, op: str
 ) -> dict[str, Any]:
     while True:
         event = websocket.receive_json()
@@ -452,16 +455,10 @@ def test_invalid_event_types_are_rejected_before_starting_a_session(
     assert not get_session_manager(client).sessions
 
 
-@pytest.mark.parametrize("session_route", [False, True])
 def test_editor_resumes_host_events_without_replaying_private_notifications(
-    client: TestClient, editor_host: SessionBridge, session_route: bool
+    client: TestClient, editor_host: SessionBridge
 ) -> None:
-    endpoint = (
-        "/ws?session_id=s1&access_token=fake-token"
-        if session_route
-        else socket_url(editor_host)
-    )
-    url = f"{endpoint}&types=marimo,custom"
+    url = f"{socket_url(editor_host)}&types=marimo,custom"
     with client.websocket_connect(url) as socket:
         cursor = socket_snapshot(socket)[-1]["id"]
         receive_notification(socket, "kernel-ready")
@@ -518,7 +515,7 @@ def test_untitled_editor_bootstraps_and_reconnects_with_host_events(
         assert client.portal is not None
         client.portal.call(bridge.open)
         try:
-            with client.websocket_connect(url) as ws:
+            with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
                 receive_notification(ws, "kernel-ready")
                 notebook_id = next(
@@ -534,7 +531,7 @@ def test_untitled_editor_bootstraps_and_reconnects_with_host_events(
                 )
                 assert response.status_code == 202, response.text
                 receive_completed_run(ws, response.json()["id"])
-            with client.websocket_connect(url) as ws:
+            with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
                 assert_reconnect_alert(ws)
                 assert (
@@ -565,7 +562,7 @@ def test_untitled_editor_restarts_its_runtime_through_the_host(
         assert client.portal is not None
         client.portal.call(bridge.open)
         try:
-            with client.websocket_connect(url) as ws:
+            with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
                 receive_notification(ws, "kernel-ready")
                 notebook_id = next(
@@ -593,10 +590,10 @@ def test_untitled_editor_restarts_its_runtime_through_the_host(
                     try:
                         ws.receive_json()
                     except WebSocketDisconnect as exc:
-                        disconnect = (exc.code, exc.reason)
+                        disconnect = exc.reason
                         break
-                assert disconnect == (1000, "MARIMO_SHUTDOWN")
-            with client.websocket_connect(url) as ws:
+                assert disconnect == "MARIMO_SHUTDOWN"
+            with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
                 assert (
                     next(

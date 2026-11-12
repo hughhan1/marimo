@@ -25,7 +25,9 @@ from tests.mocks import EDGE_CASE_FILENAMES
 from tests.utils import try_assert_n_times
 
 if TYPE_CHECKING:
-    from starlette.testclient import TestClient, WebSocketTestSession
+    from starlette.testclient import TestClient
+
+    from tests._server.session_events import SessionEvents
 
 SESSION_ID = "session-123"
 HEADERS = {
@@ -359,7 +361,7 @@ def test_path_traversal_copy_blocked(client: TestClient) -> None:
 
 @with_websocket_session(SESSION_ID)
 def test_rename_propagates(
-    client: TestClient, websocket: WebSocketTestSession
+    client: TestClient, websocket: SessionEvents
 ) -> None:
     current_filename = get_session_manager(
         client

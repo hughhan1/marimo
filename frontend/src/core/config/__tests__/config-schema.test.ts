@@ -4,7 +4,6 @@ import { createStore } from "jotai";
 import { expect, test } from "vitest";
 import {
   configOverridesAtom,
-  connectionTransportTypeAtom,
   mergeConfig,
   resolvedMarimoConfigAtom,
   userConfigAtom,
@@ -433,22 +432,6 @@ test("resolvedMarimoConfigAtom overrides correctly and does not mutate the origi
     },
     formatting: { line_length: 79, infer_types: "off" },
   });
-});
-
-test("connectionTransportTypeAtom defaults to websocket", () => {
-  const store = createStore();
-  store.set(userConfigAtom, defaultUserConfig());
-  expect(store.get(connectionTransportTypeAtom)).toBe("websocket");
-});
-
-test("connectionTransportTypeAtom reads server.transport", () => {
-  const store = createStore();
-  const config = defaultUserConfig();
-  store.set(userConfigAtom, {
-    ...config,
-    server: { ...config.server, transport: "sse" },
-  });
-  expect(store.get(connectionTransportTypeAtom)).toBe("sse");
 });
 
 test("mergeConfig replaces arrays instead of merging by index", () => {

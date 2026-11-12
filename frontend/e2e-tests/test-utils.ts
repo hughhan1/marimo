@@ -1,7 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import type { Locator, Page } from "@playwright/test";
-import { Logger } from "../src/utils/Logger";
 
 /**
  * Wait for a marimo app to be fully loaded and ready
@@ -10,54 +9,23 @@ export async function waitForMarimoApp(
   page: Page,
   timeout = 30_000,
 ): Promise<void> {
-  await page.waitForLoadState("networkidle", { timeout });
+  await page.waitForLoadState("load", { timeout });
 
   // Wait for the marimo app to be initialized
   await page.waitForFunction(
     () => {
-      // Check if the app is loaded by looking for key elements
+      if (document.querySelector("[data-testid='marimo-static']") !== null) {
+        return true;
+      }
+      const app = document.querySelector("#App");
       return (
-        document.querySelector("[data-testid='cell-editor']") !== null ||
-        document.querySelector(".marimo-cell") !== null ||
-        document.querySelector("[data-testid='marimo-static']") !== null
+        app?.getAttribute("data-connection-state") === "OPEN" &&
+        (document.querySelector("[data-testid='cell-editor']") !== null ||
+          document.querySelector(".marimo-cell") !== null)
       );
     },
     { timeout },
   );
-}
-
-/**
- * Wait for server to be responsive with retries
- */
-export async function waitForServerReady(
-  page: Page,
-  url: string,
-  maxRetries = 5,
-): Promise<void> {
-  let retries = 0;
-
-  while (retries < maxRetries) {
-    try {
-      await page.goto(url, {
-        waitUntil: "networkidle",
-        timeout: 10_000,
-      });
-
-      // Additional check to ensure the page is actually loaded
-      await waitForMarimoApp(page);
-      return;
-    } catch (error) {
-      retries++;
-      if (retries === maxRetries) {
-        throw new Error(
-          `Server not ready after ${maxRetries} retries: ${error}`,
-        );
-      }
-
-      Logger.log(`Server not ready, retrying... (${retries}/${maxRetries})`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-  }
 }
 
 /**
@@ -111,21 +79,4 @@ export async function hoverWithRetry(
     throw new Error(`Element not found: ${selector}`);
   }
   await element.hover({ timeout });
-}
-
-/**
- * Safe page navigation with fallback
- */
-export async function safeGoto(
-  page: Page,
-  url: string,
-  timeout = 30_000,
-): Promise<void> {
-  try {
-    await page.goto(url, { waitUntil: "networkidle", timeout });
-  } catch (error) {
-    // Fallback to basic load
-    Logger.log(`Network idle failed, trying basic load: ${error}`);
-    await page.goto(url, { waitUntil: "load", timeout });
-  }
 }

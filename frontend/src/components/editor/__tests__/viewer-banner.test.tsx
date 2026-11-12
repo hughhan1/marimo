@@ -5,8 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { layoutStateAtom } from "@/core/layout/state";
 import { kioskModeAtom, viewStateAtom } from "@/core/mode";
-import { API } from "@/core/network/api";
 import { ViewerBanner } from "../viewer-banner";
+
+const takeover = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock("@/core/network/holon", () => ({
+  getTools: async () => ({ kernel_takeover: takeover }),
+}));
 
 describe("ViewerBanner", () => {
   it("renders nothing when not in kiosk mode", () => {
@@ -82,10 +86,9 @@ describe("ViewerBanner", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows take over and posts without reload when viewing", () => {
+  it("shows take over and posts without reload when viewing", async () => {
     const store = createStore();
     store.set(kioskModeAtom, true);
-    const post = vi.spyOn(API, "post").mockResolvedValue({} as never);
     render(
       <Provider store={store}>
         <TooltipProvider>
@@ -95,9 +98,6 @@ describe("ViewerBanner", () => {
     );
     const button = screen.getByTestId("takeover-button");
     button.click();
-    expect(post).toHaveBeenCalledWith(
-      expect.stringContaining("/kernel/takeover"),
-      {},
-    );
+    await vi.waitFor(() => expect(takeover).toHaveBeenCalledWith({}));
   });
 });

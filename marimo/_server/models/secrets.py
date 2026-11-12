@@ -3,11 +3,7 @@ from __future__ import annotations
 
 import msgspec
 
-from marimo._secrets.models import SecretKeysWithProvider, SecretProviderType
-
-
-class ListSecretKeysResponse(msgspec.Struct, rename="camel"):
-    keys: list[SecretKeysWithProvider]
+from marimo._secrets.models import SecretProviderType
 
 
 class CreateSecretRequest(msgspec.Struct, rename="camel"):

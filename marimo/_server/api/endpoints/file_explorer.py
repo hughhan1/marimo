@@ -3,25 +3,22 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Any
 
+import msgspec
+from holon.ext.files import file_input_schema
 from starlette.authentication import requires
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
 
 from marimo import _loggers
-from marimo._convert.common.filename import make_download_headers
 from marimo._server.api.deps import AppState
-from marimo._server.api.utils import parse_multipart_request, parse_request
-from marimo._server.files.os_file_system import (
-    OSFileSystem,
-    UploadTooLargeError,
-)
+from marimo._server.api.tools import FileResult, files, tool
+from marimo._server.files.os_file_system import OSFileSystem
 from marimo._server.files.roots import resolve_file_roots
 from marimo._server.models.files import (
     FileCopyRequest,
     FileCopyResponse,
-    FileCreateMultipartRequest,
+    FileCreateRequest,
     FileCreateResponse,
     FileDeleteRequest,
     FileDeleteResponse,
@@ -43,7 +40,6 @@ from marimo._server.models.models import (
     ErrorResponse,
     SuccessResponse,
 )
-from marimo._server.router import APIRouter
 from marimo._utils.http import HTTPException as MarimoHTTPException
 from marimo._utils.mime import guess_mime_type
 
@@ -74,23 +70,32 @@ LOGGER = _loggers.marimo_logger()
 # disclosure of any vulnerabilities. We are happy to discuss any reports.
 
 # Router for file system endpoints
-router = APIRouter()
 
 file_system = OSFileSystem()
 
+# Without a cap an authenticated client could exhaust disk. 1 GiB covers
+# normal notebook-data use cases with margin.
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
-@router.get("/roots")
+
+class FileUploadRequest(msgspec.Struct, rename="camel"):
+    # The directory to put the file in
+    path: str
+    # The file's name there
+    name: str
+    # The file, sent in the call or transferred beside it
+    file: Annotated[
+        dict[str, Any],
+        msgspec.Meta(
+            extra_json_schema=file_input_schema(max_size=MAX_UPLOAD_BYTES)
+        ),
+    ]
+
+
+@tool("files_roots", output=FileRootsResponse)
 @requires("edit")
 def file_roots(*, request: Request) -> FileRootsResponse:
-    """
-    responses:
-        200:
-            description: List roots shown in the file browser
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileRootsResponse"
-    """
+    """List the directories the file browser may start from."""
     app_state = AppState(request)
     primary_root = (
         app_state.session_manager.workspace.directory or file_system.get_root()
@@ -101,28 +106,15 @@ def file_roots(*, request: Request) -> FileRootsResponse:
     )
 
 
-@router.post("/list_files")
+@tool("files_list_files", input=FileListRequest, output=FileListResponse)
 @requires("edit")
 async def list_files(
     *,
     request: Request,
+    body: FileListRequest,
 ) -> FileListResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileListRequest"
-    responses:
-        200:
-            description: List files and directories in a given path
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileListResponse"
-    """
+    """List the files in a directory, the workspace's by default."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FileListRequest)
     # Use workspace's directory as default, fall back to cwd.
     # NB. This isn't a security boundary; the workspace is just the initial view
     # for the browser.
@@ -132,27 +124,17 @@ async def list_files(
     return FileListResponse(files=files, root=root)
 
 
-@router.post("/file_details")
+@tool(
+    "files_file_details", input=FileDetailsRequest, output=FileDetailsResponse
+)
 @requires("edit")
 async def file_details(
     *,
     request: Request,
+    body: FileDetailsRequest,
 ) -> FileDetailsResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileDetailsRequest"
-    responses:
-        200:
-            description: Get details of a specific file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileDetailsResponse"
-    """
-    body = await parse_request(request, cls=FileDetailsRequest)
+    """Describe a file and read its contents, bounded when asked."""
+    del request
     if body.max_bytes is not None and body.max_bytes < 0:
         raise HTTPException(
             status_code=400,
@@ -163,47 +145,25 @@ async def file_details(
     return file_system.get_details(body.path, max_bytes=body.max_bytes)
 
 
-@router.get("/download")
+class FileDownloadRequest(msgspec.Struct):
+    path: str
+
+
+@tool("files_download", input=FileDownloadRequest, output=FileResult)
 @requires("edit")
 def download_file(
-    *,
-    request: Request,
-) -> FileResponse:
-    """
-    parameters:
-        - in: query
-          name: path
-          required: true
-          schema:
-            type: string
-          description: Path of the file to download
-    responses:
-        200:
-            description: Stream the file as an attachment
-            content:
-                application/octet-stream:
-                    schema:
-                        type: string
-                        format: binary
-        400:
-            description: Path is missing or is a directory
-        403:
-            description: File downloads are disabled
-        404:
-            description: File not found
-    """
+    *, request: Request, body: FileDownloadRequest
+) -> FileResult:
+    """Download a file. The reply lists where to fetch its bytes."""
+    path = body.path
     app_state = AppState(request)
     server_config = app_state.config_manager.get_config().server
-    # This endpoint serves raw file bytes, so its errors raise marimo's
-    # HTTPException, whose status code reaches the client unchanged. A Starlette
-    # 403 is globally converted to a 401 to prompt re-authentication; a
-    # downloads-disabled policy cannot be satisfied by re-auth, so it stays 403.
+    # A downloads-disabled policy cannot be satisfied by re-authenticating,
+    # so it stays a 403 rather than Starlette's 401.
     if server_config.disable_file_downloads:
         raise MarimoHTTPException(
             status_code=403, detail="File downloads are disabled"
         )
-
-    path = app_state.query_params("path")
     if not path:
         raise MarimoHTTPException(status_code=400, detail="Missing path")
     file_path = Path(path)
@@ -213,84 +173,61 @@ def download_file(
         )
     if not file_path.is_file():
         raise MarimoHTTPException(status_code=404, detail="File not found")
-
-    media_type = guess_mime_type(file_path.name) or "application/octet-stream"
-    return FileResponse(
-        file_path,
-        media_type=media_type,
-        headers={
-            **make_download_headers(file_path.name),
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "no-store",
-        },
+    return FileResult(
+        data=file_path,
+        media_type=guess_mime_type(file_path.name)
+        or "application/octet-stream",
+        filename=file_path.name,
     )
 
 
-@router.post("/create")
+@tool("files_create", input=FileCreateRequest, output=FileCreateResponse)
 @requires("edit")
 async def create_file_or_directory(
     *,
     request: Request,
+    body: FileCreateRequest,
 ) -> FileCreateResponse:
-    """
-    requestBody:
-        content:
-            multipart/form-data:
-                schema:
-                    $ref: "#/components/schemas/FileCreateMultipartRequest"
-    responses:
-        200:
-            description: Create a new file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileCreateResponse"
-    """
+    """Create an empty file, a new notebook, or a directory."""
+    del request
     try:
-        async with parse_multipart_request(
-            request, FileCreateMultipartRequest
-        ) as parsed:
-            upload = parsed.files.get("file")
-            # Directories and the default-template notebook take the
-            # in-memory path; only real file content streams.
-            if upload is not None and parsed.body.type in ("file", "notebook"):
-                info = await file_system.stream_create_file(
-                    parsed.body.path, parsed.body.name, upload
-                )
-            else:
-                info = file_system.create_file_or_directory(
-                    parsed.body.path, parsed.body.type, parsed.body.name, None
-                )
+        info = file_system.create_file_or_directory(
+            body.path, body.type, body.name, None
+        )
         return FileCreateResponse(success=True, info=info)
-    except UploadTooLargeError as e:
-        LOGGER.warning(f"Rejected oversize upload: {e}")
-        raise HTTPException(status_code=413, detail=str(e)) from e
     except Exception as e:
         LOGGER.error(f"Error creating file or directory: {e}")
         return FileCreateResponse(success=False, message=str(e))
 
 
-@router.post("/delete")
+@tool("files_upload", input=FileUploadRequest, output=FileCreateResponse)
+@requires("edit")
+async def upload_file(
+    *,
+    request: Request,
+    body: FileUploadRequest,
+) -> FileCreateResponse:
+    """Add a file to the directory `path`, as `name`."""
+    del request
+    try:
+        info = await file_system.add_file(
+            body.path, body.name, files().received(body.file)
+        )
+        return FileCreateResponse(success=True, info=info)
+    except Exception as e:
+        LOGGER.error(f"Error uploading file: {e}")
+        return FileCreateResponse(success=False, message=str(e))
+
+
+@tool("files_delete", input=FileDeleteRequest, output=FileDeleteResponse)
 @requires("edit")
 async def delete_file_or_directory(
     *,
     request: Request,
+    body: FileDeleteRequest,
 ) -> FileDeleteResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileDeleteRequest"
-    responses:
-        200:
-            description: Delete a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileDeleteResponse"
-    """
-    body = await parse_request(request, cls=FileDeleteRequest)
+    """Delete a file or directory."""
+    del request
     try:
         file_system.get_info(body.path)
         success = file_system.delete_file_or_directory(body.path)
@@ -300,27 +237,15 @@ async def delete_file_or_directory(
         return FileDeleteResponse(success=False, message=str(e))
 
 
-@router.post("/copy")
+@tool("files_copy", input=FileCopyRequest, output=FileCopyResponse)
 @requires("edit")
 async def copy_file_or_directory(
     *,
     request: Request,
+    body: FileCopyRequest,
 ) -> FileCopyResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileCopyRequest"
-    responses:
-        200:
-            description: Copy a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileCopyResponse"
-    """
-    body = await parse_request(request, cls=FileCopyRequest)
+    """Copy a file or directory to a new path."""
+    del request
     try:
         file_system.get_info(body.path)
         info = file_system.copy_file_or_directory(body.path, body.new_path)
@@ -330,27 +255,15 @@ async def copy_file_or_directory(
         return FileCopyResponse(success=False, message=str(e))
 
 
-@router.post("/move")
+@tool("files_move", input=FileMoveRequest, output=FileMoveResponse)
 @requires("edit")
 async def move_file_or_directory(
     *,
     request: Request,
+    body: FileMoveRequest,
 ) -> FileMoveResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileMoveRequest"
-    responses:
-        200:
-            description: Move a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileMoveResponse"
-    """
-    body = await parse_request(request, cls=FileMoveRequest)
+    """Move a file or directory to a new path."""
+    del request
     try:
         file_system.get_info(body.path)
         info = file_system.move_file_or_directory(body.path, body.new_path)
@@ -360,28 +273,15 @@ async def move_file_or_directory(
         return FileMoveResponse(success=False, message=str(e))
 
 
-@router.post("/update")
+@tool("files_update", input=FileUpdateRequest, output=FileUpdateResponse)
 @requires("edit")
 async def update_file(
     *,
     request: Request,
+    body: FileUpdateRequest,
 ) -> FileUpdateResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileUpdateRequest"
-    responses:
-        200:
-            description: Update a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileUpdateResponse"
-    """
+    """Replace a file's contents and reload any notebook it backs."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FileUpdateRequest)
     try:
         file_system.get_info(body.path)
         info = file_system.update_file(body.path, body.contents)
@@ -396,27 +296,15 @@ async def update_file(
         return FileUpdateResponse(success=False, message=str(e))
 
 
-@router.post("/open")
+@tool("files_open", input=FileOpenRequest, output=BaseResponse)
 @requires("edit")
 async def open_file(
     *,
     request: Request,
+    body: FileOpenRequest,
 ) -> BaseResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileOpenRequest"
-    responses:
-        200:
-            description: Open a file in the system editor
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/BaseResponse"
-    """
-    body = await parse_request(request, cls=FileOpenRequest)
+    """Open a file in the user's editor."""
+    del request
     try:
         file_system.get_info(body.path)
         success = file_system.open_in_editor(body.path, body.line_number)
@@ -426,27 +314,15 @@ async def open_file(
         return ErrorResponse(success=False, message=str(e))
 
 
-@router.post("/search")
+@tool("files_search", input=FileSearchRequest, output=FileSearchResponse)
 @requires("edit")
 async def search_files(
     *,
     request: Request,
+    body: FileSearchRequest,
 ) -> FileSearchResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileSearchRequest"
-    responses:
-        200:
-            description: Search for files and directories matching a query
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileSearchResponse"
-    """
-    body = await parse_request(request, cls=FileSearchRequest)
+    """Search for files and directories by name."""
+    del request
     files = await asyncio.to_thread(
         file_system.search,
         query=body.query,

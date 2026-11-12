@@ -223,7 +223,6 @@ export const UserConfigSchema = z
         session_cookie_secure: z.boolean().optional(),
         session_secret: z.string().nullish().prefault(null),
         disable_file_downloads: z.boolean().prefault(false),
-        transport: z.enum(["websocket", "sse"]).optional(),
       })
       .prefault(() => ({})),
     language_servers: z

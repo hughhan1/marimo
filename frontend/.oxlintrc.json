@@ -11,7 +11,8 @@
     "./lint/marimo-plugin.js"
   ],
   "ignorePatterns": [
-    "**/e2e-tests/**"
+    "**/e2e-tests/**",
+    "generated/**"
   ],
   "categories": {
     "correctness": "error",

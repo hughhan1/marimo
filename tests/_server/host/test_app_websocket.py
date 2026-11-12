@@ -21,6 +21,7 @@ from tests._server.conftest import get_kernel_tasks
 from tests._server.host.drive import socket_snapshot
 from tests._server.host.test_editor_websocket import receive_notification
 from tests._server.mocks import get_session_manager
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -55,8 +56,8 @@ def test_app_executes_with_hidden_source_and_retained_hashes(
     client: TestClient, app_host: SessionBridge, include_code: bool
 ) -> None:
     get_session_manager(client).include_code = include_code
-    with client.websocket_connect(
-        url("alice") + "&query_params=color%3Dblue"
+    with connect_session(
+        client, url("alice") + "&query_params=color%3Dblue"
     ) as ws:
         snapshot = socket_snapshot(ws)
         ready = receive_notification(ws, "kernel-ready")
@@ -117,14 +118,14 @@ def test_app_visitors_are_isolated_and_reconnect_retains_identity(
     client: TestClient, app_host: SessionBridge
 ) -> None:
     manager = get_session_manager(client)
-    with client.websocket_connect(url("alice")) as alice:
+    with connect_session(client, url("alice")) as alice:
         a = socket_snapshot(alice)
         receive_notification(alice, "kernel-ready")
         alice_id = next(
             e["data"]["notebook"]["id"] for e in a if e["event"] == "notebook"
         )
         original = manager.get_session(SessionId("alice"))
-        with client.websocket_connect(url("bob")) as bob:
+        with connect_session(client, url("bob")) as bob:
             b = socket_snapshot(bob)
             receive_notification(bob, "kernel-ready")
             bob_id = next(
@@ -138,7 +139,7 @@ def test_app_visitors_are_isolated_and_reconnect_retains_identity(
                 record.path is None and record.operations == ()
                 for record in app_host.host.notebooks.values()
             )
-    with client.websocket_connect(url("alice")) as reconnected:
+    with connect_session(client, url("alice")) as reconnected:
         snapshot = socket_snapshot(reconnected)
         assert (
             receive_notification(reconnected, "alert")["title"]
@@ -158,9 +159,9 @@ def test_app_visitors_are_isolated_and_reconnect_retains_identity(
 def test_app_host_keeps_authentication(
     client: TestClient, app_host: SessionBridge
 ) -> None:
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/ws?session_id=alice"):
-            pass
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with connect_session(client, "/ws?session_id=alice") as ws:
+            ws.receive_text()
     assert exc.value.code == WebSocketCodes.UNAUTHORIZED
     assert not app_host.host.notebooks
     assert not get_session_manager(client).sessions
@@ -172,8 +173,8 @@ def test_app_host_is_removed_when_session_expires(
     request: pytest.FixtureRequest,
 ) -> None:
     manager = get_session_manager(client)
-    with client.websocket_connect(url("alice")) as ws:
-        cursor = socket_snapshot(ws)[-1]["id"]
+    with connect_session(client, url("alice")) as ws:
+        socket_snapshot(ws)
         receive_notification(ws, "kernel-ready")
         session = manager.get_session(SessionId("alice"))
         assert session is not None
@@ -202,9 +203,8 @@ def test_app_host_is_removed_when_session_expires(
 
         ws.portal.call(expired)
         unsubscribe()
-    with client.websocket_connect(url("alice") + f"&cursor={cursor}") as ws:
+    with connect_session(client, url("alice")) as ws:
         snapshot = socket_snapshot(ws)
-        assert snapshot[0]["event"] == "reset"
         assert (
             next(
                 e["data"]["notebook"]["id"]
@@ -213,36 +213,3 @@ def test_app_host_is_removed_when_session_expires(
             )
             != notebook.id
         )
-
-
-@pytest.mark.parametrize("stale", [False, True])
-def test_app_session_replays_host_events_or_resets_stale_cursor(
-    client: TestClient, app_host: SessionBridge, stale: bool
-) -> None:
-    endpoint = url("alice") + "&types=notebook,cell,custom,marimo"
-    with client.websocket_connect(endpoint) as ws:
-        snapshot = socket_snapshot(ws)
-        cursor = snapshot[-1]["id"]
-        receive_notification(ws, "kernel-ready")
-        session = get_session_manager(client).get_session(SessionId("alice"))
-        assert session is not None
-        notebook = app_host.notebook_for_session(session)
-        assert notebook is not None
-    assert client.portal is not None
-    client.portal.call(notebook.emit, "test.missed", {"value": 1})
-    if stale:
-        cursor = "expired-host-cursor"
-    with client.websocket_connect(endpoint + f"&cursor={cursor}") as ws:
-        opening = socket_snapshot(ws)
-        if stale:
-            assert opening[0]["event"] == "reset"
-            assert any(e["event"] == "notebook" for e in opening)
-            cells = [
-                e["data"]["cell"] for e in opening if e["event"] == "cell"
-            ]
-            assert cells
-            assert all(c["code"] is None for c in cells)
-        else:
-            assert [e["event"] for e in opening] == ["custom", "ready"]
-            assert opening[0]["data"]["custom"]["data"] == {"value": 1}
-        assert receive_notification(ws, "alert")["title"] == "Reconnected"

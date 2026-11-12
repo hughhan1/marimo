@@ -40,6 +40,7 @@ from tests._server.mocks import (
     with_read_session,
     with_session,
 )
+from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -237,8 +238,8 @@ class TestExecutionRoutes_EditMode:
 
     @staticmethod
     def test_restart_session(client: TestClient) -> None:
-        with client.websocket_connect(
-            f"/ws?session_id={SESSION_ID}&access_token=fake-token"
+        with connect_session(
+            client, f"/ws?session_id={SESSION_ID}&access_token=fake-token"
         ) as websocket:
             data = websocket.receive_text()
             assert data
@@ -548,7 +549,7 @@ class TestExecutionRoutes_EditMode:
         )
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/json"
-        assert response.json()["status"] == "ok"
+        assert response.json() == {"success": True}
 
     @staticmethod
     @with_session(SESSION_ID)
@@ -568,7 +569,7 @@ class TestExecutionRoutes_EditMode:
         )
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/json"
-        assert response.json()["status"] == "ok"
+        assert response.json() == {"success": True}
 
     @staticmethod
     @pytest.mark.skipif(
@@ -831,12 +832,12 @@ def get_printed_object(
 def test_takeover_transfers_edit_without_disconnect(
     client: TestClient,
 ) -> None:
-    with client.websocket_connect(
-        "/ws?session_id=ed1", headers=WS_HEADERS
+    with connect_session(
+        client, "/ws?session_id=ed1", headers=WS_HEADERS
     ) as editor:
         assert_kernel_ready_response(receive_notification(editor))
-        with client.websocket_connect(
-            "/ws?session_id=vw1", headers=WS_HEADERS
+        with connect_session(
+            client, "/ws?session_id=vw1", headers=WS_HEADERS
         ) as viewer:
             assert_kernel_ready_response(
                 receive_notification(viewer),

@@ -22,9 +22,9 @@ type Options = EditorBackendOptions & {
 
 export function useNotebookReplica(options: Options): NotebookReplica {
   const store = useStore();
-  const { static: isStatic, snapshot, transportType } = options;
+  const { static: isStatic, snapshot } = options;
   const replica = useMemo(() => createNotebookReplica(store), [store]);
-  const url = useEvent(options.url);
+  const sessionArguments = useEvent(options.sessionArguments);
   const headers = useEvent(options.headers);
   const notebookUrl = useEvent(options.notebookUrl);
   const waitUntilReady = useEvent(options.waitUntilReady);
@@ -36,8 +36,7 @@ export function useNotebookReplica(options: Options): NotebookReplica {
       createEditorBackend({
         static: isStatic,
         snapshot,
-        transportType,
-        url,
+        sessionArguments,
         headers,
         notebookUrl,
         waitUntilReady,
@@ -46,8 +45,7 @@ export function useNotebookReplica(options: Options): NotebookReplica {
     [
       isStatic,
       snapshot,
-      transportType,
-      url,
+      sessionArguments,
       headers,
       notebookUrl,
       waitUntilReady,
