@@ -23,7 +23,7 @@
     "typecheck": "tsgo"
   },
   "dependencies": {
-    "holon-sh": "0.0.1-dev.12",
+    "holon-sh": "0.0.1-dev.19",
     "zod": "^4.6.7"
   },
   "devDependencies": {

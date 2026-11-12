@@ -736,8 +736,8 @@ importers:
   packages/client:
     dependencies:
       holon-sh:
-        specifier: 0.0.1-dev.12
-        version: 0.0.1-dev.12
+        specifier: 0.0.1-dev.19
+        version: 0.0.1-dev.19
       zod:
         specifier: ^4.6.7
         version: 4.6.7
