@@ -1,4 +1,6 @@
 {
+  "notebook_id": "n1",
+  "idempotency_key": "2b7d4e9c-1a3f-4c5d-8e6f-7a8b9c0d1e2f",
   "cells": [
     {
       "id": "c3",

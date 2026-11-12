@@ -11,6 +11,7 @@ from tests._server.api.endpoints.ws_helpers import (
     receive_until,
 )
 from tests._server.host.drive import socket_snapshot
+from tests._server.mcp_client import call_tool
 from tests._server.mocks import run_cells
 from tests._server.session_events import connect_session
 
@@ -77,12 +78,15 @@ async def test_connect_kiosk_with_session(client: TestClient) -> None:
                 )
 
             # Edit the notebook through the host
-            response = client.post(
-                f"/api/marimo/v1/notebooks/{notebook_id}/edits",
-                headers={**HEADERS, "Idempotency-Key": "edit-1"},
-                json={"changes": [new_cell("fresh")]},
+            edited = call_tool(
+                client,
+                "notebook.edit",
+                headers=HEADERS,
+                idempotency_key="edit-1",
+                notebook_id=notebook_id,
+                changes=[new_cell("fresh")],
             )
-            assert response.status_code == 200, response.text
+            assert edited.ok, edited.problem
 
             # Assert kiosk session received the document transaction
             data = receive_notification(other_websocket)
@@ -95,7 +99,7 @@ async def test_connect_kiosk_with_session(client: TestClient) -> None:
                 {"cell-3": "print('Hello, cell-3')"},
                 headers=HEADERS,
             )
-            assert response.status_code == 202, response.text
+            assert response.ok, response.problem
 
             # Assert kiosk session received a focused cell notification
             data = receive_until("focus-cell", other_websocket)
@@ -115,28 +119,26 @@ def test_kiosk_connection_cannot_edit_or_run_through_the_host(
             client, "/ws?session_id=456&kiosk=true", headers=_HEADERS
         ) as kiosk:
             receive_until("kernel-ready", kiosk)
-            base = f"/api/marimo/v1/notebooks/{notebook_id}"
             for connection in ("456", "never-connected"):
                 headers = {**HEADERS, "Marimo-Session-Id": connection}
-                edited = client.post(
-                    f"{base}/edits",
-                    headers={
-                        **headers,
-                        "Idempotency-Key": f"edit-{connection}",
-                    },
-                    json={"changes": [new_cell("fresh")]},
+                edited = call_tool(
+                    client,
+                    "notebook.edit",
+                    headers=headers,
+                    idempotency_key=f"edit-{connection}",
+                    notebook_id=notebook_id,
+                    changes=[new_cell("fresh")],
                 )
-                assert edited.status_code == 403, edited.text
-                assert edited.json()["type"] == "urn:marimo:problem:forbidden"
-                ran = client.post(
-                    f"{base}/runtime/runs",
-                    headers={
-                        **headers,
-                        "Idempotency-Key": f"run-{connection}",
-                    },
-                    json={"cells": [{"id": "cell-1"}]},
+                assert edited.problem["type"] == "urn:marimo:problem:forbidden"
+                ran = call_tool(
+                    client,
+                    "runtime.run",
+                    headers=headers,
+                    idempotency_key=f"run-{connection}",
+                    notebook_id=notebook_id,
+                    cells=[{"id": "cell-1"}],
                 )
-                assert ran.status_code == 403, ran.text
+                assert ran.problem["type"] == "urn:marimo:problem:forbidden"
 
 
 def test_second_edit_connection_joins_as_viewer(client: TestClient) -> None:
@@ -212,16 +214,15 @@ def test_third_viewer_survives_takeover(client: TestClient) -> None:
                 receive_until("consumer-capabilities", tb)
 
                 # New editor (b) broadcasts; the third viewer (c) still gets it.
-                resp = client.post(
-                    f"/api/marimo/v1/notebooks/{notebook_id}/edits",
-                    headers={
-                        **HEADERS,
-                        "Marimo-Session-Id": "b",
-                        "Idempotency-Key": "edit-1",
-                    },
-                    json={"changes": [new_cell("fresh")]},
+                edited = call_tool(
+                    client,
+                    "notebook.edit",
+                    headers={**HEADERS, "Marimo-Session-Id": "b"},
+                    idempotency_key="edit-1",
+                    notebook_id=notebook_id,
+                    changes=[new_cell("fresh")],
                 )
-                assert resp.status_code == 200, resp.text
+                assert edited.ok, edited.problem
                 data = receive_until("notebook-document-transaction", tc)
                 assert data["op"] == "notebook-document-transaction"
 

@@ -318,7 +318,7 @@ def test_only_post_is_served(client: TestClient) -> None:
         (
             "pair_notebooks_attachments_detach",
             {"id": None, "attachment_id": "x"},
-            "Expected `str`, got `null`",
+            "Expected `str`, got `null` - at `$.id`",
         ),
         (
             "version",

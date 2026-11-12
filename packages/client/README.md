@@ -84,7 +84,7 @@ for await (const event of notebook.events({ types: ["document"] })) {
 if (document === undefined) throw new Error("The host did not send a document");
 console.log(`${document.order.length} cells`);
 
-const result = await notebook.save({ ifMatch: document.etag });
+const result = await notebook.save({ expectedEtag: document.etag });
 if (result.ok) {
   console.log("Saved", result.data.document.etag);
 } else {
@@ -92,11 +92,11 @@ if (result.ok) {
 }
 ```
 
-`ifMatch` makes the document's etag a precondition. If the document changes
-before the save, the host returns a `precondition-failed` problem. Other actions, such
-as `edit` and `run`, use the same result shape. The notebook's advertised
-operations describe which actions it permits. Invalid request data,
-invalid responses, and connection failures throw.
+`expectedEtag` makes the document's etag a precondition. If the document
+changes before the save, the host returns a `precondition-failed` problem.
+Other actions, such as `edit` and `run`, use the same result shape. The
+notebook's advertised operations describe which actions it permits. Invalid
+arguments, invalid results, and connection failures throw.
 
 Problems form a discriminated union. Checking `type` makes the fields for that
 problem available without presence checks:
@@ -111,10 +111,13 @@ if (!result.ok && result.problem.type === "urn:marimo:problem:precondition-faile
 The client represents unrecognized problem types as `type: "unknown"`, retaining
 the original type in `uri` and the common `status`, `title`, and optional `detail`
 fields. Handle these by status. Known types with missing required fields or an
-incorrect status are invalid responses and throw.
+incorrect status are invalid results and throw.
 
-You can also construct a `NotebookClient` directly when you already know
-the notebook's URL.
+You can also construct a `NotebookClient` from a notebook id and any function
+that sends a call, `{ operation, ...arguments }`, and resolves with
+`{ ok: true, data }` or `{ ok: false, problem }`. `mcp(endpoint, { token })`
+makes one for a host's MCP endpoint; a host running in the page can answer
+calls itself.
 
 ## Run cells or execute code
 
@@ -147,7 +150,7 @@ stream before submitting work to receive its progress and results.
 
 `notebook.interrupt()` stops active runtime work, including work without a run
 record, and ends queued runs as interrupted. It takes no runtime or run id.
-An idle `running` runtime accepts the request without affecting future work.
+An idle `running` runtime accepts the call without affecting future work.
 An absent runtime returns `no-runtime`; a runtime that is not `running` returns
 `conflict`.
 
@@ -155,7 +158,7 @@ An absent runtime returns `no-runtime`; a runtime that is not `running` returns
 runs untouched. Cancelling a completed run returns a conflict problem.
 
 Both keep the runtime alive. Their successful results contain a `Runtime` and
-`Run`, respectively. These acknowledge the request; follow the notebook stream
+`Run`, respectively. These acknowledge the call; follow the notebook stream
 to observe completion.
 
 ## Follow changes

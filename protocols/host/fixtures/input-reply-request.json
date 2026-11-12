@@ -1,3 +1,6 @@
 {
+  "notebook_id": "n1",
+  "idempotency_key": "reply-name",
+  "input_id": "i1",
   "value": "Trevor"
 }

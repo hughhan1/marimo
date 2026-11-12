@@ -3,15 +3,13 @@
 The host protocol lets clients discover hosts, find notebooks, edit documents,
 and follow execution through MCP tools and event streams.
 
-marimo serves each operation as an MCP tool of the same name at `/mcp` below
+A host serves each operation as an MCP tool of the same name at `/mcp` below
 the host API's URL, and its event streams over HTTP. A tool's arguments are
-the operation's path parameters, its headers by Python name, such as
-`idempotency_key` and `if_match`, and its request body's members; its result
-is the response, and a failure carries the problem as its text. The
-[tools' contract](holon-contract.json) is generated from marimo's server.
+one object, its result is the reply, and a failure carries the problem as its
+text. The definitions list each tool in the OpenAPI document's `x-tools`.
 
 - [Specification](spec.md) — the model and behavior a host implements.
-- [OpenAPI](#get-the-openapi-document) — the operations, streams and wire schemas, printed on demand.
+- [OpenAPI](#get-the-openapi-document) — the tools, streams and wire schemas, printed on demand.
 - [TypeScript client](../../packages/client/README.md) — connect to a host.
 - [Effect contracts](../../packages/host-protocol/README.md) — author the definitions.
 - [Examples](fixtures/README.md), [conformance tests](conformance/README.md),

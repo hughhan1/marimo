@@ -1,6 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { Schema, type SchemaRepresentation } from "effect";
+import { Tool, Toolkit } from "effect/ai";
 import {
   HttpApi,
   HttpApiEndpoint,
@@ -15,6 +16,7 @@ import * as Problems from "./Problems.ts";
 import * as P from "./api/Parameters.ts";
 import { sseEvents } from "./internal/http.ts";
 import { forGenerators } from "./internal/openapi.ts";
+import { toolEntries, toolSchemas } from "./internal/tools.ts";
 import { CatalogEvent, derive } from "./Events.ts";
 import { objects, type ObjectKind } from "./Objects.ts";
 import * as Notebook from "./Notebook.ts";
@@ -38,22 +40,13 @@ export class HostToken extends HttpApiMiddleware.Service<HostToken>()(
   },
 ) {}
 
-export const Create = HttpApiEndpoint.post("create", "/notebooks", {
-  headers: P.idempotent,
-  payload: S.CreateNotebookRequest,
-  success: [
-    S.Notebook.pipe(HttpApiSchema.status(201)).annotateKey({
-      description: "The notebook was created.",
-    }),
-  ],
-  error: [...Problems.Mutation.members],
-})
-  .annotate(OpenApi.Identifier, "notebook.create")
-  .annotate(OpenApi.Summary, "Create a notebook")
-  .annotate(
-    OpenApi.Description,
-    "Adds an empty notebook to the project. The request carries the\nnotebook's own fields, and the host fills in what it owns. In a\nproject with a `root`, `path` is required and `name` defaults to\nthe filename; if a file already exists at `path`, the host\nanswers `conflict` and leaves it alone. In a project without a\nroot, `name` is required, the host chooses storage, and `path` is\nnull. A request missing the required field is `invalid-request`.\nThe new notebook appears on the catalog stream with this\nrequest's key.\n",
-  );
+export const Create = Tool.make("notebook.create", {
+  description:
+    "Adds an empty notebook to the project. The call carries the\nnotebook's own fields, and the host fills in what it owns. In a\nproject with a `root`, `path` is required and `name` defaults to\nthe filename; if a file already exists at `path`, the host\nanswers `conflict` and leaves it alone. In a project without a\nroot, `name` is required, the host chooses storage, and `path` is\nnull. A call missing the required field is `invalid-request`.\nThe new notebook appears on the catalog stream with this\ncall's key.\n",
+  parameters: S.CreateNotebookRequest,
+  success: S.Notebook,
+  failure: Schema.Union([...Problems.Mutation.members]),
+}).annotate(Tool.Title, "Create a notebook");
 
 const makeEvents = <E extends Schema.Constraint>(events: E) =>
   HttpApiEndpoint.get("events", "/events", {
@@ -80,7 +73,10 @@ const makeEvents = <E extends Schema.Constraint>(events: E) =>
     );
 
 export const group = <E extends Schema.Constraint>(events: E) =>
-  HttpApiGroup.make("Host").add(Create, makeEvents(events));
+  HttpApiGroup.make("Host").add(makeEvents(events));
+
+/** Every operation a host serves, as MCP tools named by operation id. */
+export const Tools = Toolkit.merge(Toolkit.make(Create), Notebook.Tools);
 
 /**
  * The API for a table of objects.
@@ -101,14 +97,20 @@ export const make = <const Objects extends ReadonlyArray<ObjectKind>>(
       S.HostRecord,
       Problems.Problem,
       Problems.UnknownProblem,
+      ...toolSchemas(Object.values(Tools.tools)),
     ])
     .annotate(OpenApi.Title, "marimo host protocol")
     .annotate(OpenApi.Version, "1.0.0")
     .annotate(
       OpenApi.Description,
-      "The contract a marimo host serves so that other programs on the same\nmachine can find it, see what it has, and work with its notebooks. A\nhost is a program that runs marimo notebooks, such as the marimo CLI\nor the VS Code extension. A client is a program that talks to a host\nfrom the outside, such as Pair.\n\nA host writes a small file, the host record, that says where its API\nis and how to authenticate. A client reads that file, opens the host's\nevent stream to learn what it has, and calls the operations the host\nlists. There are two streams: `/events` carries the catalog, and\n`/notebooks/{notebook_id}/events` carries one notebook: its cells and\ndocument, its runtime, and the runs of code against it. Clients ignore\nfields, operation names, event\nnames, and problem types they do not recognize. A host rejects a request\nbody that has a member it does not recognize. A change that would\nbreak an existing client requires a new record version and a new base\npath.\n",
+      "The contract a marimo host serves so that other programs on the same\nmachine can find it, see what it has, and work with its notebooks. A\nhost is a program that runs marimo notebooks, such as the marimo CLI\nor the VS Code extension. A client is a program that talks to a host\nfrom the outside, such as Pair.\n\nA host writes a small file, the host record, that says where its API\nis and how to authenticate. A client reads that file, opens the host's\nevent stream to learn what it has, and calls the tools the host\nlists. There are two streams: `/events` carries the catalog, and\n`/notebooks/{notebook_id}/events` carries one notebook: its cells and\ndocument, its runtime, and the runs of code against it. Clients ignore\nfields, operation names, event\nnames, and problem types they do not recognize. A host rejects a call\nwith an argument it does not recognize. A change that would\nbreak an existing client requires a new record version and a new base\npath.\n",
     )
-    .annotate(OpenApi.Transform, forGenerators);
+    .annotate(OpenApi.Transform, (spec) =>
+      forGenerators({
+        ...spec,
+        "x-tools": toolEntries(Object.values(Tools.tools)),
+      }),
+    );
 };
 
 export const Api = make(objects);

@@ -36,7 +36,7 @@ export const AttachmentId = Schema.String.check(Schema.isMinCodePoints(1))
 export const RunId = Schema.String.check(Schema.isMinCodePoints(1))
   .annotate({
     description:
-      "Identifies a run independently of the request's `Idempotency-Key`. Events carry the key in `request_id`.",
+      "Identifies a run independently of the call's `idempotency_key`. Events carry the key in `request_id`.",
   })
   .pipe(Schema.brand("RunId"))
   .annotate({ identifier: "RunId" });

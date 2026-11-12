@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING, Literal
 import msgspec
 
 from marimo._core import protocol
-from tests._server.host.drive import request, wait_for
-from tests._server.host.live import AUTH
+from tests._server.host.drive import AUTH, request, wait_for
 
 if TYPE_CHECKING:
     from typing import Any

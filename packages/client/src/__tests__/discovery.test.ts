@@ -78,15 +78,15 @@ describe.skipIf(!["darwin", "linux"].includes(process.platform))(
       const records = await collect();
       expect(records).toHaveLength(2);
       expect(records).toContainEqual(record);
-      const { fetch, requests } = fakeHost(
-        () => new Response(null, { status: 204 }),
-      );
+      const { fetch, calls } = fakeHost(() => ({}));
       const host = records.find((host) => host.name === "marimo")!;
       const client = new Client(host.url, { token: host.token, fetch });
       await client.notebook("n1").delete();
-      const [request] = requests;
-      expect(request.url).toBe(`${record.url}/notebooks/n1`);
-      expect(request.headers.get("Authorization")).toBe("Bearer secret");
+      expect(String(fetch.mock.calls[0][0])).toBe(`${record.url}/mcp`);
+      expect(calls[0]).toMatchObject({
+        name: "notebook.delete",
+        authorization: "Bearer secret",
+      });
       expect(runPs).toHaveBeenCalledWith(
         "/bin/ps",
         ["-p", "123", "-o", "lstart=", "-o", "stat="],

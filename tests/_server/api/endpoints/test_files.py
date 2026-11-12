@@ -376,7 +376,7 @@ def test_rename_propagates(
         {"cell-1": "b = __file__", "cell-2": "a = 'x' + __file__"},
         headers=HEADERS,
     )
-    assert initial_response.status_code == 202, initial_response.text
+    assert initial_response.ok, initial_response.problem
 
     variables = {}
     while len(variables) < 2:

@@ -1,9 +1,10 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-/** The path, query, and header parameters that endpoints share. */
+/** The arguments tools share, and the parameters of the event streams. */
 
 import { Schema } from "effect";
 import * as S from "../model/Ids.ts";
+import { Etag } from "../model/Ids.ts";
 import * as Runtime from "../model/Runtime.ts";
 
 export const AttachmentIdentity = Runtime.AttachmentIdentity.annotateKey({
@@ -25,7 +26,7 @@ export const AttachmentName = Runtime.AttachmentName.annotateKey({
 
 export const IdempotencyKey = Schema.String.annotateKey({
   description:
-    "A key the client makes up for this request, such as a UUID. It\ndoes two jobs. If the client sends the same request again, for\nexample after a timeout, the host returns the original response\ninstead of doing the work twice. And the host puts the key on\nevery event about the object the request changed, as\n`request_id`, until that object reaches a final status, so the\nclient can tell which changes it caused. Sending the same key with\na different request is a `conflict`. Keys are scoped to the host,\nacross all mutation routes, for a host-documented retry window\nindependent of result and replay retention. Repeating a run request\nreturns its latest run record, even if its outputs have expired.\nOutside that window or after loss of host state, the key may execute\nagain. Error responses do not reserve a key. Clients use fresh keys\nfor new work and decision retries.\n",
+    "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
 });
 
 export const NotebookId = S.NotebookId.annotateKey({
@@ -54,17 +55,12 @@ export const LastEventId = Schema.String.annotateKey({
     "The `id` of the last event the client received, when reconnecting.",
 });
 
-export const IfMatch = Schema.String.annotateKey({
+export const ExpectedEtag = Etag.annotateKey({
   description:
     "The document etag the client last read, as a precondition. The host answers `precondition-failed` when the document's etag differs.",
 });
 
-/** The notebook a route names in its path. */
+/** The notebook a stream follows. */
 export const notebook = Schema.Struct({ notebookId: NotebookId }).pipe(
   Schema.encodeKeys({ notebookId: "notebook_id" }),
 );
-
-/** The key every mutation carries. */
-export const idempotent = Schema.Struct({
-  idempotencyKey: IdempotencyKey,
-}).pipe(Schema.encodeKeys({ idempotencyKey: "idempotency-key" }));

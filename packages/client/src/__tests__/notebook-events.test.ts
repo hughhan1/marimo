@@ -4,7 +4,6 @@ import NodeFs from "node:fs";
 import NodeUrl from "node:url";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
-import { NotebookClient } from "../notebook/client.ts";
 import { NotebookEvents } from "../notebook/events.ts";
 import type { NotebookEvent } from "../notebook/events.ts";
 import { type NotebookTransport, StreamStopped } from "../transport/frame.ts";
@@ -725,22 +724,5 @@ describe("sse", () => {
     );
     await expect(events.closed).rejects.toBe(shutdown);
     expect(received.map((event) => event.event)).toEqual(["marimo"]);
-  });
-});
-
-describe("NotebookClient.events", () => {
-  it("follows the stream below the notebook's URL with the client's connection", async () => {
-    const { fetch, sent } = answering();
-    const notebook = new NotebookClient(
-      "http://localhost/api/marimo/v1/notebooks/n1?session_id=s1",
-      { token: "secret", fetch },
-    );
-    const events = notebook.events({ types: ["cell"] });
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(sent(0).url).toBe(
-      "http://localhost/api/marimo/v1/notebooks/n1/events?session_id=s1&types=cell",
-    );
-    expect(sent(0).headers.get("Authorization")).toBe("Bearer secret");
-    events.close();
   });
 });

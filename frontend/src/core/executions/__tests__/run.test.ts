@@ -263,7 +263,6 @@ describe("runCells", () => {
   it("withdraws the submission and reports when the host refuses the run", async () => {
     run.mockResolvedValue({
       ok: false,
-      status: 409,
       problem: {
         type: "urn:marimo:problem:conflict",
         title: "Conflict",
@@ -284,7 +283,6 @@ describe("runCells", () => {
   it("withdraws quietly when the connection is read-only", async () => {
     run.mockResolvedValue({
       ok: false,
-      status: 403,
       problem: {
         type: "urn:marimo:problem:forbidden",
         title: "Forbidden",
@@ -353,7 +351,6 @@ describe("runCells", () => {
           refuse = () =>
             resolve({
               ok: false,
-              status: 409,
               problem: {
                 type: "urn:marimo:problem:conflict",
                 title: "Conflict",

@@ -1,8 +1,8 @@
 # Copyright 2026 Marimo. All rights reserved.
 """ASGI test requests with incremental access to event streams.
 
-Direct ASGI requests let tests read events while a response remains open. A
-request to an operation's route is sent as the tool call that replaces it.
+Direct ASGI requests let tests read events while a response remains open, and
+call the host's tools at its `/mcp`.
 """
 
 from __future__ import annotations
@@ -11,8 +11,11 @@ import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
+import msgspec
+
+from marimo._core.protocol_tools import TOOLS
 from marimo._server.host import HOST_API_PATH
-from tests._server.host.routes import route_response, tool_request
+from tests.mcp_request import Called, called, request_headers, tool_payload
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping
@@ -29,6 +32,8 @@ PORT = 1234
 
 AUTHORITY = f"127.0.0.1:{PORT}"
 LOOPBACK = ("127.0.0.1", 50000)
+TOKEN = "host-token"
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
 def with_client_address(
@@ -112,23 +117,21 @@ def request(
     query: str = "",
     client: tuple[str, int] = LOOPBACK,
     host: str = AUTHORITY,
+    prefix: str = HOST_API_PATH,
 ) -> tuple[Response, asyncio.Task[None], Callable[[], None]]:
     """Return the response, request task, and disconnect callback.
 
-    `path` is relative to the host API's prefix.
+    `path` is relative to `prefix`, the host API's by default.
     """
     headers = dict(headers or {})
-    call = tool_request(method, path, headers, body)
-    if call is not None:
-        method, path, body, headers = "POST", "/mcp", call.body, call.headers
     scope = {
         "type": "http",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
         "method": method,
         "scheme": "http",
-        "path": HOST_API_PATH + path,
-        "raw_path": (HOST_API_PATH + path).encode(),
+        "path": prefix + path,
+        "raw_path": (prefix + path).encode(),
         "query_string": query.encode(),
         "root_path": "",
         "headers": [
@@ -158,19 +161,7 @@ def request(
         elif message["type"] == "http.response.body":
             response.feed(message.get("body", b""))
 
-    async def respond() -> None:
-        await app(scope, receive, send)
-        if call is not None:
-            status, media_type, content = route_response(
-                call, response.status, response.body
-            )
-            response.status, response.body = status, content
-            if media_type is None:
-                response.headers.pop("content-type", None)
-            else:
-                response.headers["content-type"] = media_type
-
-    task = asyncio.get_running_loop().create_task(respond())
+    task = asyncio.get_running_loop().create_task(app(scope, receive, send))
 
     def disconnect() -> None:
         receive_queue.put_nowait({"type": "http.disconnect"})
@@ -190,6 +181,40 @@ async def finished(
     response, task, _ = request(app, method, path, **kwargs)
     await asyncio.wait_for(task, timeout)
     return response
+
+
+async def call(
+    app: Starlette,
+    name: str,
+    /,
+    *,
+    headers: dict[str, str] = AUTH,
+    host: str = AUTHORITY,
+    query: str = "",
+    url: str = f"{HOST_API_PATH}/mcp",
+    timeout: float = 5,
+    **arguments: Any,
+) -> Called:
+    """Call a tool at `url`, the host's tools by default, as a client does.
+
+    A success's result must be what the tool declares, as a generated client
+    checks before handing it on.
+    """
+    response = await finished(
+        app,
+        "POST",
+        url,
+        prefix="",
+        headers={**request_headers("tools/call", name), **headers},
+        body=json.dumps(tool_payload(name, arguments)).encode(),
+        host=host,
+        query=query,
+        timeout=timeout,
+    )
+    result = called(response.body)
+    if result.ok and (kind := TOOLS[name].result) is not None:
+        msgspec.convert(result.data, kind)
+    return result
 
 
 async def wait_for(

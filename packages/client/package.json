@@ -12,20 +12,15 @@
     "./protocol": "./dist/protocol.js"
   },
   "files": [
-    "dist",
-    "generated/holon-sh"
+    "dist"
   ],
-  "imports": {
-    "#holon-sh": "./generated/holon-sh/index.mjs"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
-    "codegen": "npm run codegen:client && node ../host-protocol/scripts/openapi.ts --experimental | node --experimental-strip-types scripts/generate-protocol.ts",
+    "codegen": "node ../host-protocol/scripts/openapi.ts --experimental | node --experimental-strip-types scripts/generate-protocol.ts",
     "codegen:check": "node ../host-protocol/scripts/openapi.ts --experimental | node --experimental-strip-types scripts/generate-protocol.ts --check",
     "test": "vitest",
-    "typecheck": "tsgo",
-    "codegen:client": "holon types generate . -s host=../../protocols/host"
+    "typecheck": "tsgo"
   },
   "dependencies": {
     "holon-sh": "0.0.1-dev.12",

@@ -3,22 +3,21 @@
 import type * as Protocol from "../protocol.ts";
 import type { NotebookKind } from "../kinds.ts";
 import {
+  type ArgumentsOf,
   below,
-  type CallTarget,
+  type CallTool,
   type ClientOptions,
+  call,
   type MutationOptions,
-  type OperationCall,
-  type OperationsBelow,
-  request,
   type ResultOf,
-  type Target,
 } from "../request.ts";
+import type { ToolName } from "../tools.ts";
 import { NotebookEvents, type NotebookEventsOptions } from "./events.ts";
 
 /** How a `NotebookClient` reaches and authenticates with its host. */
 export type NotebookClientOptions = ClientOptions;
 
-/** Options for a request the host may need decisions for. */
+/** Options for a call the host may need decisions for. */
 interface DecisionOptions extends MutationOptions {
   /** Answers to the decisions a `decision-required` problem asked for. */
   readonly decisions?: Readonly<Record<string, string>>;
@@ -27,52 +26,52 @@ interface DecisionOptions extends MutationOptions {
 /** Options for saving a notebook. */
 interface SaveOptions extends DecisionOptions {
   /** The document etag the client last read. A different etag is a conflict. */
-  readonly ifMatch?: string;
+  readonly expectedEtag?: string;
 }
 
-type Scope = "/notebooks/{notebook_id}";
-
-type NotebookOperationId = OperationsBelow<Scope>;
+/** Where a notebook's stream is served, when its client has one. */
+interface Stream {
+  readonly url: URL;
+  readonly options: ClientOptions;
+}
 
 /**
- * A notebook operation as one message: its id and its tool's arguments, which
- * are the ids it acts on, `idempotency_key`, `if_match` and its body's members.
+ * A client for one notebook.
  *
- * `unstable_NotebookCall` is any notebook operation, and
- * `unstable_NotebookCall<"notebook.edit">` is one.
- *
- * @experimental The shape may change while transports other than HTTP settle.
+ * Its tools go to `send`: a host's MCP endpoint, through `mcp`, or anything
+ * else that answers `{ ok: true, data }` or `{ ok: false, problem }`, such as
+ * a host running in the page. A client made by `Client.notebook` also follows
+ * the notebook's stream.
  */
-export type unstable_NotebookCall<
-  Id extends NotebookOperationId = NotebookOperationId,
-> = OperationCall<Id>;
+export class NotebookClient {
+  readonly #id: string;
+  readonly #send: CallTool;
+  readonly #stream: Stream | undefined;
 
-/** The notebook's operations, sent to whichever target the client was given. */
-class NotebookOperations {
-  readonly #target: Target<Scope> | CallTarget<Scope>;
-
-  public constructor(target: Target<Scope> | CallTarget<Scope>) {
-    this.#target = target;
+  public constructor(notebookId: string, send: CallTool, stream?: Stream) {
+    this.#id = notebookId;
+    this.#send = send;
+    this.#stream = stream;
   }
 
   /** Rename or move the notebook. */
   public update(
-    changes: Protocol.UpdateNotebookRequest,
+    changes: Pick<Protocol.UpdateNotebookRequest, "path" | "name">,
     options?: MutationOptions,
   ): Promise<ResultOf<"notebook.update">> {
-    return this.#send("notebook.update", { body: changes, options });
+    return this.#call("notebook.update", changes, options);
   }
 
   /** Delete the notebook. */
   public delete(
     options?: MutationOptions,
   ): Promise<ResultOf<"notebook.delete">> {
-    return this.#send("notebook.delete", { options });
+    return this.#call("notebook.delete", {}, options);
   }
 
   /** Ask the host for a URL that opens the notebook for people. */
   public open(options?: MutationOptions): Promise<ResultOf<"notebook.open">> {
-    return this.#send("notebook.open", { options });
+    return this.#call("notebook.open", {}, options);
   }
 
   /** Apply changes to the document as one unit. */
@@ -80,39 +79,39 @@ class NotebookOperations {
     changes: readonly Protocol.Change[],
     options?: MutationOptions,
   ): Promise<ResultOf<"notebook.edit">> {
-    return this.#send("notebook.edit", {
-      body: { changes: [...changes] },
-      options,
-    });
+    return this.#call("notebook.edit", { changes: [...changes] }, options);
   }
 
   /** Write the document to the notebook's store. */
-  public save(options?: SaveOptions): Promise<ResultOf<"notebook.save">> {
-    return this.#send("notebook.save", {
-      body: { decisions: options?.decisions },
-      headers: { "if-match": options?.ifMatch },
+  public save({
+    decisions,
+    expectedEtag,
+    ...options
+  }: SaveOptions = {}): Promise<ResultOf<"notebook.save">> {
+    return this.#call(
+      "notebook.save",
+      { decisions, expected_etag: expectedEtag },
       options,
-    });
+    );
   }
 
   /** Start a runtime for the notebook. */
-  public start(options?: DecisionOptions): Promise<ResultOf<"runtime.start">> {
-    return this.#send("runtime.start", {
-      body: { decisions: options?.decisions },
-      options,
-    });
+  public start({ decisions, ...options }: DecisionOptions = {}): Promise<
+    ResultOf<"runtime.start">
+  > {
+    return this.#call("runtime.start", { decisions }, options);
   }
 
   /** Stop the notebook's runtime. */
   public stop(options?: MutationOptions): Promise<ResultOf<"runtime.stop">> {
-    return this.#send("runtime.stop", { options });
+    return this.#call("runtime.stop", {}, options);
   }
 
   /** Restart the notebook's runtime. */
   public restart(
     options?: MutationOptions,
   ): Promise<ResultOf<"runtime.restart">> {
-    return this.#send("runtime.restart", { options });
+    return this.#call("runtime.restart", {}, options);
   }
 
   /**
@@ -124,8 +123,10 @@ class NotebookOperations {
   public run({
     cells,
     ...options
-  }: Protocol.RunRequest & MutationOptions): Promise<ResultOf<"runtime.run">> {
-    return this.#send("runtime.run", { body: { cells }, options });
+  }: Pick<Protocol.RunRequest, "cells"> & MutationOptions): Promise<
+    ResultOf<"runtime.run">
+  > {
+    return this.#call("runtime.run", { cells }, options);
   }
 
   /**
@@ -141,30 +142,26 @@ class NotebookOperations {
   public execute({
     code,
     ...options
-  }: Protocol.ExecuteRequest & MutationOptions): Promise<
+  }: { readonly code: string } & MutationOptions): Promise<
     ResultOf<"runtime.execute">
   > {
-    return this.#send("runtime.execute", { body: { code }, options });
+    return this.#call("runtime.execute", { code }, options);
   }
 
   /** Answer one pending input. Acceptance does not imply execution resumed. */
   public input(
     inputId: Protocol.ItemId,
-    reply: Protocol.InputReplyRequest,
+    { value }: Pick<Protocol.InputReplyRequest, "value">,
     options?: MutationOptions,
   ): Promise<ResultOf<"runtime.input">> {
-    return this.#send("runtime.input", {
-      params: { input_id: inputId },
-      body: reply,
-      options,
-    });
+    return this.#call("runtime.input", { input_id: inputId, value }, options);
   }
 
   /** Interrupt active work and end queued runs in the notebook's runtime. */
   public interrupt(
     options?: MutationOptions,
   ): Promise<ResultOf<"runtime.interrupt">> {
-    return this.#send("runtime.interrupt", { options });
+    return this.#call("runtime.interrupt", {}, options);
   }
 
   /** Cancel one run without affecting other runs. */
@@ -174,82 +171,39 @@ class NotebookOperations {
   }: { readonly runId: Protocol.RunId } & MutationOptions): Promise<
     ResultOf<"runtime.cancel">
   > {
-    return this.#send("runtime.cancel", {
-      params: { run_id: runId },
-      options,
-    });
-  }
-
-  #send<Id extends OperationsBelow<Scope>>(
-    id: Id,
-    call: Parameters<typeof request<Scope, Id>>[2],
-  ) {
-    return request(this.#target, id, call);
-  }
-}
-
-/**
- * A client for one notebook.
- *
- * Requests go to URLs below the notebook's URL and keep its query string.
- */
-export class NotebookClient extends NotebookOperations {
-  readonly #url: URL;
-  readonly #options: NotebookClientOptions;
-
-  public constructor(url: string | URL, init: NotebookClientOptions = {}) {
-    const notebook = new URL(url);
-    super({ url: notebook, prefix: "/notebooks/{notebook_id}", client: init });
-    this.#url = notebook;
-    this.#options = init;
-  }
-
-  /**
-   * A client whose requests go to `send` as calls rather than to the host's tools.
-   *
-   * `send` delivers each call and resolves with the host's reply, `{ ok: true,
-   * data }` or `{ ok: false, problem }`. Replies are validated as the tools'
-   * are. The client has no URL, so it has no `url` or `events`.
-   *
-   * @experimental The shape may change while transports other than HTTP settle.
-   */
-  public static unstable_over(
-    send: (call: unstable_NotebookCall) => Promise<unknown>,
-    { notebookId }: { readonly notebookId: string },
-  ): Omit<NotebookClient, "url" | "events"> {
-    return new NotebookOperations({
-      // SAFETY: `request` builds each message from its operation's table
-      // entry: the path's ids, the entry's headers as arguments, and the
-      // members of the body its schema parses, which is the shape
-      // `unstable_NotebookCall` gives that operation. The tests check the
-      // message for each method.
-      send: (message) => send(message as unstable_NotebookCall),
-      prefix: "/notebooks/{notebook_id}",
-      params: { notebook_id: notebookId },
-    });
-  }
-
-  /**
-   * The notebook's URL, such as `…/api/marimo/v1/notebooks/n1`.
-   *
-   * Each read returns a copy, so changing it does not redirect requests.
-   */
-  public get url(): URL {
-    return new URL(this.#url);
+    return this.#call("runtime.cancel", { run_id: runId }, options);
   }
 
   /**
    * Follow the notebook's stream.
    *
    * The stream is served below the notebook's URL over server-sent events,
-   * and shares this client's options.
+   * and shares its client's options. Only a client made by `Client.notebook`
+   * has one.
    */
   public events<const K extends string = NotebookKind>(
     options: Omit<NotebookEventsOptions<K>, keyof ClientOptions> = {},
   ): NotebookEvents<K> {
-    return new NotebookEvents<K>(below(this.#url, "/events"), {
-      ...this.#options,
+    if (this.#stream === undefined) {
+      throw new Error("This notebook client has no stream to follow");
+    }
+    return new NotebookEvents<K>(below(this.#stream.url, "/events"), {
+      ...this.#stream.options,
       ...options,
     });
+  }
+
+  #call<Name extends ToolName>(
+    name: Name,
+    args: object,
+    options: MutationOptions = {},
+  ): Promise<ResultOf<Name>> {
+    // SAFETY: each method passes its tool's arguments besides the notebook's
+    // id, which the client adds, and the key, which `call` adds.
+    const all = {
+      notebook_id: this.#id,
+      ...args,
+    } as unknown as ArgumentsOf<Name>;
+    return call(this.#send, name, all, options);
   }
 }

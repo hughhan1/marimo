@@ -7,14 +7,10 @@ import { getRuntimeManager } from "../runtime/config";
 export const getMarimo = once(async () => {
   const { createApps } = await import("#holon-ui");
   const runtimeManager = getRuntimeManager();
-  const { origin } = runtimeManager.httpURL;
   return createApps({
     marimo: {
-      endpoint: new URL(
-        runtimeManager.formatHttpURL({ path: "/api/mcp" }).pathname,
-        origin,
-      ),
-      fileOrigins: [origin],
+      endpoint: runtimeManager.getMcpURL(),
+      fileOrigins: [runtimeManager.httpURL.origin],
       fetch: (input: RequestInfo | URL, init?: RequestInit) => {
         const headers = new Headers(init?.headers);
         for (const [key, value] of Object.entries(runtimeManager.headers())) {

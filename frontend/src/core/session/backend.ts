@@ -2,8 +2,12 @@
 
 /** The backend the editor follows, chosen once for its mode. */
 
-import { NotebookClient, StreamStopped } from "@marimo-team/client";
-import type { NotebookId } from "@marimo-team/client/protocol";
+import {
+  type CallTool,
+  mcp,
+  NotebookClient,
+  StreamStopped,
+} from "@marimo-team/client";
 import type { NotebookBackend } from "../notebook/replica";
 import { PyodideBridge } from "../wasm/bridge";
 import { isWasm } from "../wasm/utils";
@@ -30,8 +34,8 @@ export interface EditorBackendOptions {
   sessionArguments: () => SessionArguments;
   /** The runtime's headers, read before each request. */
   headers: () => Record<string, string>;
-  /** The host URL of a notebook the stream reported. */
-  notebookUrl: (notebookId: NotebookId) => URL;
+  /** The editor's MCP endpoint, which serves the notebook tools too. */
+  mcpUrl: () => URL;
   /** Wait until the host can accept the first connection. */
   waitUntilReady: () => Promise<void>;
   /** Whether the host is reachable before an explicit reconnect. */
@@ -119,11 +123,17 @@ export function createEditorBackend(
 
 /** Follow the notebook on the server, through its `session` event. */
 function server(options: EditorBackendOptions): NotebookBackend {
-  // One set of options, so every notebook shares one client of the host's tools.
-  const init = { fetch: withHeaders(options.headers) };
+  // Every notebook shares one client of the editor's tools.
+  let send: CallTool | undefined;
   return {
     transport: sessionEvents(afterStartup(options), subscribeSession),
-    notebook: (id) => new NotebookClient(options.notebookUrl(id), init),
+    notebook: (id) =>
+      new NotebookClient(
+        id,
+        (send ??= mcp(options.mcpUrl(), {
+          fetch: withHeaders(options.headers),
+        })),
+      ),
     checkHealth: options.checkHealth,
   };
 }

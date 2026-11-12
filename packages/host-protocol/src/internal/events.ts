@@ -16,7 +16,7 @@ export function message<const Fields extends Schema.Struct.Fields>(
     request_id: Schema.optionalKey(
       Schema.String.annotateKey({
         description:
-          "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+          "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       }),
     ),
     time: Schema.optionalKey(

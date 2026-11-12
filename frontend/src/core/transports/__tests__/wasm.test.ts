@@ -20,7 +20,7 @@ function worker() {
     .document;
   assert(document);
   const listeners = new Set<(event: unknown) => void>();
-  const reply = { ok: true, status: 200, data: { document, cells: {} } };
+  const reply = { ok: true, data: { document, cells: {} } };
   const wire = { ok: true, data: reply.data };
   const bridge = {
     subscribe: vi.fn(
@@ -125,7 +125,6 @@ describe("WASM notebook backend", () => {
       bridge.call.mockResolvedValue({ ok: false, problem });
       expect(await command()).toEqual({
         ok: false,
-        status: 403,
         problem,
       });
       bridge.call.mockResolvedValue({ ok: true, data: {} });

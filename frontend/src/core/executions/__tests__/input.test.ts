@@ -56,7 +56,6 @@ describe("replyInput", () => {
   it("reports a reply the host refuses", async () => {
     input.mockResolvedValue({
       ok: false,
-      status: 409,
       problem: {
         type: "urn:marimo:problem:conflict",
         title: "Conflict",

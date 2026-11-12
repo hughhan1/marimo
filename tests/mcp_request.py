@@ -8,7 +8,7 @@ import queue
 import socket
 import threading
 import urllib.request
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import httpx
 
@@ -94,6 +94,33 @@ def tool_problem(result: dict[str, Any]) -> dict[str, Any] | None:
         return None
     problem: dict[str, Any] = json.loads(result["content"][0]["text"])
     return problem
+
+
+class Called(NamedTuple):
+    """A tool call's outcome: its result's data, or the problem that failed it."""
+
+    ok: bool
+    data: Any = None
+    problem: Any = None
+
+
+def called(body: bytes) -> Called:
+    """The outcome of a `tools/call` the server answered with `body`.
+
+    A call refused before it reaches the transport, such as one without the
+    server's credentials, fails with the response's own body, and one the
+    transport refuses with its JSON-RPC error.
+    """
+    message = json.loads(body)
+    if "jsonrpc" not in message:
+        return Called(False, problem=message)
+    if "error" in message:
+        return Called(False, problem=message["error"])
+    result = message["result"]
+    problem = tool_problem(result)
+    if problem is not None:
+        return Called(False, problem=problem)
+    return Called(True, data=result["structuredContent"])
 
 
 def tool_status(result: dict[str, Any]) -> int:

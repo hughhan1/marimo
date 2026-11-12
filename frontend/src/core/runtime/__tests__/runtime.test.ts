@@ -145,16 +145,15 @@ describe("RuntimeManager", () => {
     });
   });
 
-  describe("getNotebookURL", () => {
-    it("addresses the notebook below the host API without the auth token", () => {
+  describe("getMcpURL", () => {
+    it("addresses the editor's tools without the auth token", () => {
       const runtime = new RuntimeManager({
         url: "https://sandbox.example.com/base",
         authToken: "my-secret-token",
       });
-      const url = runtime.getNotebookURL("n/1");
+      const url = runtime.getMcpURL();
 
-      expect(url.pathname).toBe("/base/api/marimo/v1/notebooks/n%2F1");
-      expect(url.toString()).not.toContain("my-secret-token");
+      expect(url.href).toBe("https://sandbox.example.com/base/api/mcp");
     });
   });
 

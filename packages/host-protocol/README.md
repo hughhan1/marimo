@@ -1,9 +1,10 @@
 # Host protocol definitions
 
-[`Host.Api`](src/Host.ts) defines the [host protocol](../../protocols/host/spec.md)
-with Effect's `HttpApi`. The same definition gives server handler types, an
-Effect HTTP client, and the [OpenAPI document](../../protocols/host/README.md#get-the-openapi-document)
-that the Python and TypeScript generators read.
+[`Host`](src/Host.ts) defines the [host protocol](../../protocols/host/spec.md)
+with Effect: each operation is a `Tool` in `Host.Tools`, and the event streams
+are an `HttpApi`. The same definitions give typed tool handlers and the
+[OpenAPI document](../../protocols/host/README.md#get-the-openapi-document)
+whose `x-tools` and schemas the Python and TypeScript generators read.
 
 Start with [`Objects.ts`](src/Objects.ts), the table of objects a host
 publishes. The events come from that table, and an
@@ -13,34 +14,22 @@ rows to it.
 ## Implement a host
 
 ```ts
-import { HttpApiBuilder } from "effect/http-api";
-import { Host } from "@marimo-team/host-protocol";
-
-const NotebookRoutes = HttpApiBuilder.group(Host.Api, "Notebook", (handlers) =>
-  handlers.handleAll(notebookHandlers),
-);
-```
-
-A host also provides a layer for `Host.HostToken`, which admits requests that
-carry the host record's token.
-
-## Connect with Effect
-
-```ts
 import { Effect } from "effect";
-import { HttpApiClient } from "effect/http-api";
 import { Host } from "@marimo-team/host-protocol";
 
-const cancel = Effect.gen(function* () {
-  const client = yield* HttpApiClient.make(Host.Api, { baseUrl });
-  return yield* client.Notebook.cancel({
-    params: { notebookId, runId },
-    headers: { idempotencyKey },
-  });
+const tools = Host.Tools.toLayer({
+  "notebook.edit": ({ notebook_id, changes, idempotency_key }) =>
+    edit(notebook_id, changes, idempotency_key),
+  // ...one handler per tool
 });
 ```
 
-For a client without Effect, use [`@marimo-team/client`](../client/README.md).
+Serve the tools over MCP at `/mcp` below the API's URL, for example with
+`McpServer` from `effect/ai`, and the streams with `HttpApiBuilder`. A host
+also provides a layer for `Host.HostToken`, which admits requests that carry
+the host record's token.
+
+For a client, use [`@marimo-team/client`](../client/README.md).
 
 ## Working on the package
 

@@ -1,6 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import type { unstable_NotebookCall } from "@marimo-team/client";
+import type { ToolCall } from "@marimo-team/client";
 import type { PyodideInterface } from "pyodide";
 import {
   createRPC,
@@ -203,7 +203,7 @@ const requestHandler = createRPCRequestHandler({
   notebookCall: async (opts: {
     appId: string;
     sessionGeneration: number;
-    call: unstable_NotebookCall;
+    call: ToolCall;
   }): Promise<unknown> => {
     await pyodideReadyPromise;
     return enqueueSession(async () => {

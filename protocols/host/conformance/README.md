@@ -9,7 +9,9 @@ make host-protocol-check
 
 The suite validates against the OpenAPI document, which it asks the
 [host protocol package](../README.md#get-the-openapi-document) to print. That
-needs Node and the package's one dependency.
+needs Node and the package's one dependency. The document's `paths` are the
+event streams, and its `x-tools` lists the tools: each one's arguments,
+result and the problems it may fail with.
 
 ```sh
 pnpm install --filter @marimo-team/host-protocol --prod
@@ -22,8 +24,11 @@ covers TypeScript generation and package checks.
 ## Check a running host
 
 Start a host in a disposable workspace and pass its
-[discovery record](../spec.md#local-discovery). The suite creates and modifies
-notebooks and starts and stops runtimes; you manage the host's lifecycle.
+[discovery record](../spec.md#local-discovery). The suite calls the host's
+tools over MCP at `/mcp` below the record's URL, and reads its event streams
+over HTTP. It checks each result against the tool's `outputSchema` and each
+failure against the tool's `problems`. It creates and modifies notebooks and
+starts and stops runtimes; you manage the host's lifecycle.
 
 ```sh
 uv run --locked --project protocols/host/conformance \

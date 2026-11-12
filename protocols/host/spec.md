@@ -6,8 +6,9 @@ The marimo host protocol defines communication between a **host**, a program
 that serves notebooks, and a **client**, a program that works with those
 notebooks. Clients may provide a user interface or operate headlessly.
 
-A host exposes the **host API** through HTTP endpoints and event streams.
-Clients use this API to read notebook state, follow changes, and invoke the
+A host exposes the **host API**: its operations as
+[MCP](https://modelcontextprotocol.io) tools, and its event streams over HTTP.
+Clients use this API to read notebook state, follow changes, and call the
 operations the host supports.
 
 To connect, a client needs the API's base URL and an authentication token. The
@@ -18,8 +19,9 @@ another application.
 ## Reading this specification
 
 This document describes the notebook model and the behavior expected of hosts
-and clients. [OpenAPI](README.md#get-the-openapi-document) defines the endpoints, message formats, and
-operation requirements, and is the source for generated types. The
+and clients. [OpenAPI](README.md#get-the-openapi-document) defines the streams,
+the message formats, and each tool in its `x-tools`, and is the source for
+generated types. The
 [examples](fixtures/) show complete messages.
 
 Capitalized MUST, MUST NOT, SHOULD, and MAY follow
@@ -303,6 +305,12 @@ supplied through configuration or [local discovery](#local-discovery). Version
 1 serves the API over HTTP on loopback addresses. Hosts MUST authenticate
 requests using the token and accept only loopback connections.
 
+Each operation is an MCP tool of the same name, served over Streamable HTTP at
+`/mcp` below the base URL. A tool's arguments are one object: the ids of what
+it acts on, such as `notebook_id`, its `idempotency_key`, and the rest of the
+call. Its result is the reply. A failure is a problem, carried as the text of
+an error result.
+
 ## Following state
 
 Clients use **event streams** to read state and follow changes as they happen.
@@ -358,7 +366,7 @@ Clients MUST ignore custom types they do not recognize while retaining the
 stream cursor. Consumers of a type are responsible for validating its payload.
 
 Custom events MUST carry a timestamp, with the notebook identified by the
-stream. The envelope MUST include `request_id` when a request caused the event
+stream. The envelope MUST include `request_id` when a call caused the event
 and omit it otherwise. Custom events participate in the stream's ordering and
 cursor-based replay, with their original ids and timestamps. They MUST NOT
 appear in snapshots. Once their replay history expires, a
@@ -380,9 +388,8 @@ transient state. For example, a notebook can permit execution while its runtime
 is stopped. A client uses the notebook's current state to determine what
 preparation is needed before calling an operation.
 
-A host answers `501 unsupported-operation` to an operation it does not offer,
-and `403 forbidden` to one the project or notebook does not permit for this
-client.
+A host answers `unsupported-operation` to an operation it does not offer, and
+`forbidden` to one the project or notebook does not permit for this client.
 
 Hosts MUST authorize `runtime.run`, `runtime.execute`, and `notebook.edit`
 independently. A notebook may permit rerunning its cells without permitting
@@ -393,28 +400,28 @@ available source without `notebook.edit`. An editor for existing source needs
 both a non-null `code` and permission to edit. Withholding source does not
 remove the notebook's execution records, outputs, or runtime state.
 
-### Requests and decisions
+### Calls and decisions
 
-Requests can produce changes after their HTTP response has arrived. The host
-includes a client-supplied request key in related events, allowing clients to
-follow the effects of their actions on the shared notebook stream.
+Calls can produce changes after their result has arrived. The host includes
+the call's `idempotency_key` in related events, as `request_id`, allowing
+clients to follow the effects of their actions on the shared notebook stream.
 
-The same key makes a request safe to retry within the host's documented retry
-window. Once a request is accepted, hosts MUST recognize its retries within that
+The same key makes a call safe to retry within the host's documented retry
+window. Once a call is accepted, hosts MUST recognize its retries within that
 window and avoid repeating the work. This guarantee is separate from how long
 results are kept and does not extend beyond the retry window or a loss of host
 state.
 
 Some operations require a **decision**, such as choosing a kernel environment
 or resolving a change to the backing file. The host returns the available
-choices in a problem response. The client can present them to a user or answer
-automatically, then submit the request with its choice and a new key.
+choices in a problem. The client can present them to a user or answer
+automatically, then call again with its choice and a new key.
 
 ### Editing and saving
 
 Edits describe a group of changes to the document. Hosts MUST apply each group
 atomically. If a precondition is stale, the host rejects the whole group with a
-`412 precondition-failed` problem that names the first stale change and carries
+`precondition-failed` problem that names the first stale change and carries
 the document as it now is. It also carries the cell that change named, or null
 when the document no longer has the cell or the change named the order.
 Clients can inspect that state and decide how to revise their edit.
@@ -428,10 +435,10 @@ Preconditions use **etags**, identifiers derived from content. They let clients
 edit different parts of a document independently while detecting competing
 changes to the same part. For example, two clients can update different cells,
 but an edit based on an older version of the same cell fails its precondition.
-A save with a stale `If-Match` and a run that names a stale cell etag receive
-the same problem. For a save, `index` is `0` and `cell` is null. A `409 conflict`
-means the current state does not allow the request, such as a file that already
-exists, so reading again does not help.
+A save with a stale `expected_etag` and a run that names a stale cell etag
+receive the same problem. For a save, `index` is `0` and `cell` is null. A
+`conflict` means the current state does not allow the call, such as a file that
+already exists, so reading again does not help.
 
 An accepted edit answers with the version of each cell it touched and the
 document at the edit's revision or a later one. The client already has the
@@ -461,10 +468,10 @@ Marimo hosts provide the internal `marimo._code_mode.get_context()` API within
 methods for editing and running cells. The outputs are captured when execution
 begins.
 
-An accepted execution request starts a run whose progress and results arrive on
+An accepted execution call starts a run whose progress and results arrive on
 the notebook stream for all attached clients. Clients that need to observe the
 full sequence open the stream before submitting work. Hosts that offer execution
-MUST execute one run at a time, accept further requests as `queued` runs, and
+MUST execute one run at a time, accept further calls as `queued` runs, and
 start them in the order they were accepted. A run's requested cells and their
 source are fixed when it is accepted, and the run's `cells` names them, so a
 client can tell which cells a queued run will reach before the runtime has
@@ -480,14 +487,13 @@ Hosts offering `runtime.run` or `runtime.execute` MUST support
 run or execution record, and ends queued runs. Clients do not need to
 enumerate runs or supply a runtime id.
 
-```http
-POST /notebooks/{notebook_id}/runtime/interrupt
-Idempotency-Key: interrupt-1
+```json
+{ "notebook_id": "n1", "idempotency_key": "interrupt-1" }
 ```
 
-This request has no body. An absent runtime is `no-runtime`; a runtime that is
-not `running` is a `conflict`. An idle running runtime accepts the request as a
-no-op and MUST NOT arm an interrupt for future work.
+An absent runtime is `no-runtime`; a runtime that is not `running` is a
+`conflict`. An idle running runtime accepts the call as a no-op and MUST NOT
+arm an interrupt for future work.
 
 Interruption keeps the runtime alive and does not roll back work already
 performed. The host MUST remove queued runs from the queue and complete them
@@ -495,10 +501,10 @@ performed. The host MUST remove queued runs from the queue and complete them
 MUST be cancelled. Work without a run record need not acquire one to be
 interrupted.
 
-The host answers `202` with the current `Runtime`. This acknowledges the
-request, not that active work has stopped. Runs and executions MUST report
-their actual outcomes once they settle; acceptance alone MUST NOT mark them
-`interrupted`. Within the retry window, repeating the same request MUST return
+The result is the current `Runtime`. This acknowledges the call, not that
+active work has stopped. Runs and executions MUST report their actual outcomes
+once they settle; acceptance alone MUST NOT mark them `interrupted`. Within
+the retry window, repeating the same call MUST return
 the original acknowledgement without interrupting again, including after new
 work has started or the runtime has been replaced.
 
@@ -508,12 +514,11 @@ Hosts offering `runtime.run` or `runtime.execute` MUST support
 `runtime.cancel`. Clients target one run without affecting other runs or
 stopping the runtime.
 
-```http
-DELETE /notebooks/{notebook_id}/runtime/runs/{run_id}
-Idempotency-Key: cancel-1
+```json
+{ "notebook_id": "n1", "run_id": "r1", "idempotency_key": "cancel-1" }
 ```
 
-This request has no body. A queued run MUST be removed from the queue and
+A queued run MUST be removed from the queue and
 complete `interrupted` without executing. For a running run, the host MUST
 interrupt only if that run is still active, and its remaining executions MUST
 end `interrupted`. If the target finishes before cancellation takes effect,
@@ -521,10 +526,10 @@ the host MUST NOT interrupt a successor. Pending inputs belonging to cancelled
 work MUST be cancelled. Other runs MUST remain untouched.
 
 A completed run receives `conflict`, so a client attempting cancellation can
-distinguish work that already finished. An accepted request receives `202`
-with the `Run`; this acknowledges cancellation, not completion. The notebook
-stream reports the run and execution outcomes once they settle. Retrying an
-accepted request follows the protocol's idempotency rules, including after
+distinguish work that already finished. An accepted call returns the `Run`;
+this acknowledges cancellation, not completion. The notebook stream reports
+the run and execution outcomes once they settle. Retrying an accepted call
+follows the protocol's idempotency rules, including after
 the run completes.
 
 ### Answering input
@@ -539,14 +544,15 @@ Hosts offering `runtime.run` or `runtime.execute` MUST implement
 `runtime.input`. Any client permitted the operation may answer. This permission
 applies to the notebook and is independent of which client started the run or
 opened an event stream.
-The client sends the input id in the URL and its answer in the request body.
+The call names the input and carries the answer.
 
-```http
-POST /notebooks/{notebook_id}/runtime/inputs/{input_id}/reply
-Idempotency-Key: reply-1
-Content-Type: application/json
-
-{ "value": "Trevor" }
+```json
+{
+  "notebook_id": "n1",
+  "input_id": "i1",
+  "value": "Trevor",
+  "idempotency_key": "reply-1"
+}
 ```
 
 The runtime receives the text in `value` exactly as submitted, including an
@@ -555,24 +561,24 @@ waiting for input can cancel its run or interrupt its runtime.
 
 The host MUST accept at most one reply to each input and reject replies once
 it is cancelled. Before acknowledging a reply, the host MUST arrange delivery
-to that specific input and publish its `answered` record. The response confirms
+to that specific input and publish its `answered` record. The result confirms
 acceptance, and clients follow execution events to observe further progress.
 If delivery subsequently fails, the host MUST end the execution with an error
 or interruption.
 
-Replies follow the protocol's [idempotency rules](#requests-and-decisions).
+Replies follow the protocol's [idempotency rules](#calls-and-decisions).
 
-| Request | Response |
+| Call | Result |
 | --- | --- |
-| First accepted reply | `200` with the answered input record. |
-| Retry with the same key and request within the retry window | The original response for the accepted reply, including after execution removal. |
-| New reply to an answered or cancelled input | `409 conflict`. |
-| Reply to an unknown, removed, or other notebook's input | `404 not-found`. |
+| First accepted reply | The answered input record. |
+| Retry with the same key and arguments within the retry window | The original result for the accepted reply, including after execution removal. |
+| New reply to an answered or cancelled input | `conflict`. |
+| Reply to an unknown, removed, or other notebook's input | `not-found`. |
 
-An input's creation event carries the execution's originating request key.
+An input's creation event carries the execution's originating call key.
 The answered event carries the reply's key, and cancellation carries the
-cancelling request's key when there is one. Subsequent run and execution events
-keep their original request key, so clients can continue following the run
+cancelling call's key when there is one. Subsequent run and execution events
+keep their original call key, so clients can continue following the run
 independently of its answers.
 
 ## Local discovery
@@ -592,9 +598,9 @@ removed.
 
 Hosts can extend the protocol with new capabilities. Clients MUST ignore
 unfamiliar fields, operations, and events while continuing to process the parts
-they understand. Hosts MUST reject a request body that has an unrecognized
-member at any depth with `400 invalid-request`, so a client learns that the
-host cannot honor it. A breaking change requires a new record version and API
+they understand. Hosts MUST reject a call whose arguments have an
+unrecognized member at any depth with `invalid-request`, so a client learns
+that the host cannot honor it. A breaking change requires a new record version and API
 base path. Protocol versions are independent of marimo releases.
 
 Conformance tests exercise the contract from a client's perspective. Hosts,

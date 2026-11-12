@@ -3,39 +3,35 @@
 
 from __future__ import annotations
 
-import pytest
-
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.main import create_starlette_app
 from marimo._session.model import SessionMode
-from tests._server.host.drive import finished
+from tests._server.host.drive import AUTH, TOKEN, call, finished
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
 )
 
 
-@pytest.mark.parametrize(
-    ("path", "method"),
-    [
-        ("/events", "GET"),
-        ("/notebooks/unknown/edits", "POST"),
-    ],
-)
-async def test_app_mode_never_exposes_the_catalog_or_mutations(path, method):
+async def test_app_mode_never_exposes_the_catalog_or_mutations() -> None:
     manager = get_mock_session_manager(mode=SessionMode.RUN)
     app = create_starlette_app(base_url="", enable_auth=False)
     get_starlette_server_state_init(session_manager=manager).apply(app.state)
     bridge = SessionBridge(manager)
-    app.state.host_context = HostContext(
-        bridge=bridge, token="host-token", port=1234
-    )
+    app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=1234)
     await bridge.open()
     try:
-        response = await finished(
-            app, method, path, headers={"Authorization": "Bearer host-token"}
+        events = await finished(app, "GET", "/events", headers=AUTH)
+        assert events.status == 404
+        edited = await call(
+            app,
+            "notebook.edit",
+            idempotency_key="edit",
+            notebook_id="unknown",
+            changes=[],
         )
-        assert response.status == 404
+        assert edited.problem["status"] == 404
+        assert edited.problem["type"].endswith(":not-found")
     finally:
         bridge.close()

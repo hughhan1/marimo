@@ -10,11 +10,13 @@ import httpx
 import pytest
 from contract import (
     ROOT,
+    SCHEMAS,
     SPEC,
     Frame,
     Host,
     Watch,
     document_state,
+    failed,
     frames,
     validate,
 )
@@ -45,6 +47,50 @@ async def lines(text):
 def test_schemas_are_valid():
     for schema in SPEC["components"]["schemas"].values():
         Draft202012Validator.check_schema(schema)
+
+
+def test_tools_name_their_arguments_results_and_problems():
+    problems = {member["$ref"] for member in SCHEMAS["Problem"]["anyOf"]}
+    for tool in SPEC["x-tools"]:
+        arguments = SCHEMAS[tool["inputSchema"]["$ref"].rsplit("/", 1)[1]]
+        assert "idempotency_key" in arguments["required"], tool["name"]
+        assert arguments["additionalProperties"] is False, tool["name"]
+        if "outputSchema" in tool:
+            assert tool["outputSchema"]["$ref"].rsplit("/", 1)[1] in SCHEMAS
+        assert {ref["$ref"] for ref in tool["problems"]} <= problems
+
+
+@pytest.mark.parametrize(
+    ("kind", "listed"), [("conflict", True), ("no-runtime", False)]
+)
+async def test_a_failure_is_one_of_its_tools_problems(kind, listed):
+    value = json.loads((FIXTURES / "problems" / f"{kind}.json").read_text())
+
+    def respond(_request):
+        text = json.dumps(value)
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "isError": True,
+                    "content": [{"type": "text", "text": text}],
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://127.0.0.1/", transport=httpx.MockTransport(respond)
+    ) as client:
+        call = Host(client, timeout=1).call(
+            "notebook.delete", notebook_id="n1"
+        )
+        if listed:
+            assert failed(await call, kind) == value
+        else:
+            with pytest.raises(ValidationError):
+                await call
 
 
 @pytest.mark.parametrize(
@@ -229,8 +275,10 @@ def test_code_fingerprints_are_opaque():
     ids=lambda case: f"{case['schema']}: {case['name']}",
 )
 def test_execution_requests(case):
+    # A case is the members a call adds to its notebook and key.
+    arguments = {"notebook_id": "n1", "idempotency_key": "k", **case["body"]}
     if case["valid"]:
-        validate(case["schema"], case["body"])
+        validate(case["schema"], arguments)
     else:
         with pytest.raises(ValidationError):
-            validate(case["schema"], case["body"])
+            validate(case["schema"], arguments)

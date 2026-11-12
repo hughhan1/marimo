@@ -53,7 +53,7 @@ function record(
 }
 
 function rejected(problem: ProblemOf<"notebook.edit">): Outcome {
-  return { result: { ok: false, status: problem.status, problem } };
+  return { result: { ok: false, problem } };
 }
 
 /** An independent implementation of the document edit protocol, without client draft logic. */
@@ -200,7 +200,6 @@ export function createTestHost(initial: Document) {
     return {
       result: {
         ok: true,
-        status: 200,
         data: { document: current.revision, cells: versions },
       },
       ...(changed ? { update: current } : {}),

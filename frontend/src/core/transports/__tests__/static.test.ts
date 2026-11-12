@@ -197,7 +197,6 @@ describe("static notebook backend", () => {
         operation === "edit" ? await client.edit([]) : await client.save();
       expect(result).toEqual({
         ok: false,
-        status: 501,
         problem: {
           type: "urn:marimo:problem:unsupported-operation",
           title: "Unsupported operation",
@@ -335,6 +334,6 @@ describe("starting from an embedded snapshot", () => {
       createStaticNotebookBackend(emptySnapshot("live")),
     );
     const result = await backend.notebook("live").save();
-    expect(result).toMatchObject({ ok: false, status: 501 });
+    expect(result).toMatchObject({ ok: false, problem: { status: 501 } });
   });
 });

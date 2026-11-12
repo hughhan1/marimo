@@ -2,7 +2,12 @@
 
 export type { Problem, UnknownProblem } from "./problem.ts";
 export { Client } from "./client.ts";
-export type { ClientOptions } from "./request.ts";
+export {
+  type CallTool,
+  type ClientOptions,
+  mcp,
+  type ToolCall,
+} from "./request.ts";
 export {
   CatalogEvents,
   type CatalogEventsOptions,
@@ -12,8 +17,8 @@ export type { CatalogKind, NotebookKind } from "./kinds.ts";
 export {
   NotebookClient,
   type NotebookClientOptions,
-  type unstable_NotebookCall,
 } from "./notebook/client.ts";
+export type { ToolName } from "./tools.ts";
 export {
   NotebookEvents,
   type NotebookEventsOptions,

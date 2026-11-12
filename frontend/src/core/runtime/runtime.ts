@@ -1,6 +1,5 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import type { NotebookId } from "@marimo-team/client/protocol";
 import { Deferred } from "@/utils/Deferred";
 import { Logger } from "@/utils/Logger";
 import { KnownQueryParams } from "../constants";
@@ -147,15 +146,14 @@ export class RuntimeManager {
   }
 
   /**
-   * The host API URL of a notebook, below which its operations are served.
+   * The editor's MCP endpoint, which serves its tools and the notebook's.
    * Requests send auth in headers (see `headers()`), never in the URL.
    */
-  public getNotebookURL(notebookId: NotebookId): URL {
-    const url = this.formatHttpURL({
-      path: `/api/marimo/v1/notebooks/${encodeURIComponent(notebookId)}`,
-    });
-    url.searchParams.delete(KnownQueryParams.accessToken);
-    return url;
+  public getMcpURL(): URL {
+    return new URL(
+      this.formatHttpURL({ path: "/api/mcp" }).pathname,
+      this.httpURL.origin,
+    );
   }
 
   /**

@@ -4,8 +4,35 @@ import { Schema } from "effect";
 import { Integer } from "../internal/schema.ts";
 import { ProjectId, CellId, Etag, CodeFingerprint } from "../model/Ids.ts";
 import { Document } from "../model/Document.ts";
+import {
+  ExpectedEtag,
+  IdempotencyKey,
+  InputId,
+  NotebookId,
+  RunId,
+} from "./Parameters.ts";
+
+/** What every call that changes something carries. */
+const mutation = { idempotency_key: IdempotencyKey };
+
+/** What every call on one notebook carries. */
+const onNotebook = { notebook_id: NotebookId, ...mutation };
+
+export const NotebookRequest = Schema.Struct(onNotebook).annotate({
+  description: "The notebook a call acts on, and the call's idempotency key.",
+  identifier: "NotebookRequest",
+});
+
+export const CancelRunRequest = Schema.Struct({
+  ...onNotebook,
+  run_id: RunId,
+}).annotate({
+  description: "The run to cancel.",
+  identifier: "CancelRunRequest",
+});
 
 export const CreateNotebookRequest = Schema.Struct({
+  ...mutation,
   project_id: ProjectId,
   path: Schema.optionalKey(
     Schema.String.annotateKey({
@@ -27,6 +54,7 @@ export const CreateNotebookRequest = Schema.Struct({
 });
 
 export const UpdateNotebookRequest = Schema.Struct({
+  ...onNotebook,
   path: Schema.optionalKey(
     Schema.String.annotateKey({
       description:
@@ -36,12 +64,10 @@ export const UpdateNotebookRequest = Schema.Struct({
   name: Schema.optionalKey(
     Schema.String.annotateKey({ description: "The new label to show people." }),
   ),
-})
-  .check(Schema.isMinProperties(1))
-  .annotate({
-    description: "The fields to change. At least one is present.",
-    identifier: "UpdateNotebookRequest",
-  });
+}).annotate({
+  description: "The fields to change. At least one is present.",
+  identifier: "UpdateNotebookRequest",
+});
 
 export const OpenNotebookResponse = Schema.Struct({
   url: Schema.String.annotateKey({
@@ -51,6 +77,8 @@ export const OpenNotebookResponse = Schema.Struct({
 }).annotate({ identifier: "OpenNotebookResponse" });
 
 export const InputReplyRequest = Schema.Struct({
+  ...onNotebook,
+  input_id: InputId,
   value: Schema.String.annotateKey({
     description:
       "The text to deliver to the input exactly as submitted, including an empty string when the answer is empty.",
@@ -61,6 +89,7 @@ export const InputReplyRequest = Schema.Struct({
 });
 
 export const StartRuntimeRequest = Schema.Struct({
+  ...onNotebook,
   decisions: Schema.optionalKey(
     Schema.Record(Schema.String, Schema.String).annotateKey({
       description:
@@ -68,7 +97,10 @@ export const StartRuntimeRequest = Schema.Struct({
       examples: [{ environment: "sandbox" }],
     }),
   ),
-}).annotate({ identifier: "StartRuntimeRequest" });
+}).annotate({
+  description: "The notebook whose runtime to start.",
+  identifier: "StartRuntimeRequest",
+});
 
 export const CellConfigInput = Schema.Struct({
   column: Schema.optionalKey(
@@ -158,10 +190,14 @@ export const Change = Schema.Union([PutCell, DeleteCell, SetOrder]).annotate({
 });
 
 export const EditRequest = Schema.Struct({
+  ...onNotebook,
   changes: Schema.Array(Change).annotateKey({
     description: "The changes, applied in order as one unit.",
   }),
-}).annotate({ identifier: "EditRequest" });
+}).annotate({
+  description: "Changes to the document, applied as one unit.",
+  identifier: "EditRequest",
+});
 
 export const CellVersion = Schema.Struct({
   etag: Etag,
@@ -187,6 +223,8 @@ export const EditResponse = Schema.Struct({
 });
 
 export const SaveRequest = Schema.Struct({
+  ...onNotebook,
+  expected_etag: Schema.optionalKey(ExpectedEtag),
   decisions: Schema.optionalKey(
     Schema.Record(Schema.String, Schema.String).annotateKey({
       description:
@@ -195,7 +233,7 @@ export const SaveRequest = Schema.Struct({
   ),
 }).annotate({
   description:
-    "What a save needs from the client, which is nothing until the host asks a question. `{}` is the usual body.",
+    "The notebook to save. A save needs nothing else until the host asks a question.",
   identifier: "SaveRequest",
 });
 
@@ -210,6 +248,7 @@ export const RequestedCell = Schema.Struct({
 }).annotate({ identifier: "RequestedCell" });
 
 export const RunRequest = Schema.Struct({
+  ...onNotebook,
   cells: Schema.Array(RequestedCell).check(Schema.isMinLength(1)).annotateKey({
     description:
       "Cells to run by id. The notebook's execution settings determine their order and whether dependent cells run too.",
@@ -220,6 +259,7 @@ export const RunRequest = Schema.Struct({
 });
 
 export const ExecuteRequest = Schema.Struct({
+  ...onNotebook,
   code: Schema.String.annotateKey({
     description:
       "Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n",

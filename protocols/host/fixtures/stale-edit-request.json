@@ -1,4 +1,6 @@
 {
+  "notebook_id": "n1",
+  "idempotency_key": "edit-2",
   "changes": [
     {
       "kind": "put_cell",

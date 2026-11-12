@@ -1,35 +1,33 @@
 # Copyright 2026 Marimo. All rights reserved.
 """Wire validation, tool calls and SSE probes, independent of host implementations.
 
-A host serves its operations as MCP tools at `/mcp` below its API's URL, and
-its streams over HTTP. `Host.request` sends a request to an operation's route
-in the spec as a call of the operation's tool, whose arguments are the
-route's ids, its headers by Python name and the body's members, and answers
-with the response the route describes: a success with the operation's status
-and the reply, a failure with its problem.
+A host serves its operations as the MCP tools the spec's `x-tools` lists, at
+`/mcp` below its API's URL, and its streams over HTTP. `Host.call` checks a
+tool's result against its `outputSchema`, and a failure against its
+`problems`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 from uuid import uuid4
 
-import httpx
 from generate import openapi
 from jsonschema import Draft202012Validator, FormatChecker
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
+    import httpx
+
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = openapi()
+TOOLS = {tool["name"]: tool for tool in SPEC["x-tools"]}
 KINDS = (
     "host",
     "project",
@@ -59,80 +57,34 @@ REMOVAL_EVENTS = {
 PROTOCOL_VERSION = "2026-07-28"
 
 
-def _resolve(value: dict[str, Any]) -> dict[str, Any]:
-    while "$ref" in value:
-        target: Any = SPEC
-        for part in value["$ref"].removeprefix("#/").split("/"):
-            target = target[part]
-        value = target
-    return value
-
-
-@dataclass(frozen=True)
-class Route:
-    """An operation's route in the spec, which its tool replaces."""
-
-    operation: str
-    method: str
-    pattern: re.Pattern[str]
-    statuses: tuple[int, ...]
-    """The statuses the route answers a success with."""
-    headers: frozenset[str]
-    """The headers the operation reads, by lowercase name."""
-
-
-def _routes() -> list[Route]:
-    found = []
-    for path, item in SPEC["paths"].items():
-        for method, operation in item.items():
-            if not isinstance(operation, dict):
-                continue
-            statuses = tuple(
-                int(status)
-                for status, response in operation["responses"].items()
-                if status.startswith("2")
-                and "text/event-stream"
-                not in (_resolve(response).get("content") or {})
-            )
-            if not statuses:
-                # A stream, which stays a request of its own.
-                continue
-            parameters = [
-                _resolve(parameter)
-                for parameter in [
-                    *item.get("parameters", []),
-                    *operation.get("parameters", []),
-                ]
-            ]
-            found.append(
-                Route(
-                    operation["operationId"],
-                    method.upper(),
-                    re.compile(
-                        re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path) + "/?"
-                    ),
-                    statuses,
-                    frozenset(
-                        parameter["name"].lower()
-                        for parameter in parameters
-                        if parameter["in"] == "header"
-                    ),
-                )
-            )
-    return found
-
-
-ROUTES = _routes()
+def conform(schema: dict[str, Any], value: Any) -> None:
+    """Check `value` against a schema that refers to the spec's components."""
+    Draft202012Validator(
+        {**schema, "components": SPEC["components"]},
+        format_checker=FormatChecker(),
+    ).validate(value)
 
 
 def validate(name: str, value: Any) -> None:
-    schema = {
-        "$ref": f"#/components/schemas/{name}",
-        "components": SPEC["components"],
-    }
-    Draft202012Validator(schema, format_checker=FormatChecker()).validate(
-        value
-    )
+    conform({"$ref": f"#/components/schemas/{name}"}, value)
+
+
+def media_type(response: httpx.Response) -> str:
+    return response.headers["content-type"].split(";")[0].strip().lower()
+
+
+@dataclass(frozen=True)
+class Failure:
+    """A failed call's problem, which `failed` checks and returns.
+
+    Reading the failure as a result fails the test with the problem, so a
+    call that should succeed needs no check of its own.
+    """
+
+    problem: dict[str, Any]
+
+    def __getitem__(self, key: str) -> Any:
+        raise AssertionError(f"the call failed: {self.problem}")
 
 
 @dataclass
@@ -205,106 +157,54 @@ class Host:
         self.client = client
         self.timeout = timeout
 
-    async def request(
-        self, method: str, path: str, *, key: str | None = None, **kwargs: Any
-    ) -> httpx.Response:
-        headers = {"Idempotency-Key": key if key is not None else uuid4().hex}
-        headers.update(kwargs.pop("headers", {}))
-        route = next(
-            (
-                route
-                for route in ROUTES
-                if route.method == method.upper()
-                and route.pattern.fullmatch(path)
-            ),
-            None,
-        )
-        async with asyncio.timeout(self.timeout):
-            if route is None:
-                return await self.client.request(
-                    method, path.lstrip("/"), headers=headers, **kwargs
-                )
-            return await self._call(route, path, headers, kwargs)
+    async def call(self, name: str, /, **arguments: Any) -> Any:
+        """Call the tool `name`, answering its result or its `Failure`.
 
-    async def _call(
-        self,
-        route: Route,
-        path: str,
-        headers: dict[str, str],
-        sending: dict[str, Any],
-    ) -> httpx.Response:
-        """Call the tool that replaces a request to the operation's route."""
-        match = route.pattern.fullmatch(path)
-        assert match is not None
-        arguments: Any = {
-            name: unquote(value) for name, value in match.groupdict().items()
-        }
-        sent: dict[str, str] = {}
-        for name, value in headers.items():
-            if name.lower() in route.headers:
-                arguments[name.lower().replace("-", "_")] = value
-            else:
-                sent[name] = value
-        body = sending.get("json")
-        content = sending.get("content")
-        if content:
-            try:
-                body = json.loads(content)
-            except ValueError:
-                body = (
-                    content if isinstance(content, str) else content.decode()
-                )
-        if isinstance(body, dict):
-            arguments.update(body)
-        elif body is not None:
-            # Not an object: sent as it is, for the host to refuse.
-            arguments = body
-        response = await self.client.post(
-            "mcp",
-            headers={
-                **sent,
-                "Accept": "application/json",
-                "MCP-Protocol-Version": PROTOCOL_VERSION,
-                "Mcp-Method": "tools/call",
-                "Mcp-Name": route.operation,
-            },
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": route.operation,
-                    "arguments": arguments,
-                    "_meta": {
-                        "io.modelcontextprotocol/protocolVersion": (
-                            PROTOCOL_VERSION
-                        ),
-                        "io.modelcontextprotocol/clientCapabilities": {},
+        `idempotency_key` defaults to a fresh key, and None leaves it out.
+        """
+        tool = TOOLS[name]
+        arguments.setdefault("idempotency_key", uuid4().hex)
+        if arguments["idempotency_key"] is None:
+            del arguments["idempotency_key"]
+        async with asyncio.timeout(self.timeout):
+            response = await self.client.post(
+                "mcp",
+                headers={
+                    "Accept": "application/json",
+                    "MCP-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": name,
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": name,
+                        "arguments": arguments,
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": (
+                                PROTOCOL_VERSION
+                            ),
+                            "io.modelcontextprotocol/clientCapabilities": {},
+                        },
                     },
                 },
-            },
-        )
-        if response.status_code != 200 or "result" not in response.json():
-            return response
-        result = response.json()["result"]
+            )
+        assert response.status_code == 200, response.text
+        message = response.json()
+        assert "result" in message, message
+        result = message["result"]
         if result.get("isError"):
             # A problem fails the call, carried as the JSON of one text block.
             [block] = result["content"]
             failure = json.loads(block["text"])
-            return httpx.Response(
-                failure["status"],
-                headers={"Content-Type": "application/problem+json"},
-                json=failure,
-            )
-        reply = result["structuredContent"]
-        status = route.statuses[0]
-        if len(route.statuses) > 1:
-            # `runtime.start` answers a runtime it started with a 202 and one
-            # it found with a 200; the reply says which by its status.
-            status = 202 if reply.get("status") == "starting" else 200
-        if status == 204:
-            return httpx.Response(204)
-        return httpx.Response(status, json=reply)
+            conform({"anyOf": tool["problems"]}, failure)
+            return Failure(failure)
+        reply = result.get("structuredContent")
+        if "outputSchema" in tool:
+            conform(tool["outputSchema"], reply)
+        return reply
 
     @asynccontextmanager
     async def watch(
@@ -316,10 +216,7 @@ class Host:
             response = await context.__aenter__()
         try:
             assert response.status_code == 200
-            assert (
-                response.headers["content-type"].split(";")[0].strip().lower()
-                == "text/event-stream"
-            )
+            assert media_type(response) == "text/event-stream"
             assert "access-control-allow-origin" not in response.headers
             yield Watch(frames(response.aiter_lines()), self.timeout)
         finally:
@@ -332,23 +229,17 @@ class Host:
             return await watch.ready()
 
 
-def accepted(response: httpx.Response, status: int, schema: str) -> Any:
-    assert response.status_code == status, response.text
-    assert (
-        response.headers["content-type"].split(";")[0].strip().lower()
-        == "application/json"
-    )
-    value = response.json()
-    validate(schema, value)
-    return value
+def failed(value: Any, kind: str) -> dict[str, Any]:
+    """Check that a call failed with the problem `kind`, and return it."""
+    assert isinstance(value, Failure), f"expected {kind}, got {value}"
+    assert value.problem["type"] == f"urn:marimo:problem:{kind}", value
+    return value.problem
 
 
 def problem(response: httpx.Response, status: int, kind: str) -> Any:
+    """Check that an HTTP response, such as a stream's refusal, is `kind`."""
     assert response.status_code == status, response.text
-    assert (
-        response.headers["content-type"].split(";")[0].strip().lower()
-        == "application/problem+json"
-    )
+    assert media_type(response) == "application/problem+json"
     value = response.json()
     validate("Problem", value)
     assert value["status"] == status

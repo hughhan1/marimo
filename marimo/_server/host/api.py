@@ -7,7 +7,7 @@ import asyncio
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import msgspec
@@ -18,12 +18,6 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from marimo import _loggers
 from marimo._core import protocol
-from marimo._core.calls import (
-    CreateNotebookCall,
-    DeleteNotebookCall,
-    OpenNotebookCall,
-    UpdateNotebookCall,
-)
 from marimo._core.errors import (
     Conflict,
     Invalid,
@@ -45,22 +39,14 @@ from marimo._server.host import (
     stream_options,
 )
 from marimo._server.host.events import serialize_event, serialize_sse_event
-from marimo._server.host.notebook_api import (
-    _context,
-    _mutation,
-    problem,
-)
+from marimo._server.host.notebook_api import _context, problem
 from marimo._server.host.session import SessionEventStream
-from marimo._server.host.tools import (
-    HostTool,
-    editor_host_mcp_endpoint,
-    host_mcp_endpoint,
-)
+from marimo._server.host.tools import host_mcp_endpoint
 from marimo._server.sse import SSE_HEADERS
 from marimo._server.tokens import AuthToken
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
     from anyio import CancelScope
     from starlette.requests import HTTPConnection, Request
@@ -192,10 +178,9 @@ async def _notebook_events(request: Request) -> Response:
 
 
 def editor_routes(base_url: str = "") -> list[BaseRoute]:
-    """Expose the host's tools and notebook event socket to the editor."""
+    """Expose the notebook event socket to the editor."""
     prefix = f"{base_url}{HOST_API_PATH}"
     return [
-        Route(f"{prefix}/mcp", editor_host_mcp_endpoint, methods=["POST"]),
         WebSocketRoute(
             f"{prefix}/notebooks/{{notebook_id}}/events/ws", _editor_events_ws
         ),
@@ -492,13 +477,11 @@ def _inside_project(path: str) -> Path:
     return relative
 
 
-@_mutation("notebook.create")
 async def _create_notebook(
-    request: Request, call: CreateNotebookCall
+    request: Request, body: protocol.CreateNotebookRequest
 ) -> Reply:
     context = _context(request)
-    key = call.headers.idempotency_key
-    body = call.body
+    key = body.idempotency_key
 
     index = context.bridge.index
     if index.root is None or body.project_id != index.project_id:
@@ -515,14 +498,12 @@ async def _create_notebook(
     return notebook
 
 
-@_mutation("notebook.update")
 async def _update_notebook(
-    request: Request, call: UpdateNotebookCall
+    request: Request, body: protocol.UpdateNotebookRequest
 ) -> Reply:
     context = _context(request)
-    key = call.headers.idempotency_key
-    record = _record(request, call.params.notebook_id)
-    body = call.body
+    key = body.idempotency_key
+    record = _record(request, body.notebook_id)
 
     if body.path is msgspec.UNSET and body.name is msgspec.UNSET:
         raise Invalid("path or name is required")
@@ -542,21 +523,19 @@ async def _update_notebook(
     return notebook
 
 
-@_mutation("notebook.delete")
 async def _delete_notebook(
-    request: Request, call: DeleteNotebookCall
+    request: Request, call: protocol.NotebookRequest
 ) -> Reply:
     context = _context(request)
-    record = _record(request, call.params.notebook_id)
-    await context.bridge.delete(
-        record.id, request_id=call.headers.idempotency_key
-    )
+    record = _record(request, call.notebook_id)
+    await context.bridge.delete(record.id, request_id=call.idempotency_key)
     return None
 
 
-@_mutation("notebook.open")
-async def _open_notebook(request: Request, call: OpenNotebookCall) -> Reply:
-    record = _record(request, call.params.notebook_id)
+async def _open_notebook(
+    request: Request, call: protocol.NotebookRequest
+) -> Reply:
+    record = _record(request, call.notebook_id)
     file = _context(request).bridge.index.file_of(record.id)
     if file is None:
         raise Conflict("The notebook has no file to open")
@@ -575,22 +554,11 @@ async def _open_notebook(request: Request, call: OpenNotebookCall) -> Reply:
     return protocol.OpenNotebookResponse(url=url)
 
 
-CATALOG: dict[str, HostTool] = {
-    "notebook.create": HostTool(
-        CreateNotebookCall, protocol.Notebook, _create_notebook, catalog=True
-    ),
-    "notebook.update": HostTool(
-        UpdateNotebookCall, protocol.Notebook, _update_notebook, catalog=True
-    ),
-    "notebook.delete": HostTool(
-        DeleteNotebookCall, None, _delete_notebook, catalog=True
-    ),
-    "notebook.open": HostTool(
-        OpenNotebookCall,
-        protocol.OpenNotebookResponse,
-        _open_notebook,
-        catalog=True,
-    ),
+CATALOG: dict[str, Callable[[Request, Any], Awaitable[Reply]]] = {
+    "notebook.create": _create_notebook,
+    "notebook.update": _update_notebook,
+    "notebook.delete": _delete_notebook,
+    "notebook.open": _open_notebook,
 }
 """The catalog's tools, which only the host's token may call."""
 

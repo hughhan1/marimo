@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import itertools
-import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,8 +15,8 @@ from msgspec.structs import replace
 from marimo._core import protocol
 from marimo._dependencies.dependencies import DependencyManager
 from marimo._runtime.commands import UpdateUIElementCommand
-from tests._server.host.drive import finished, wait_for
-from tests._server.host.live import key, open_host
+from tests._server.host.drive import call, wait_for
+from tests._server.host.live import open_host
 from tests._server.host.staleness import Snapshot, read_events, snapshot
 
 if TYPE_CHECKING:
@@ -60,21 +59,20 @@ class Client:
         outcome: RunOutcome = "succeeded",
     ) -> None:
         """Run the named cells, or code in the scratchpad, to `outcome`."""
-        body: dict[str, object] = (
+        work: dict[str, Any] = (
             {"code": code}
             if code is not None
             else {"cells": [{"id": self.cells[name]} for name in cells]}
         )
-        accepted = await finished(
+        accepted = await call(
             self.app,
-            "POST",
-            f"/notebooks/{self.notebook_id}/runtime/"
-            + ("execute" if code is not None else "runs"),
-            headers=key(f"run-{next(self._keys)}"),
-            body=json.dumps(body).encode(),
+            "runtime.run" if code is None else "runtime.execute",
+            idempotency_key=f"run-{next(self._keys)}",
+            notebook_id=self.notebook_id,
+            **work,
         )
-        assert accepted.status == 202, accepted.body
-        run_id = accepted.json()["id"]
+        assert accepted.ok, accepted.problem
+        run_id = accepted.data["id"]
 
         def completed(response: Response) -> list[dict[str, Any]]:
             return [
@@ -91,24 +89,20 @@ class Client:
         assert completed(self.events)[-1]["outcome"] == outcome
 
     async def edit(self, cell: str, code: str) -> None:
-        edited = await finished(
+        edited = await call(
             self.app,
-            "POST",
-            f"/notebooks/{self.notebook_id}/edits",
-            headers=key(f"edit-{next(self._keys)}"),
-            body=json.dumps(
+            "notebook.edit",
+            idempotency_key=f"edit-{next(self._keys)}",
+            notebook_id=self.notebook_id,
+            changes=[
                 {
-                    "changes": [
-                        {
-                            "kind": "put_cell",
-                            "base_etag": "*",
-                            "cell": {"id": self.cells[cell], "code": code},
-                        }
-                    ]
+                    "kind": "put_cell",
+                    "base_etag": "*",
+                    "cell": {"id": self.cells[cell], "code": code},
                 }
-            ).encode(),
+            ],
         )
-        assert edited.status == 200, edited.body
+        assert edited.ok, edited.problem
 
     async def snapshot(self) -> Snapshot:
         return await snapshot(self.app, self.notebook_id)
@@ -671,14 +665,14 @@ async def test_restart_retains_results_without_restoring_python_values(
         retained = await c.snapshot()
         binder = retained.latest(c.cells["binder"])
         assert binder is not None
-        restarted = await finished(
+        restarted = await call(
             c.app,
-            "POST",
-            f"/notebooks/{c.notebook_id}/runtime/restart",
-            headers=key("restart"),
+            "runtime.restart",
+            idempotency_key="restart",
+            notebook_id=c.notebook_id,
         )
-        assert restarted.status == 202
-        runtime_id = restarted.json()["id"]
+        assert restarted.ok, restarted.problem
+        runtime_id = restarted.data["id"]
         assert runtime_id != binder.runtime_id
         await wait_for(
             c.events,

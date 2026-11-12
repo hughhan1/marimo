@@ -1,10 +1,8 @@
 # SCM syntax highlighting & preventing 3-way merges
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true
 packages/client/src/protocol.ts linguist-generated=true
-packages/client/src/operations.ts linguist-generated=true
+packages/client/src/tools.ts linguist-generated=true
 packages/openapi/holon-contract.json linguist-generated=true
-protocols/host/holon-contract.json linguist-generated=true
-packages/client/generated/** linguist-generated=true
 frontend/generated/** linguist-generated=true
 
 # SSE frames end with a blank line, including the final frame.

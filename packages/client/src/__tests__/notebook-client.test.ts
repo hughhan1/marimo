@@ -4,13 +4,10 @@ import NodeFs from "node:fs";
 import NodeUrl from "node:url";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
-import {
-  NotebookClient,
-  type unstable_NotebookCall,
-} from "../notebook/client.ts";
-import type { OperationsBelow, ProblemOf } from "../request.ts";
+import { NotebookClient } from "../notebook/client.ts";
+import type { ProblemOf, ToolCall } from "../request.ts";
+import type { ToolName } from "../tools.ts";
 import * as Protocol from "../protocol.ts";
-import { host } from "./fixtures.ts";
 
 const fixtures = new NodeUrl.URL(
   "../../../../protocols/host/fixtures/",
@@ -23,283 +20,83 @@ function readFixture(name: string): unknown {
   );
 }
 
-function json(status: number, body: unknown, type = "application/json") {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": type },
-  });
+/** A notebook client whose calls `reply` answers. */
+function over(reply: (call: ToolCall) => unknown) {
+  const send = vi.fn(async (call: ToolCall) => reply(call));
+  const notebook = new NotebookClient("n1", send);
+  return { notebook, send };
 }
 
-/** A notebook client whose requests are answered by `answer`. */
-function connect(
-  answer: (request: Request) => Response,
-  url = "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1",
-) {
-  const { fetch, requests } = host(answer);
-  const notebook = new NotebookClient(url, {
-    token: "secret",
-    fetch,
-  });
-  const sent = () => requests[0];
-  return { notebook, fetch, sent, requests };
-}
-
-type NotebookOperationId = OperationsBelow<"/notebooks/{notebook_id}">;
+const failing = (problem: unknown) => over(() => ({ ok: false, problem }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("NotebookClient", () => {
-  it("narrows a failed edit by its problem type", async () => {
-    const problem = readFixture("problems/precondition-failed.json");
-    const { notebook } = connect(() =>
-      json(412, problem, "application/problem+json"),
-    );
-    const result = await notebook.edit([]);
-    if (
-      result.ok ||
-      result.problem.type !== "urn:marimo:problem:precondition-failed"
-    ) {
-      throw new Error("Expected a failed precondition");
-    }
-    expectTypeOf(
-      result.problem.document,
-    ).toEqualTypeOf<Protocol.DocumentOutput>();
-    expectTypeOf(
-      result.problem.cell,
-    ).toEqualTypeOf<Protocol.CellOutput | null>();
-    expectTypeOf(result.problem.index).toEqualTypeOf<number>();
-    expectTypeOf(result.problem.status).toEqualTypeOf<412>();
-    expect(result.problem).toEqual(problem);
-    expectTypeOf<
-      Extract<
-        ProblemOf<"notebook.delete">,
-        { type: "urn:marimo:problem:precondition-failed" }
-      >
-    >().toEqualTypeOf<never>();
-  });
-
-  it.each(["index", "cell", "document"])(
-    "rejects a known problem missing %s",
-    async (field) => {
-      const problem = Protocol.PreconditionFailedProblem.parse(
-        readFixture("problems/precondition-failed.json"),
-      );
-      const incomplete = Object.fromEntries(
-        Object.entries(problem).filter(([key]) => key !== field),
-      );
-      const { notebook } = connect(() =>
-        json(412, incomplete, "application/problem+json"),
-      );
-      await expect(notebook.edit([])).rejects.toBeInstanceOf(z.ZodError);
-      await expect(
-        over(() => ({ status: 412, body: incomplete })).notebook.edit([]),
-      ).rejects.toBeInstanceOf(z.ZodError);
-    },
-  );
-
-  it("keeps future problem types separate from known variants", async () => {
-    const problem = {
-      type: "urn:example:quota",
-      status: 429,
-      title: "Quota exceeded",
-      detail: "Retry later",
-    };
-    const { notebook } = connect(() =>
-      json(429, problem, "application/problem+json"),
-    );
-    const expected = {
-      ok: false,
-      status: 429,
-      problem: {
-        type: "unknown",
-        uri: problem.type,
-        status: 429,
-        title: problem.title,
-        detail: problem.detail,
-      },
-    };
-    expect(await notebook.edit([])).toEqual(expected);
-    expect(
-      await over(() => ({ ok: false, problem })).notebook.edit([]),
-    ).toEqual(expected);
-  });
-
-  it("rejects a defined problem that the operation does not declare", async () => {
-    const problem = readFixture("problems/precondition-failed.json");
-    const { notebook } = connect(() =>
-      json(412, problem, "application/problem+json"),
-    );
-    await expect(notebook.delete()).rejects.toThrow("Unexpected problem");
-  });
-
-  it("sends an edit below the notebook's URL and returns the validated response", async () => {
+  it("sends each method as its tool's call", async () => {
     const response = readFixture("edit-response.json");
-    const { notebook, sent } = connect(() => json(200, response));
+    const { notebook, send } = over(() => ({ ok: true, data: response }));
     const { changes } = readFixture("edit.json") as Protocol.EditRequest;
 
-    const result = await notebook.edit(changes);
-
-    expect(result).toEqual({ ok: true, status: 200, data: response });
-    const request = sent();
-    expect(request.method).toBe("POST");
-    expect(request.url).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/edits",
-    );
-    expect(request.headers.get("Authorization")).toBe("Bearer secret");
-    expect(request.headers.get("Idempotency-Key")).toMatch(/^[\da-f-]{36}$/);
-    expect(await request.json()).toEqual({ changes });
-  });
-
-  it("addresses an input and preserves its reply key and empty answer", async () => {
-    const response = readFixture("input-reply-response.json");
-    const { notebook, sent } = connect(() => json(200, response));
-
-    expect(
-      await notebook.input(
-        "i/1",
-        { value: "" },
-        {
-          idempotencyKey: "reply-1",
-        },
-      ),
-    ).toEqual({ ok: true, status: 200, data: response });
-    const request = sent();
-    expect(request.method).toBe("POST");
-    expect(request.url).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/runtime/inputs/i%2F1/reply",
-    );
-    expect(request.headers.get("Idempotency-Key")).toBe("reply-1");
-    expect(await request.json()).toEqual({ value: "" });
-  });
-
-  it("keeps the notebook URL's query string and ignores a trailing slash", async () => {
-    const problem = readFixture("problems/not-found.json");
-    const { notebook, requests } = connect(
-      () => json(404, problem, "application/problem+json"),
-      "http://localhost/api/marimo/v1/notebooks/n1/?session_id=s1",
-    );
-    await notebook.delete();
-    await notebook.interrupt();
-    expect(requests.map((request) => request.url)).toMatchInlineSnapshot(`
-      [
-        "http://localhost/api/marimo/v1/notebooks/n1?session_id=s1",
-        "http://localhost/api/marimo/v1/notebooks/n1/runtime/interrupt?session_id=s1",
-      ]
-    `);
-  });
-
-  it("interrupts without a body and returns the runtime acknowledgement", async () => {
-    const receipt = readFixture("interrupt-runtime-response.json");
-    const { notebook, sent } = connect(() => json(202, receipt));
-
-    expect(await notebook.interrupt({ idempotencyKey: "interrupt-1" })).toEqual(
+    expect(await notebook.edit(changes)).toEqual({ ok: true, data: response });
+    expect(send).toHaveBeenLastCalledWith(
       {
-        ok: true,
-        status: 202,
-        data: receipt,
+        operation: "notebook.edit",
+        notebook_id: "n1",
+        idempotency_key: expect.stringMatching(/^[\da-f-]{36}$/),
+        changes,
       },
+      undefined,
     );
-    const request = sent();
-    expect(request.method).toBe("POST");
-    expect(request.url).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/runtime/interrupt",
-    );
-    expect(request.headers.get("Idempotency-Key")).toBe("interrupt-1");
-    expect(request.body).toBeNull();
-  });
 
-  it("cancels a run by id and returns its record", async () => {
-    const run: Protocol.Run = {
-      id: "r/1",
-      notebook_id: "n1",
-      runtime_id: "rt-1",
-      cells: [],
-      status: "running",
-      started_at: "2026-10-01T09:20:01Z",
-      completed_at: null,
-      outcome: null,
-    };
-    const { notebook, sent } = connect(() => json(202, run));
-    expect(
-      await notebook.cancel({ runId: run.id, idempotencyKey: "cancel-1" }),
-    ).toEqual({ ok: true, status: 202, data: run });
-    const request = sent();
-    expect(request.method).toBe("DELETE");
-    expect(request.url).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/runtime/runs/r%2F1",
-    );
-    expect(request.headers.get("Idempotency-Key")).toBe("cancel-1");
-    expect(request.body).toBeNull();
-  });
-
-  it("keeps its URL when a caller changes the copy it reads", async () => {
-    const { notebook, fetch, sent } = connect(
-      () => new Response(null, { status: 204 }),
-    );
-    notebook.url.host = "attacker.example";
-    await notebook.delete();
-    expect(String(fetch.mock.calls[0][0])).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/mcp",
-    );
-    expect(sent().url).toBe("http://127.0.0.1:2718/api/marimo/v1/notebooks/n1");
-  });
-
-  it("makes idempotency keys outside secure contexts", async () => {
-    const { getRandomValues } = globalThis.crypto;
-    vi.stubGlobal("crypto", {
-      getRandomValues: getRandomValues.bind(globalThis.crypto),
-    });
-    const { notebook, sent } = connect(() => json(202, {}));
-    await notebook.stop().catch(() => undefined);
-    expect(sent().headers.get("Idempotency-Key")).toMatch(
-      /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
-    );
-  });
-
-  it.each([
-    ["conflict", 409],
-    ["precondition-failed", 412],
-  ] as const)("returns a %s problem as a value", async (name, status) => {
-    const problem = readFixture(`problems/${name}.json`);
-    const { notebook } = connect(() =>
-      json(status, problem, "application/problem+json"),
-    );
-    expect(await notebook.edit([])).toEqual({ ok: false, status, problem });
-  });
-
-  it("sends preconditions, decisions, and the caller's idempotency key", async () => {
-    const { notebook, sent } = connect(() =>
-      json(200, readFixture("edit-response.json")),
-    );
     await notebook.save({
-      ifMatch: "etag-1",
+      expectedEtag: "etag-1",
       decisions: { environment: "keep" },
       idempotencyKey: "retry-1",
     });
-    const request = sent();
-    expect(request.url).toBe(
-      "http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/save",
+    expect(send).toHaveBeenLastCalledWith(
+      {
+        operation: "notebook.save",
+        notebook_id: "n1",
+        idempotency_key: "retry-1",
+        expected_etag: "etag-1",
+        decisions: { environment: "keep" },
+      },
+      undefined,
     );
-    expect(request.headers.get("If-Match")).toBe("etag-1");
-    expect(request.headers.get("Idempotency-Key")).toBe("retry-1");
-    expect(await request.json()).toEqual({
-      decisions: { environment: "keep" },
-    });
   });
 
-  it("accepts empty responses", async () => {
-    const { notebook } = connect(() => new Response(null, { status: 204 }));
-    expect(await notebook.delete()).toEqual({
+  it("names the input, run and value it acts on", async () => {
+    const { notebook, send } = over(() => ({
       ok: true,
-      status: 204,
-      data: undefined,
-    });
+      data: readFixture("input-reply-response.json"),
+    }));
+    await notebook.input("i/1", { value: "" }, { idempotencyKey: "reply-1" });
+    expect(send).toHaveBeenLastCalledWith(
+      {
+        operation: "runtime.input",
+        notebook_id: "n1",
+        input_id: "i/1",
+        value: "",
+        idempotency_key: "reply-1",
+      },
+      undefined,
+    );
+    await notebook.cancel({ runId: "r1", idempotencyKey: "k" }).catch(() => {});
+    expect(send).toHaveBeenLastCalledWith(
+      {
+        operation: "runtime.cancel",
+        notebook_id: "n1",
+        run_id: "r1",
+        idempotency_key: "k",
+      },
+      undefined,
+    );
   });
 
   it.each(["run", "execute"] as const)(
-    "%s submits its payload with request options",
+    "%s submits its arguments with call options",
     async (method) => {
       const cells = [{ id: "c1", etag: "etag-1" }];
       const code = "print('hi')";
@@ -313,7 +110,7 @@ describe("NotebookClient", () => {
         completed_at: null,
         outcome: null,
       };
-      const { notebook, sent } = connect(() => json(202, run));
+      const { notebook, send } = over(() => ({ ok: true, data: run }));
       const controller = new AbortController();
       const options = { signal: controller.signal, idempotencyKey: "run-key" };
       const result =
@@ -321,15 +118,15 @@ describe("NotebookClient", () => {
           ? await notebook.run({ cells, ...options })
           : await notebook.execute({ code, ...options });
 
-      expect(result).toEqual({ ok: true, status: 202, data: run });
-      const request = sent();
-      expect(request.method).toBe("POST");
-      expect(request.url).toBe(
-        `http://127.0.0.1:2718/api/marimo/v1/notebooks/n1/runtime/${method === "run" ? "runs" : "execute"}`,
-      );
-      expect(request.headers.get("Idempotency-Key")).toBe("run-key");
-      expect(await request.json()).toEqual(
-        method === "run" ? { cells } : { code },
+      expect(result).toEqual({ ok: true, data: run });
+      expect(send).toHaveBeenLastCalledWith(
+        {
+          operation: method === "run" ? "runtime.run" : "runtime.execute",
+          notebook_id: "n1",
+          idempotency_key: "run-key",
+          ...(method === "run" ? { cells } : { code }),
+        },
+        controller.signal,
       );
       controller.abort();
       const aborted = { signal: controller.signal };
@@ -341,102 +138,94 @@ describe("NotebookClient", () => {
     },
   );
 
-  it("validates requests before sending them", async () => {
-    const { notebook, fetch } = connect(() => json(202, {}));
+  it("accepts a tool without a result", async () => {
+    const { notebook } = over(() => ({ ok: true, data: {} }));
+    expect(await notebook.delete()).toEqual({ ok: true, data: undefined });
+  });
+
+  it("narrows a failed edit by its problem type", async () => {
+    const problem = readFixture("problems/precondition-failed.json");
+    const result = await failing(problem).notebook.edit([]);
+    if (
+      result.ok ||
+      result.problem.type !== "urn:marimo:problem:precondition-failed"
+    ) {
+      throw new Error("Expected a failed precondition");
+    }
+    expectTypeOf(
+      result.problem.document,
+    ).toEqualTypeOf<Protocol.DocumentOutput>();
+    expectTypeOf(
+      result.problem.cell,
+    ).toEqualTypeOf<Protocol.CellOutput | null>();
+    expectTypeOf(result.problem.index).toEqualTypeOf<number>();
+    expect(result.problem).toEqual(problem);
+    expectTypeOf<
+      Extract<
+        ProblemOf<"notebook.delete">,
+        { type: "urn:marimo:problem:precondition-failed" }
+      >
+    >().toEqualTypeOf<never>();
+  });
+
+  it.each(["conflict", "precondition-failed"])(
+    "returns a %s problem as a value",
+    async (name) => {
+      const problem = readFixture(`problems/${name}.json`);
+      expect(await failing(problem).notebook.edit([])).toEqual({
+        ok: false,
+        problem,
+      });
+    },
+  );
+
+  it.each(["index", "cell", "document"])(
+    "rejects a known problem missing %s",
+    async (field) => {
+      const problem = Protocol.PreconditionFailedProblem.parse(
+        readFixture("problems/precondition-failed.json"),
+      );
+      const incomplete = Object.fromEntries(
+        Object.entries(problem).filter(([key]) => key !== field),
+      );
+      await expect(
+        failing(incomplete).notebook.edit([]),
+      ).rejects.toBeInstanceOf(z.ZodError);
+    },
+  );
+
+  it("keeps future problem types separate from known variants", async () => {
+    const problem = {
+      type: "urn:example:quota",
+      status: 429,
+      title: "Quota exceeded",
+      detail: "Retry later",
+    };
+    expect(await failing(problem).notebook.edit([])).toEqual({
+      ok: false,
+      problem: {
+        type: "unknown",
+        uri: problem.type,
+        status: 429,
+        title: problem.title,
+        detail: problem.detail,
+      },
+    });
+  });
+
+  it("rejects a defined problem that the tool does not declare", async () => {
+    const problem = readFixture("problems/precondition-failed.json");
+    await expect(failing(problem).notebook.delete()).rejects.toThrow(
+      "Unexpected problem",
+    );
+  });
+
+  it("validates arguments before sending them", async () => {
+    const { notebook, send } = over(() => ({ ok: true, data: {} }));
     await expect(notebook.run({ cells: [] })).rejects.toBeInstanceOf(
       z.ZodError,
     );
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("throws on answers the protocol does not describe", async () => {
-    const { notebook } = connect(() => json(200, { unexpected: true }));
-    await expect(notebook.open()).rejects.toThrow("Invalid structured output");
-    const html = connect(() => new Response("<html>", { status: 502 }));
-    await expect(html.notebook.open()).rejects.toThrow(
-      "notebook.open failed without a problem",
-    );
-  });
-
-  it("has a method for each request below a notebook", () => {
-    // A new operation below a notebook fails this until it has a method.
-    expectTypeOf({
-      "notebook.update": "update",
-      "notebook.delete": "delete",
-      "notebook.open": "open",
-      "notebook.edit": "edit",
-      "notebook.save": "save",
-      "runtime.start": "start",
-      "runtime.stop": "stop",
-      "runtime.restart": "restart",
-      "runtime.run": "run",
-      "runtime.execute": "execute",
-      "runtime.input": "input",
-      "runtime.interrupt": "interrupt",
-      "runtime.cancel": "cancel",
-    } as const).toExtend<Record<NotebookOperationId, keyof NotebookClient>>();
-  });
-});
-
-/** A notebook client whose calls `reply` answers. */
-function over(reply: (call: unstable_NotebookCall) => unknown) {
-  const send = vi.fn(async (call: unstable_NotebookCall) => reply(call));
-  const notebook = NotebookClient.unstable_over(send, { notebookId: "n1" });
-  return { notebook, send };
-}
-
-describe("NotebookClient.unstable_over", () => {
-  it("sends each method as its call", async () => {
-    const response = readFixture("edit-response.json");
-    const { notebook, send } = over(() => ({ ok: true, data: response }));
-    const { changes } = readFixture("edit.json") as Protocol.EditRequest;
-
-    expect(await notebook.edit(changes)).toEqual({
-      ok: true,
-      status: 200,
-      data: response,
-    });
-    expect(send).toHaveBeenLastCalledWith({
-      operation: "notebook.edit",
-      notebook_id: "n1",
-      idempotency_key: expect.stringMatching(/^[\da-f-]{36}$/),
-      changes,
-    });
-
-    await notebook.save({
-      ifMatch: "etag-1",
-      decisions: { environment: "keep" },
-      idempotencyKey: "retry-1",
-    });
-    expect(send).toHaveBeenLastCalledWith({
-      operation: "notebook.save",
-      notebook_id: "n1",
-      idempotency_key: "retry-1",
-      if_match: "etag-1",
-      decisions: { environment: "keep" },
-    });
-  });
-
-  it("names every path parameter and returns problems as values", async () => {
-    const problem = {
-      type: "urn:marimo:problem:not-found",
-      title: "Not found",
-      status: 404,
-    };
-    const { notebook, send } = over(() => ({ ok: false, problem }));
-    expect(await notebook.cancel({ runId: "r1", idempotencyKey: "k" })).toEqual(
-      {
-        ok: false,
-        status: 404,
-        problem,
-      },
-    );
-    expect(send).toHaveBeenCalledWith({
-      operation: "runtime.cancel",
-      notebook_id: "n1",
-      run_id: "r1",
-      idempotency_key: "k",
-    });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("throws on replies the protocol does not describe", async () => {
@@ -464,26 +253,40 @@ describe("NotebookClient.unstable_over", () => {
     expect(send).toHaveBeenCalledOnce();
   });
 
-  it("types each call from the operations table", () => {
-    expectTypeOf<unstable_NotebookCall["operation"]>().toEqualTypeOf<
-      OperationsBelow<"/notebooks/{notebook_id}">
-    >();
-    expectTypeOf<unstable_NotebookCall<"runtime.interrupt">>().toExtend<{
-      readonly operation: "runtime.interrupt";
-      readonly notebook_id: string;
-      readonly idempotency_key: string;
-    }>();
-    expectTypeOf<unstable_NotebookCall<"runtime.cancel">>().toExtend<{
-      readonly notebook_id: string;
-      readonly run_id: string;
-    }>();
-    expectTypeOf<unstable_NotebookCall<"notebook.save">>().toExtend<{
-      readonly idempotency_key: string;
-      readonly if_match?: string;
-    }>();
-    expectTypeOf<unstable_NotebookCall<"runtime.stop">>().not.toHaveProperty(
-      "changes",
+  it("makes idempotency keys outside secure contexts", async () => {
+    const { getRandomValues } = globalThis.crypto;
+    vi.stubGlobal("crypto", {
+      getRandomValues: getRandomValues.bind(globalThis.crypto),
+    });
+    const { notebook, send } = over(() => ({ ok: true, data: {} }));
+    await notebook.stop().catch(() => undefined);
+    expect(send.mock.calls[0][0].idempotency_key).toMatch(
+      /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
     );
-    expectTypeOf(over(() => ({})).notebook).not.toHaveProperty("url");
+  });
+
+  it("follows no stream unless a host client made it", () => {
+    expect(() => over(() => ({})).notebook.events()).toThrow("no stream");
+  });
+
+  it("has a method for each notebook tool", () => {
+    // A new tool on a notebook fails this until it has a method.
+    expectTypeOf({
+      "notebook.update": "update",
+      "notebook.delete": "delete",
+      "notebook.open": "open",
+      "notebook.edit": "edit",
+      "notebook.save": "save",
+      "runtime.start": "start",
+      "runtime.stop": "stop",
+      "runtime.restart": "restart",
+      "runtime.run": "run",
+      "runtime.execute": "execute",
+      "runtime.input": "input",
+      "runtime.interrupt": "interrupt",
+      "runtime.cancel": "cancel",
+    } as const).toExtend<
+      Record<Exclude<ToolName, "notebook.create">, keyof NotebookClient>
+    >();
   });
 });

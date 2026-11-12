@@ -78,12 +78,15 @@ it.each([
   expect(count).toBeGreaterThan(0);
 });
 
+/** The arguments every call on a notebook carries. */
+const call = { notebook_id: "n", idempotency_key: "k" };
+
 it.each([
-  [{}, false],
-  [{ name: "Forecasts" }, true],
-  [{ path: "forecasts.py" }, true],
-])("accepts %j as a notebook update: %s", (body, valid) => {
-  expect(Schema.is(S.UpdateNotebookRequest)(body)).toBe(valid);
+  [{ ...call, name: "Forecasts" }, true],
+  [{ ...call, path: "forecasts.py" }, true],
+  [{ notebook_id: "n", name: "Forecasts" }, false],
+])("accepts %j as a notebook update: %s", (args, valid) => {
+  expect(Schema.is(S.UpdateNotebookRequest)(args)).toBe(valid);
 });
 
 it("retains nullable, omitted, arbitrary JSON, and forward-compatible field semantics", () => {
@@ -98,9 +101,9 @@ it("retains nullable, omitted, arbitrary JSON, and forward-compatible field sema
   expect(() =>
     Schema.decodeUnknownSync(S.CellInput)({ id: cell.id, code: null }),
   ).toThrow(Schema.SchemaError);
-  expect(Schema.decodeUnknownSync(S.SaveRequest)({})).toEqual({});
+  expect(Schema.decodeUnknownSync(S.SaveRequest)(call)).toEqual(call);
   expect(() =>
-    Schema.decodeUnknownSync(S.SaveRequest)({ decisions: null }),
+    Schema.decodeUnknownSync(S.SaveRequest)({ ...call, decisions: null }),
   ).toThrow(Schema.SchemaError);
   for (const data of [null, false, 42, "text", { nested: [1, null, false] }]) {
     expect(
@@ -140,9 +143,9 @@ it("enforces integer, array, and nullable attachment constraints without narrowi
   expect(
     decode({ ...edit.document, version: Number.MAX_SAFE_INTEGER + 1 }).version,
   ).toBe(Number.MAX_SAFE_INTEGER + 1);
-  expect(() => Schema.decodeUnknownSync(S.RunRequest)({ cells: [] })).toThrow(
-    Schema.SchemaError,
-  );
+  expect(() =>
+    Schema.decodeUnknownSync(S.RunRequest)({ ...call, cells: [] }),
+  ).toThrow(Schema.SchemaError);
   const attachment = {
     id: "a",
     notebook_id: "n",
@@ -178,9 +181,13 @@ const requestCases: {
 );
 it.each(requestCases)("validates $schema: $name", ({ schema, body, valid }) => {
   const requestSchema: Schema.Codec<unknown> = S[schema];
-  // The API decodes request bodies with this option.
+  // A host decodes a tool's arguments with this option.
   const decode = Schema.decodeUnknownResult(requestSchema, {
     onExcessProperty: "error",
   });
-  expect(decode(body)._tag === "Success").toBe(valid);
+  const args =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? { ...call, ...body }
+      : body;
+  expect(decode(args)._tag === "Success").toBe(valid);
 });

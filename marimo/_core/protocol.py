@@ -209,15 +209,6 @@ else:
     )
 
 
-class ExecuteRequest(Struct, frozen=True, forbid_unknown_fields=True):
-    code: Annotated[
-        str,
-        Meta(
-            description="Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n"
-        ),
-    ]
-
-
 if TYPE_CHECKING:
     ExecutionId = NewType("ExecutionId", str)
 else:
@@ -247,15 +238,6 @@ class Host(Struct, frozen=True):
         tuple[str, ...],
         Meta(
             description="The operations this host implements, such as `runtime.start`. Whether a client may call one on a given project or notebook is that object's `operations`. Clients accept names they do not recognize."
-        ),
-    ]
-
-
-class InputReplyRequest(Struct, frozen=True, forbid_unknown_fields=True):
-    value: Annotated[
-        str,
-        Meta(
-            description="The text to deliver to the input exactly as submitted, including an empty string when the answer is empty."
         ),
     ]
 
@@ -361,6 +343,16 @@ else:
             ),
         ],
     )
+
+
+class NotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 ObjectType: TypeAlias = Annotated[
@@ -555,7 +547,7 @@ else:
         Annotated[
             str,
             Meta(
-                description="Identifies a run independently of the request's `Idempotency-Key`. Events carry the key in `request_id`.",
+                description="Identifies a run independently of the call's `idempotency_key`. Events carry the key in `request_id`.",
                 min_length=1,
             ),
         ],
@@ -578,6 +570,13 @@ class RunRequest(Struct, frozen=True, forbid_unknown_fields=True):
             min_length=1,
         ),
     ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 if TYPE_CHECKING:
@@ -604,11 +603,27 @@ RuntimeStatus: TypeAlias = Annotated[
 
 
 class SaveRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     decisions: (
         Annotated[
             dict[str, str],
             Meta(
                 description="Answers to the questions in a `decision-required` problem, as for `runtime.start`."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    expected_etag: (
+        Annotated[
+            Etag,
+            Meta(
+                description="The document etag the client last read, as a precondition. The host answers `precondition-failed` when the document's etag differs."
             ),
         ]
         | UnsetType
@@ -656,6 +671,13 @@ class SkippedOutcome(Struct, frozen=True, tag_field="kind", tag="skipped"):
 
 
 class StartRuntimeRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     decisions: (
         Annotated[
             dict[str, str],
@@ -728,6 +750,13 @@ class UnsupportedOperationProblem(
 
 
 class UpdateNotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     name: (
         Annotated[str, Meta(description="The new label to show people.")]
         | UnsetType
@@ -788,7 +817,7 @@ class VariableMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -841,7 +870,7 @@ class AttachmentMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -855,6 +884,17 @@ class AttachmentMessage(Struct, frozen=True):
         ]
         | UnsetType
     ) = UNSET
+
+
+class CancelRunRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    run_id: Annotated[RunId, Meta(description="The run's id.")]
 
 
 class Cell(Struct, frozen=True):
@@ -903,7 +943,7 @@ class CellMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -956,7 +996,7 @@ class ConsoleMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -973,6 +1013,12 @@ class ConsoleMessage(Struct, frozen=True):
 
 
 class CreateNotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
     project_id: ProjectId
     name: (
         Annotated[
@@ -1007,7 +1053,7 @@ class CustomMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1070,7 +1116,7 @@ class DisplayMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1141,7 +1187,7 @@ class DocumentMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1162,6 +1208,13 @@ class EditRequest(Struct, frozen=True, forbid_unknown_fields=True):
         tuple[Change, ...],
         Meta(description="The changes, applied in order as one unit."),
     ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 class EditResponse(Struct, frozen=True):
@@ -1233,13 +1286,29 @@ class ErrorOutcome(Struct, frozen=True, tag_field="kind", tag="error"):
     error: Error
 
 
+class ExecuteRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    code: Annotated[
+        str,
+        Meta(
+            description="Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n"
+        ),
+    ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+
+
 class HostMessage(Struct, frozen=True):
     host: Host
     request_id: (
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1288,7 +1357,7 @@ class InputMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1302,6 +1371,23 @@ class InputMessage(Struct, frozen=True):
         ]
         | UnsetType
     ) = UNSET
+
+
+class InputReplyRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    input_id: Annotated[ItemId, Meta(description="The input's item id.")]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    value: Annotated[
+        str,
+        Meta(
+            description="The text to deliver to the input exactly as submitted, including an empty string when the answer is empty."
+        ),
+    ]
 
 
 class Notebook(Struct, frozen=True):
@@ -1345,7 +1431,7 @@ class NotebookMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1390,7 +1476,7 @@ class PreconditionFailedProblem(
     index: Annotated[
         int,
         Meta(
-            description="The position of the first stale entry in the request, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `If-Match`.",
+            description="The position of the first stale entry in the call, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `expected_etag`.",
             ge=0,
         ),
     ]
@@ -1466,7 +1552,7 @@ class ProjectMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1490,7 +1576,7 @@ class RemovedMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1559,7 +1645,7 @@ class RunMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1624,7 +1710,7 @@ class RuntimeMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1947,7 +2033,7 @@ class ExecutionMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -2148,7 +2234,7 @@ class AnalysisMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType

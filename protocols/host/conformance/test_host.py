@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Check a running host through the public HTTP and SSE interface."""
+"""Check a running host through its tools and event streams."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
-from contract import accepted, document_state, objects, problem
+from contract import Failure, document_state, failed, objects, problem
 
 
-def notebook_path(notebook):
-    return f"/notebooks/{quote(notebook['id'], safe='')}"
+def stream(notebook):
+    return f"/notebooks/{quote(notebook['id'], safe='')}/events"
 
 
 def require(notebook, *operations: str):
@@ -38,25 +38,23 @@ async def test_required_operations(catalog, pytestconfig):
 
 @pytest.mark.parametrize("authorization", ["", "Bearer wrong-token"])
 async def test_security_token(host, authorization):
-    response = await host.request(
-        "GET", "/events", headers={"Authorization": authorization}
+    response = await host.client.get(
+        "events", headers={"Authorization": authorization}
     )
     problem(response, 401, "unauthorized")
 
 
 async def test_security_cookie(host, record):
-    response = await host.request(
-        "GET",
-        "/events",
+    response = await host.client.get(
+        "events",
         headers={"Authorization": "", "Cookie": f"token={record['token']}"},
     )
     problem(response, 401, "unauthorized")
 
 
 async def test_security_cors(host):
-    response = await host.request(
-        "OPTIONS",
-        "/events",
+    response = await host.client.options(
+        "events",
         headers={
             "Origin": "https://example.invalid",
             "Access-Control-Request-Method": "GET",
@@ -68,14 +66,6 @@ async def test_security_cors(host):
         headers={"Origin": "https://example.invalid"}
     ) as watch:
         await watch.ready()
-
-
-async def test_unknown_route(host):
-    problem(
-        await host.request("GET", "/conformance-missing-route"),
-        404,
-        "not-found",
-    )
 
 
 async def test_catalog_snapshot(catalog):
@@ -135,12 +125,11 @@ async def test_notebook_document(host, catalog):
     notebooks = objects(catalog, "notebook")
     if not notebooks:
         pytest.skip("host has no notebooks")
-    path = notebook_path(notebooks[0])
-    snapshot = await host.snapshot(path + "/events")
+    snapshot = await host.snapshot(stream(notebooks[0]))
     document_state(snapshot)
     assert objects(snapshot, "attachment"), "notebook stream has no attachment"
     filtered = await host.snapshot(
-        path + "/events", params={"types": "cell,document"}
+        stream(notebooks[0]), params={"types": "cell,document"}
     )
     assert {f.event for f in filtered if f.comment is None} <= {
         "cell",
@@ -151,35 +140,27 @@ async def test_notebook_document(host, catalog):
 
 
 async def test_create_duplicate_replay_and_missing_key(host, scratch):
-    body = {key: scratch[key] for key in ("project_id", "name")}
+    arguments = {key: scratch[key] for key in ("project_id", "name")}
     if scratch["path"] is not None:
-        body["path"] = scratch["path"]
-        problem(
-            await host.request("POST", "/notebooks", json=body),
-            409,
-            "conflict",
-        )
-    problem(
-        await host.request("POST", "/notebooks", key="", json=body),
-        400,
+        arguments["path"] = scratch["path"]
+        failed(await host.call("notebook.create", **arguments), "conflict")
+    failed(
+        await host.call("notebook.create", idempotency_key=None, **arguments),
         "invalid-request",
     )
     # Replay a mutation of our scratch notebook, so cleanup always owns it.
     require(scratch, "notebook.update")
-    key = uuid4().hex
-    path = notebook_path(scratch)
-    first = await host.request(
-        "PATCH", path, key=key, json={"name": "conformance-renamed"}
+    rename = {"notebook_id": scratch["id"], "idempotency_key": uuid4().hex}
+    first = await host.call(
+        "notebook.update", name="conformance-renamed", **rename
     )
-    second = await host.request(
-        "PATCH", path, key=key, json={"name": "conformance-renamed"}
+    second = await host.call(
+        "notebook.update", name="conformance-renamed", **rename
     )
-    assert accepted(first, 200, "Notebook") == accepted(
-        second, 200, "Notebook"
-    )
-    problem(
-        await host.request("PATCH", path, key=key, json={"name": "different"}),
-        409,
+    assert first["name"] == "conformance-renamed"
+    assert first == second
+    failed(
+        await host.call("notebook.update", name="different", **rename),
         "conflict",
     )
 
@@ -192,22 +173,22 @@ def put(cell_id, code, base_etag=None):
     }
 
 
-async def edit(host, path, changes, **kwargs: Any):
-    return await host.request(
-        "POST", path + "/edits", json={"changes": changes}, **kwargs
+async def edit(host, notebook, changes, **arguments: Any):
+    return await host.call(
+        "notebook.edit",
+        notebook_id=notebook["id"],
+        changes=changes,
+        **arguments,
     )
 
 
 async def test_edit_atomicity_and_conflicts(host, scratch):
     require(scratch, "notebook.edit")
-    path = notebook_path(scratch)
     key = uuid4().hex
-    async with host.watch(path + "/events") as watch:
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        answer = accepted(
-            await edit(host, path, [put("check_a", "x = 1")], key=key),
-            200,
-            "EditResponse",
+        answer = await edit(
+            host, scratch, [put("check_a", "x = 1")], idempotency_key=key
         )
         events = await watch.until(lambda f: f.event == "document")
         correlated = [f for f in events if f.comment is None]
@@ -219,25 +200,30 @@ async def test_edit_atomicity_and_conflicts(host, scratch):
             answer["cells"]["check_a"]["etag"]
             == correlated[0].message()["cell"]["etag"]
         )
-    before, cells = document_state(await host.snapshot(path + "/events"))
+    before, cells = document_state(await host.snapshot(stream(scratch)))
     # A valid change followed by a stale one must apply neither.
-    response = await edit(
-        host, path, [put("check_b", "y = 2"), put("check_a", "x = 3", "stale")]
+    stale = failed(
+        await edit(
+            host,
+            scratch,
+            [put("check_b", "y = 2"), put("check_a", "x = 3", "stale")],
+        ),
+        "precondition-failed",
     )
-    stale = problem(response, 412, "precondition-failed")
     assert stale["index"] == 1
     assert stale["cell"] == cells["check_a"]
     assert stale["document"] == before
-    after, after_cells = document_state(await host.snapshot(path + "/events"))
+    after, after_cells = document_state(await host.snapshot(stream(scratch)))
     assert (after, after_cells) == (before, cells)
-    problem(
+    failed(
         await edit(
-            host, path, [{"kind": "set_order", "base_etag": "*", "order": []}]
+            host,
+            scratch,
+            [{"kind": "set_order", "base_etag": "*", "order": []}],
         ),
-        400,
         "invalid-request",
     )
-    assert document_state(await host.snapshot(path + "/events")) == (
+    assert document_state(await host.snapshot(stream(scratch))) == (
         before,
         cells,
     )
@@ -245,63 +231,55 @@ async def test_edit_atomicity_and_conflicts(host, scratch):
 
 async def test_concurrent_edits(host, scratch):
     require(scratch, "notebook.edit")
-    path = notebook_path(scratch)
-    responses = await asyncio.gather(
-        edit(host, path, [put("check_a", "x = 1")]),
-        edit(host, path, [put("check_b", "y = 2")]),
+    answers = await asyncio.gather(
+        edit(host, scratch, [put("check_a", "x = 1")]),
+        edit(host, scratch, [put("check_b", "y = 2")]),
     )
-    for response in responses:
-        accepted(response, 200, "EditResponse")
-    _, cells = document_state(await host.snapshot(path + "/events"))
+    for answer in answers:
+        assert answer["document"]
+    _, cells = document_state(await host.snapshot(stream(scratch)))
     assert {"check_a", "check_b"} <= cells.keys()
 
 
 async def test_save(host, scratch):
     require(scratch, "notebook.edit", "notebook.save")
-    path = notebook_path(scratch)
-    answer = accepted(
-        await edit(host, path, [put("check_a", "x = 1")]), 200, "EditResponse"
+    answer = await edit(host, scratch, [put("check_a", "x = 1")])
+    saved = await host.call(
+        "notebook.save",
+        notebook_id=scratch["id"],
+        expected_etag=answer["document"]["etag"],
     )
-    response = await host.request(
-        "POST",
-        path + "/save",
-        json={},
-        headers={"If-Match": answer["document"]["etag"]},
-    )
-    saved = accepted(response, 200, "EditResponse")["document"]
-    assert saved["saved_etag"] == saved["etag"]
-    stale = problem(
-        await host.request(
-            "POST", path + "/save", json={}, headers={"If-Match": "stale"}
+    document = saved["document"]
+    assert document["saved_etag"] == document["etag"]
+    stale = failed(
+        await host.call(
+            "notebook.save", notebook_id=scratch["id"], expected_etag="stale"
         ),
-        412,
         "precondition-failed",
     )
     assert (stale["index"], stale["cell"]) == (0, None)
-    assert stale["document"] == saved
+    assert stale["document"] == document
+
+
+async def execute(host, notebook, code, **arguments: Any):
+    return await host.call(
+        "runtime.execute", notebook_id=notebook["id"], code=code, **arguments
+    )
 
 
 async def test_no_runtime(host, scratch):
     require(scratch, "runtime.execute")
-    problem(
-        await host.request(
-            "POST",
-            notebook_path(scratch) + "/runtime/execute",
-            json={"code": "1"},
-        ),
-        409,
-        "no-runtime",
-    )
+    failed(await execute(host, scratch, "1"), "no-runtime")
 
 
-async def start(host, path, watch):
+async def start(host, notebook, watch):
     key = uuid4().hex
-    response = await host.request("PUT", path + "/runtime", json={}, key=key)
-    if response.status_code == 409 and response.json().get(
-        "type", ""
-    ).endswith("decision-required"):
+    runtime = await host.call(
+        "runtime.start", notebook_id=notebook["id"], idempotency_key=key
+    )
+    if isinstance(runtime, Failure):
+        failed(runtime, "decision-required")
         pytest.skip("runtime requires a user decision")
-    runtime = accepted(response, 202, "Runtime")
     assert runtime["status"] == "starting"
     events = await watch.until(
         lambda f: (
@@ -348,18 +326,11 @@ async def finish_run(watch, run, key, outcome):
 )
 async def test_run(host, scratch, code, outcome, kind):
     require(scratch, "runtime.start", "runtime.stop", "runtime.execute")
-    path = notebook_path(scratch)
-    async with host.watch(path + "/events") as watch:
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        await start(host, path, watch)
+        await start(host, scratch, watch)
         key = uuid4().hex
-        run = accepted(
-            await host.request(
-                "POST", path + "/runtime/execute", json={"code": code}, key=key
-            ),
-            202,
-            "Run",
-        )
+        run = await execute(host, scratch, code, idempotency_key=key)
         assert run["status"] in ("queued", "running")
         assert run["id"] != key
         events, executions = await finish_run(watch, run, key, outcome)
@@ -371,35 +342,26 @@ async def test_run(host, scratch, code, outcome, kind):
             assert "conformance" in "".join(
                 item["text"] for item in objects(events, "console")
             )
-        replay = accepted(
-            await host.request(
-                "POST", path + "/runtime/execute", json={"code": code}, key=key
-            ),
-            202,
-            "Run",
-        )
+        replay = await execute(host, scratch, code, idempotency_key=key)
         assert replay["id"] == run["id"]
         assert replay["status"] == "completed"
 
 
 async def test_runtime_lifecycle(host, scratch):
     require(scratch, "runtime.start", "runtime.stop", "runtime.restart")
-    path = notebook_path(scratch)
-    async with host.watch(path + "/events") as watch:
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        runtime = await start(host, path, watch)
-        existing = accepted(
-            await host.request("PUT", path + "/runtime", json={}),
-            200,
-            "Runtime",
-        )
+        runtime = await start(host, scratch, watch)
+        existing = await host.call("runtime.start", notebook_id=scratch["id"])
         assert existing["id"] == runtime["id"]
-        problem(await host.request("DELETE", path), 409, "conflict")
+        assert existing["status"] == "running"
+        failed(
+            await host.call("notebook.delete", notebook_id=scratch["id"]),
+            "conflict",
+        )
         key = uuid4().hex
-        replacement = accepted(
-            await host.request("POST", path + "/runtime/restart", key=key),
-            202,
-            "Runtime",
+        replacement = await host.call(
+            "runtime.restart", notebook_id=scratch["id"], idempotency_key=key
         )
         assert replacement["id"] != runtime["id"]
         assert replacement["status"] == "starting"
@@ -429,11 +391,10 @@ async def test_runtime_lifecycle(host, scratch):
         for frame in restart_events:
             live(frame, key)
         key = uuid4().hex
-        accepted(
-            await host.request("DELETE", path + "/runtime", key=key),
-            202,
-            "Runtime",
+        stopped = await host.call(
+            "runtime.stop", notebook_id=scratch["id"], idempotency_key=key
         )
+        assert stopped["id"] == replacement["id"]
         events = await watch.until(lambda f: f.event == "runtime.removed")
         assert live(events[-1], key)["id"] == replacement["id"]
 
@@ -446,69 +407,51 @@ async def test_run_cells(host, scratch):
         "runtime.stop",
         "runtime.run",
     )
-    path = notebook_path(scratch)
-    answer = accepted(
-        await edit(host, path, [put("check_a", "x = 1")]), 200, "EditResponse"
-    )
-    async with host.watch(path + "/events") as watch:
+    answer = await edit(host, scratch, [put("check_a", "x = 1")])
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        await start(host, path, watch)
+        await start(host, scratch, watch)
         key = uuid4().hex
-        run = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/runs",
-                key=key,
-                json={
-                    "cells": [
-                        {
-                            "id": "check_a",
-                            "etag": answer["cells"]["check_a"]["etag"],
-                        }
-                    ]
-                },
-            ),
-            202,
-            "Run",
+        run = await host.call(
+            "runtime.run",
+            notebook_id=scratch["id"],
+            idempotency_key=key,
+            cells=[
+                {"id": "check_a", "etag": answer["cells"]["check_a"]["etag"]}
+            ],
         )
         _, executions = await finish_run(watch, run, key, "succeeded")
         assert any(
             e["cell_id"] == "check_a" and e["code"] is None for e in executions
         )
-        response = await host.request(
-            "POST",
-            path + "/runtime/runs",
-            json={"cells": [{"id": "check_a", "etag": "stale"}]},
+        stale = failed(
+            await host.call(
+                "runtime.run",
+                notebook_id=scratch["id"],
+                cells=[{"id": "check_a", "etag": "stale"}],
+            ),
+            "precondition-failed",
         )
-        stale = problem(response, 412, "precondition-failed")
         assert stale["index"] == 0
         assert stale["cell"] is not None, "run lost the cell from the document"
         assert stale["cell"]["id"] == "check_a"
         assert stale["document"] == answer["document"]
 
 
-@pytest.mark.parametrize("operation", ["interrupt", "cancel"])
+@pytest.mark.parametrize("tool", ["runtime.interrupt", "runtime.cancel"])
 async def test_interrupt_and_cancel_have_different_queue_scope(
-    host, scratch, operation
+    host, scratch, tool
 ):
     require(scratch, "runtime.start", "runtime.stop", "runtime.execute")
     assert {"runtime.interrupt", "runtime.cancel"} <= set(
         scratch["operations"]
     )
-    path = notebook_path(scratch)
-    async with host.watch(path + "/events") as watch:
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        await start(host, path, watch)
+        await start(host, scratch, watch)
         key = uuid4().hex
-        run = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/execute",
-                key=key,
-                json={"code": "import time\ntime.sleep(60)"},
-            ),
-            202,
-            "Run",
+        run = await execute(
+            host, scratch, "import time\ntime.sleep(60)", idempotency_key=key
         )
         await watch.until(
             lambda f: (
@@ -517,37 +460,16 @@ async def test_interrupt_and_cancel_have_different_queue_scope(
                 and f.message()["execution"]["status"] == "running"
             )
         )
-        queued_key = uuid4().hex
-        queued = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/execute",
-                key=queued_key,
-                json={"code": "pass"},
-            ),
-            202,
-            "Run",
-        )
+        queued = await execute(host, scratch, "pass")
         assert queued["id"] != run["id"]
         assert queued["status"] == "queued"
-        if operation == "interrupt":
-            method, endpoint, schema = (
-                "POST",
-                path + "/runtime/interrupt",
-                "Runtime",
-            )
-        else:
-            method, endpoint, schema = (
-                "DELETE",
-                path + "/runtime/runs/" + quote(run["id"], safe=""),
-                "Run",
-            )
+        control = {"notebook_id": scratch["id"]}
+        if tool == "runtime.cancel":
+            control["run_id"] = run["id"]
         control_key = uuid4().hex
-        receipt = accepted(
-            await host.request(method, endpoint, key=control_key), 202, schema
-        )
+        receipt = await host.call(tool, idempotency_key=control_key, **control)
         assert receipt["id"] == (
-            run["runtime_id"] if operation == "interrupt" else run["id"]
+            run["runtime_id"] if tool == "runtime.interrupt" else run["id"]
         )
         completed = {}
 
@@ -562,7 +484,7 @@ async def test_interrupt_and_cancel_have_different_queue_scope(
         events = await watch.until(both_completed)
         assert completed[run["id"]]["outcome"] == "interrupted"
         assert completed[queued["id"]]["outcome"] == (
-            "interrupted" if operation == "interrupt" else "succeeded"
+            "interrupted" if tool == "runtime.interrupt" else "succeeded"
         )
         executions = objects(events, "execution")
         active_executions = {
@@ -574,41 +496,38 @@ async def test_interrupt_and_cancel_have_different_queue_scope(
             and e["outcome"]["kind"] == "interrupted"
             for e in active_executions.values()
         )
-        if operation == "interrupt":
+        if tool == "runtime.interrupt":
             # The queued run may leave an execution, but it never started.
             assert not any(
                 e["run_id"] == queued["id"] and e["started_at"] is not None
                 for e in executions
             )
-            assert (
-                accepted(
-                    await host.request(method, endpoint, key=control_key),
-                    202,
-                    schema,
-                )
-                == receipt
+            replay = await host.call(
+                tool, idempotency_key=control_key, **control
             )
+            assert replay == receipt
         else:
-            problem(await host.request(method, endpoint), 409, "conflict")
+            failed(await host.call(tool, **control), "conflict")
 
 
 async def test_cancel_queued_run_leaves_other_runs_untouched(host, scratch):
     require(scratch, "runtime.start", "runtime.stop", "runtime.execute")
     assert "runtime.cancel" in scratch["operations"]
-    path = notebook_path(scratch)
-    async with host.watch(path + "/events") as watch:
+
+    async def cancel(run):
+        return await host.call(
+            "runtime.cancel", notebook_id=scratch["id"], run_id=run["id"]
+        )
+
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        await start(host, path, watch)
+        await start(host, scratch, watch)
         active_key = uuid4().hex
-        active = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/execute",
-                key=active_key,
-                json={"code": "import time\ntime.sleep(60)"},
-            ),
-            202,
-            "Run",
+        active = await execute(
+            host,
+            scratch,
+            "import time\ntime.sleep(60)",
+            idempotency_key=active_key,
         )
         await watch.until(
             lambda f: (
@@ -617,30 +536,13 @@ async def test_cancel_queued_run_leaves_other_runs_untouched(host, scratch):
                 and f.message()["execution"]["status"] == "running"
             )
         )
-        queued = accepted(
-            await host.request(
-                "POST", path + "/runtime/execute", json={"code": "pass"}
-            ),
-            202,
-            "Run",
-        )
+        queued = await execute(host, scratch, "pass")
         next_key = uuid4().hex
-        successor = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/execute",
-                key=next_key,
-                json={"code": "pass"},
-            ),
-            202,
-            "Run",
+        successor = await execute(
+            host, scratch, "pass", idempotency_key=next_key
         )
         assert queued["status"] == successor["status"] == "queued"
-        endpoint = path + "/runtime/runs/" + quote(queued["id"], safe="")
-        assert (
-            accepted(await host.request("DELETE", endpoint), 202, "Run")["id"]
-            == queued["id"]
-        )
+        assert (await cancel(queued))["id"] == queued["id"]
         events = await watch.until(
             lambda f: (
                 f.event == "run"
@@ -659,15 +561,8 @@ async def test_cancel_queued_run_leaves_other_runs_untouched(host, scratch):
             and r["status"] == "completed"
             for r in objects(events, "run")
         )
-        problem(await host.request("DELETE", endpoint), 409, "conflict")
-        accepted(
-            await host.request(
-                "DELETE",
-                path + "/runtime/runs/" + quote(active["id"], safe=""),
-            ),
-            202,
-            "Run",
-        )
+        failed(await cancel(queued), "conflict")
+        assert (await cancel(active))["id"] == active["id"]
         await finish_run(watch, active, active_key, "interrupted")
         await finish_run(watch, successor, next_key, "succeeded")
 
@@ -675,26 +570,14 @@ async def test_cancel_queued_run_leaves_other_runs_untouched(host, scratch):
 async def test_idle_interrupt_does_not_arm_future_work(host, scratch):
     require(scratch, "runtime.start", "runtime.stop", "runtime.execute")
     assert "runtime.interrupt" in scratch["operations"]
-    path = notebook_path(scratch)
-    async with host.watch(path + "/events") as watch:
+    async with host.watch(stream(scratch)) as watch:
         await watch.ready()
-        runtime = await start(host, path, watch)
-        receipt = accepted(
-            await host.request("POST", path + "/runtime/interrupt"),
-            202,
-            "Runtime",
+        runtime = await start(host, scratch, watch)
+        receipt = await host.call(
+            "runtime.interrupt", notebook_id=scratch["id"]
         )
         assert receipt["id"] == runtime["id"]
         assert receipt["status"] == "running"
         key = uuid4().hex
-        run = accepted(
-            await host.request(
-                "POST",
-                path + "/runtime/execute",
-                key=key,
-                json={"code": "pass"},
-            ),
-            202,
-            "Run",
-        )
+        run = await execute(host, scratch, "pass", idempotency_key=key)
         await finish_run(watch, run, key, "succeeded")

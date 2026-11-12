@@ -24,13 +24,15 @@ from marimo._server.workspace import (
 from marimo._session.model import SessionMode
 from marimo._types.ids import CellId_t
 from marimo._utils.marimo_path import MarimoPath
+from tests._server.mcp_client import call_tool
 from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from httpx import Response
     from starlette.testclient import TestClient
+
+    from tests.mcp_request import Called
 
 
 def get_session_manager(client: TestClient) -> SessionManager:
@@ -50,7 +52,7 @@ def run_cells(
     cells: dict[str, str],
     *,
     headers: dict[str, str],
-) -> Response:
+) -> Called:
     """Put `cells` in the notebook's document and run them through the host.
 
     This is what the editor does: the document holds the code, and the run
@@ -60,31 +62,34 @@ def run_cells(
     assert context is not None
     notebook = context.bridge.host.peek_notebook(notebook_id)
     assert notebook is not None
-    base = f"/api/marimo/v1/notebooks/{notebook.id}"
 
     def etag(cell_id: str) -> str | None:
         cell = notebook.document.cell(CellId_t(cell_id))
         return None if cell is None else cell.etag
 
-    edited = client.post(
-        f"{base}/edits",
-        headers={**headers, "Idempotency-Key": uuid4().hex},
-        json={
-            "changes": [
-                {
-                    "kind": "put_cell",
-                    "base_etag": etag(cell_id),
-                    "cell": {"id": cell_id, "code": code},
-                }
-                for cell_id, code in cells.items()
-            ]
-        },
+    edited = call_tool(
+        client,
+        "notebook.edit",
+        headers=headers,
+        idempotency_key=uuid4().hex,
+        notebook_id=notebook.id,
+        changes=[
+            {
+                "kind": "put_cell",
+                "base_etag": etag(cell_id),
+                "cell": {"id": cell_id, "code": code},
+            }
+            for cell_id, code in cells.items()
+        ],
     )
-    assert edited.status_code == 200, edited.text
-    return client.post(
-        f"{base}/runtime/runs",
-        headers={**headers, "Idempotency-Key": uuid4().hex},
-        json={"cells": [{"id": cell_id} for cell_id in cells]},
+    assert edited.ok, edited.problem
+    return call_tool(
+        client,
+        "runtime.run",
+        headers=headers,
+        idempotency_key=uuid4().hex,
+        notebook_id=notebook.id,
+        cells=[{"id": cell_id} for cell_id in cells],
     )
 
 

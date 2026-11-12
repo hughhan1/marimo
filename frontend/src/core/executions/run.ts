@@ -83,7 +83,7 @@ export async function runCells(
     }
     withdrawRequest(store, request);
     // The connection is read-only for this action, which the UI shows.
-    if (result.status === 403) {
+    if (result.problem.status === 403) {
       Logger.warn("Run refused, connection is read-only", result.problem);
       return;
     }

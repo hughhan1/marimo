@@ -13,7 +13,7 @@ import msgspec
 
 from marimo import _loggers
 from marimo._core import backend as be, protocol
-from marimo._core.calls import BY_OPERATION, OperationCall, assemble, dispatch
+from marimo._core.calls import Caller, decode, dispatch
 from marimo._core.document import Document
 from marimo._core.errors import Conflict, Invalid, NotFound
 from marimo._core.executions import Executions
@@ -547,7 +547,7 @@ class PyodideNotebook:
             unsubscribe()
 
     async def call(self, raw: str) -> str:
-        """Serve a notebook operation's call, `{operation, ...arguments}`.
+        """Serve a notebook tool's call, `{operation, ...arguments}`.
 
         Replies `{ok: true, data}` with the tool's result, or
         `{ok: false, problem}` with the problem that failed the call.
@@ -556,19 +556,17 @@ class PyodideNotebook:
         reply: Reply
         try:
             arguments = msgspec.json.decode(raw, type=dict[str, Any])
-            kind = BY_OPERATION.get(str(arguments.pop("operation", "")))
-            if kind is None:
-                raise msgspec.ValidationError("Unknown notebook operation")
-            call: OperationCall = assemble(kind, arguments)
+            name = str(arguments.pop("operation", ""))
+            call = decode(name, arguments)
         except (msgspec.DecodeError, msgspec.ValidationError) as e:
             reply = problem("invalid-request", str(e))
         else:
             reply = await dispatch(
                 self.mutations,
                 self,
+                name,
                 call,
-                request=None,
-                allow_input=self._allow_input,
+                Caller(allow_input=self._allow_input),
             )
         if is_problem(reply):
             return msgspec.json.encode(

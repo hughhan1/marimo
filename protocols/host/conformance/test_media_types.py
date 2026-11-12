@@ -7,7 +7,7 @@ import json
 
 import httpx
 import pytest
-from contract import ROOT, Frame, Host, accepted, problem
+from contract import ROOT, Frame, Host, problem
 
 
 @pytest.mark.parametrize(
@@ -32,22 +32,6 @@ async def test_watch_accepts_media_type_variations(content_type):
         assert await Host(client, timeout=1).snapshot() == [
             Frame(event="ready", data="{}")
         ]
-
-
-@pytest.mark.parametrize(
-    "content_type",
-    [
-        "application/json",
-        "Application/JSON",
-        " Application/JSON ; charset=utf-8",
-    ],
-)
-def test_accepted_accepts_media_type_variations(content_type):
-    value = json.loads((ROOT / "fixtures" / "cell.json").read_text())
-    response = httpx.Response(
-        200, headers={"Content-Type": content_type}, json=value
-    )
-    assert accepted(response, 200, "Cell") == value
 
 
 @pytest.mark.parametrize(

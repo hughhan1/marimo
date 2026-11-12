@@ -1,366 +1,189 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The host's operations, as the tool calls a client sends.
+"""The host's notebook tools: one handler per tool, by the tool's name.
 
-A call names the notebook, run or input it acts on in `params`, carries the
-idempotency key and preconditions in `headers`, and the request itself in
-`body`. On the wire these parts are flattened into one set of arguments, by
-their Python names. Its `handle` method does the work and declares its reply
-as its return type.
+A handler takes the bridge, the tool's arguments decoded into the request
+type the protocol generates, and who is calling, and returns the tool's
+result. The catalog's tools, which only a host serves, live with the host.
 """
 
 from __future__ import annotations
 
-from functools import cache
-from typing import TYPE_CHECKING, Any, get_type_hints
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import msgspec
-import msgspec.structs
 
 from marimo._core import protocol
 from marimo._core.errors import Conflict, HostError, NotFound
-from marimo._core.operations import Reply, problem_for
+from marimo._core.operations import Reply, problem, problem_for
+from marimo._core.protocol_tools import TOOLS
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from marimo._core.backend import RequestInfo
     from marimo._core.operations import Mutations, NotebookBridge
 
+    Handler = Callable[[NotebookBridge, Any, "Caller"], Awaitable[Reply]]
 
-class NotebookParams(msgspec.Struct, frozen=True):
-    notebook_id: protocol.NotebookId
 
+@dataclass(frozen=True)
+class Caller:
+    request: RequestInfo | None = None
+    """The request that carried the call, which runs hand to their code."""
+    allow_input: bool = False
+    """Whether the caller's own session may answer the run's input."""
 
-class RunParams(NotebookParams, frozen=True):
-    run_id: protocol.RunId
 
+HANDLERS: dict[str, Handler] = {}
+"""Each notebook tool's handler, by the tool's name."""
 
-class InputParams(NotebookParams, frozen=True):
-    input_id: protocol.ItemId
 
+def _handles(name: str) -> Callable[[Handler], Handler]:
+    def register(handler: Handler) -> Handler:
+        HANDLERS[name] = handler
+        return handler
 
-class MutationHeaders(msgspec.Struct, frozen=True):
-    idempotency_key: str = msgspec.field(name="idempotency-key")
+    return register
 
 
-class SaveHeaders(MutationHeaders, frozen=True):
-    if_match: str | None = msgspec.field(name="if-match", default=None)
-
-
-class _Call(msgspec.Struct, frozen=True, tag_field="operation"):
-    """A call, tagged by the operation it names."""
-
-
-class EditCall(_Call, frozen=True, tag="notebook.edit"):
-    """Change parts of the document."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-    body: protocol.EditRequest
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.EditResponse:
-        return await bridge.edit(
-            self.params.notebook_id,
-            self.body.changes,
-            request_id=self.headers.idempotency_key,
-        )
-
-
-class SaveCall(_Call, frozen=True, tag="notebook.save"):
-    """Write the document to the host's store."""
-
-    params: NotebookParams
-    headers: SaveHeaders
-    body: protocol.SaveRequest
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.EditResponse:
-        decisions = self.body.decisions
-        return await bridge.save(
-            self.params.notebook_id,
-            if_match=_if_match(self.headers.if_match),
-            decisions={} if decisions is msgspec.UNSET else decisions,
-            request_id=self.headers.idempotency_key,
-        )
-
-
-class StartCall(_Call, frozen=True, tag="runtime.start"):
-    """Start the notebook's runtime, or find the one it has."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-    body: protocol.StartRuntimeRequest
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Runtime:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        runtime, _ = notebook.start(request_id=self.headers.idempotency_key)
-        return runtime
-
-
-class StopCall(_Call, frozen=True, tag="runtime.stop"):
-    """Stop the notebook's runtime."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Runtime:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        return notebook.stop(request_id=self.headers.idempotency_key)
-
-
-class RestartCall(_Call, frozen=True, tag="runtime.restart"):
-    """Restart the notebook's kernel."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Runtime:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        return notebook.restart(request_id=self.headers.idempotency_key)
-
-
-class RunCall(_Call, frozen=True, tag="runtime.run"):
-    """Run notebook cells by id under the runtime's execution settings."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-    body: protocol.RunRequest
-
-    async def handle(
-        self,
-        bridge: NotebookBridge,
-        request: RequestInfo | None,
-        *,
-        allow_input: bool = False,
-    ) -> protocol.Run:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        return notebook.run(
-            cells=self.body.cells,
-            request_id=self.headers.idempotency_key,
-            request=request,
-            allow_input=allow_input,
-        )
-
-
-class ExecuteCall(_Call, frozen=True, tag="runtime.execute"):
-    """Execute Python with access to notebook values and the code-mode context."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-    body: protocol.ExecuteRequest
-
-    async def handle(
-        self,
-        bridge: NotebookBridge,
-        request: RequestInfo | None,
-        *,
-        allow_input: bool = False,
-    ) -> protocol.Run:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        return notebook.run(
-            self.body.code,
-            request_id=self.headers.idempotency_key,
-            request=request,
-            allow_input=allow_input,
-        )
-
-
-class InterruptCall(_Call, frozen=True, tag="runtime.interrupt"):
-    """Interrupt the notebook's runtime."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Runtime:
-        notebook = await bridge.host.notebook(self.params.notebook_id)
-        return notebook.interrupt(request_id=self.headers.idempotency_key)
-
-
-class CancelCall(_Call, frozen=True, tag="runtime.cancel"):
-    """Cancel a run."""
-
-    params: RunParams
-    headers: MutationHeaders
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Run:
-        notebook_id, run_id = self.params.notebook_id, self.params.run_id
-        notebook = await bridge.host.notebook(notebook_id)
-        try:
-            return notebook.cancel(
-                run_id, request_id=self.headers.idempotency_key
-            )
-        except NotFound:
-            run = bridge.host.run(notebook_id, run_id)
-            if run is not None and run.status == "completed":
-                raise Conflict(f"run {run_id} has already ended.") from None
-            raise
-
-
-class InputCall(_Call, frozen=True, tag="runtime.input"):
-    """Answer a pending input."""
-
-    params: InputParams
-    headers: MutationHeaders
-    body: protocol.InputReplyRequest
-
-    async def handle(self, bridge: NotebookBridge) -> protocol.Input:
-        notebook_id, input_id = self.params.notebook_id, self.params.input_id
-        notebook = await bridge.host.notebook(notebook_id)
-        try:
-            return notebook.reply_input(
-                input_id,
-                self.body.value,
-                request_id=self.headers.idempotency_key,
-            )
-        except NotFound:
-            if bridge.host.input(notebook_id, input_id) is not None:
-                raise Conflict(
-                    f"input {input_id} has already ended."
-                ) from None
-            raise
-
-
-OperationCall = (
-    EditCall
-    | SaveCall
-    | StartCall
-    | StopCall
-    | RestartCall
-    | RunCall
-    | ExecuteCall
-    | InterruptCall
-    | CancelCall
-    | InputCall
-)
-"""A request for any notebook operation, tagged by its operation id."""
-
-# The same members as `OperationCall`, as values to build tools from.
-# `typing.get_args` would return them untyped.
-CALLS: tuple[type[OperationCall], ...] = (
-    EditCall,
-    SaveCall,
-    StartCall,
-    StopCall,
-    RestartCall,
-    RunCall,
-    ExecuteCall,
-    InterruptCall,
-    CancelCall,
-    InputCall,
-)
-
-
-class CreateNotebookCall(msgspec.Struct, frozen=True):
-    """Create an empty notebook in the project."""
-
-    headers: MutationHeaders
-    body: protocol.CreateNotebookRequest
-
-
-class UpdateNotebookCall(msgspec.Struct, frozen=True):
-    """Change a notebook's path or display name, preserving its runtime."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-    body: protocol.UpdateNotebookRequest
-
-
-class DeleteNotebookCall(msgspec.Struct, frozen=True):
-    """Delete the notebook and its file if it has no runtime."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-
-
-class OpenNotebookCall(msgspec.Struct, frozen=True):
-    """Open the notebook in the configured browser."""
-
-    params: NotebookParams
-    headers: MutationHeaders
-
-
-BY_OPERATION: dict[str, type[OperationCall]] = {
-    str(kind.__struct_config__.tag): kind for kind in CALLS
-}
-"""Each notebook operation's call, by its operation id."""
-
-
-@cache
-def arguments_of(call: type[msgspec.Struct]) -> type[msgspec.Struct]:
-    """A struct whose fields are those of the call's parts, by Python name."""
-    members: list[Any] = []
-    for part in msgspec.structs.fields(call):
-        for member in msgspec.structs.fields(part.type):
-            if member.default is not msgspec.NODEFAULT:
-                members.append((member.name, member.type, member.default))
-            elif member.default_factory is not msgspec.NODEFAULT:
-                members.append(
-                    (
-                        member.name,
-                        member.type,
-                        msgspec.field(default_factory=member.default_factory),
-                    )
-                )
-            else:
-                members.append((member.name, member.type))
-    return msgspec.defstruct(
-        f"{call.__name__}Arguments",
-        members,
-        kw_only=True,
-        frozen=True,
-        forbid_unknown_fields=True,
-        module=call.__module__,
+@_handles("notebook.edit")
+async def _edit(
+    bridge: NotebookBridge, call: protocol.EditRequest, _: Caller
+) -> protocol.EditResponse:
+    return await bridge.edit(
+        call.notebook_id, call.changes, request_id=call.idempotency_key
     )
 
 
-def assemble(call: type[msgspec.Struct], arguments: dict[str, Any]) -> Any:
-    """The call that flat `arguments` describe.
+@_handles("notebook.save")
+async def _save(
+    bridge: NotebookBridge, call: protocol.SaveRequest, _: Caller
+) -> protocol.EditResponse:
+    return await bridge.save(
+        call.notebook_id,
+        if_match=None
+        if call.expected_etag is msgspec.UNSET
+        else (call.expected_etag,),
+        decisions={} if call.decisions is msgspec.UNSET else call.decisions,
+        request_id=call.idempotency_key,
+    )
 
-    Raises `msgspec.ValidationError` when they do not fit the call.
+
+@_handles("runtime.start")
+async def _start(
+    bridge: NotebookBridge, call: protocol.StartRuntimeRequest, _: Caller
+) -> protocol.Runtime:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    runtime, _started = notebook.start(request_id=call.idempotency_key)
+    return runtime
+
+
+@_handles("runtime.stop")
+async def _stop(
+    bridge: NotebookBridge, call: protocol.NotebookRequest, _: Caller
+) -> protocol.Runtime:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    return notebook.stop(request_id=call.idempotency_key)
+
+
+@_handles("runtime.restart")
+async def _restart(
+    bridge: NotebookBridge, call: protocol.NotebookRequest, _: Caller
+) -> protocol.Runtime:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    return notebook.restart(request_id=call.idempotency_key)
+
+
+@_handles("runtime.run")
+async def _run(
+    bridge: NotebookBridge, call: protocol.RunRequest, caller: Caller
+) -> protocol.Run:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    return notebook.run(
+        cells=call.cells,
+        request_id=call.idempotency_key,
+        request=caller.request,
+        allow_input=caller.allow_input,
+    )
+
+
+@_handles("runtime.execute")
+async def _execute(
+    bridge: NotebookBridge, call: protocol.ExecuteRequest, caller: Caller
+) -> protocol.Run:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    return notebook.run(
+        call.code,
+        request_id=call.idempotency_key,
+        request=caller.request,
+        allow_input=caller.allow_input,
+    )
+
+
+@_handles("runtime.interrupt")
+async def _interrupt(
+    bridge: NotebookBridge, call: protocol.NotebookRequest, _: Caller
+) -> protocol.Runtime:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    return notebook.interrupt(request_id=call.idempotency_key)
+
+
+@_handles("runtime.cancel")
+async def _cancel(
+    bridge: NotebookBridge, call: protocol.CancelRunRequest, _: Caller
+) -> protocol.Run:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    try:
+        return notebook.cancel(call.run_id, request_id=call.idempotency_key)
+    except NotFound:
+        run = bridge.host.run(call.notebook_id, call.run_id)
+        if run is not None and run.status == "completed":
+            raise Conflict(f"run {call.run_id} has already ended.") from None
+        raise
+
+
+@_handles("runtime.input")
+async def _input(
+    bridge: NotebookBridge, call: protocol.InputReplyRequest, _: Caller
+) -> protocol.Input:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    try:
+        return notebook.reply_input(
+            call.input_id, call.value, request_id=call.idempotency_key
+        )
+    except NotFound:
+        if bridge.host.input(call.notebook_id, call.input_id) is not None:
+            raise Conflict(
+                f"input {call.input_id} has already ended."
+            ) from None
+        raise
+
+
+def decode(name: str, arguments: object) -> Any:
+    """The tool's arguments as its request type.
+
+    Raises `msgspec.ValidationError` when the tool is unknown or the
+    arguments do not fit it.
     """
-    flat = msgspec.convert(arguments, arguments_of(call))
-    parts: dict[str, Any] = {}
-    config = call.__struct_config__
-    if config.tag is not None and config.tag_field is not None:
-        parts[config.tag_field] = config.tag
-    for part in msgspec.structs.fields(call):
-        parts[part.name] = {
-            member.encode_name: getattr(flat, member.name)
-            for member in msgspec.structs.fields(part.type)
-            if getattr(flat, member.name) is not msgspec.UNSET
-        }
-    return msgspec.convert(parts, call, from_attributes=True)
+    tool = TOOLS.get(name)
+    if tool is None:
+        raise msgspec.ValidationError(f"No tool {name}")
+    return msgspec.convert(arguments, tool.arguments)
 
 
-def reply_type(kind: type[OperationCall]) -> Any:
-    """The type of the reply a call's `handle` declares."""
-    return get_type_hints(
-        kind.handle,
-        localns={"NotebookBridge": object, "RequestInfo": object},
-    )["return"]
-
-
-async def dispatch(
+async def once(
     mutations: Mutations,
-    bridge: NotebookBridge,
-    call: OperationCall,
-    *,
-    request: RequestInfo | None,
-    allow_input: bool = False,
+    name: str,
+    call: Any,
+    serve: Callable[[], Awaitable[Reply]],
 ) -> Reply:
-    """Serve a call once per idempotency key and describe a failure as a problem.
-
-    `request` is the HTTP request carrying the call, if any; runs hand it
-    to the code they execute.
-    """
-
-    async def serve() -> Reply:
-        if isinstance(call, (RunCall, ExecuteCall)):
-            return await call.handle(bridge, request, allow_input=allow_input)
-        return await call.handle(bridge)
-
+    """Serve a call once per idempotency key, and a failure as its problem."""
     try:
         return await mutations.execute(
-            str(call.__struct_config__.tag),
-            notebook_id=call.params.notebook_id,
-            key=call.headers.idempotency_key,
+            name,
+            notebook_id=getattr(call, "notebook_id", None),
+            key=call.idempotency_key,
             payload=call,
             call=serve,
         )
@@ -368,12 +191,17 @@ async def dispatch(
         return problem_for(e)
 
 
-def _if_match(header: str | None) -> tuple[str, ...] | None:
-    """Parse strong entity tags; weak tags never satisfy an If-Match check."""
-    if header is None or header.strip() == "*":
-        return None
-    return tuple(
-        part.strip().strip('"')
-        for part in header.split(",")
-        if part.strip() and not part.strip().startswith("W/")
+async def dispatch(
+    mutations: Mutations,
+    bridge: NotebookBridge,
+    name: str,
+    call: Any,
+    caller: Caller,
+) -> Reply:
+    """Serve a notebook tool's decoded call."""
+    handler = HANDLERS.get(name)
+    if handler is None:
+        return problem("invalid-request", f"No notebook tool {name}")
+    return await once(
+        mutations, name, call, lambda: handler(bridge, call, caller)
     )

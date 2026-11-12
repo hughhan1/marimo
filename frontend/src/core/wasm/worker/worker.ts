@@ -1,6 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import type { unstable_NotebookCall } from "@marimo-team/client";
+import type { ToolCall } from "@marimo-team/client";
 import type { PyodideInterface } from "pyodide";
 import {
   createRPC,
@@ -147,7 +147,7 @@ const requestHandler = createRPCRequestHandler({
       notebook.destroy();
     }
   },
-  notebookCall: async (call: unstable_NotebookCall): Promise<unknown> => {
+  notebookCall: async (call: ToolCall): Promise<unknown> => {
     const notebook = await getNotebook();
     try {
       return JSON.parse(await notebook.call(JSON.stringify(call)));

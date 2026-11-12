@@ -26,6 +26,7 @@ from marimo._session.managers.ipc import KernelStartupError
 from marimo._types.ids import CellId_t, ConsumerId, SessionId
 from tests._server.api.endpoints.ws_helpers import headers
 from tests._server.host.drive import socket_snapshot
+from tests._server.mcp_client import call_tool
 from tests._server.mocks import get_session_manager, run_cells
 from tests._server.session_events import connect_session
 
@@ -145,11 +146,11 @@ def test_editor_starts_and_runs_through_the_host_socket(
             {cell_id: "print('host socket')"},
             headers=headers("s1"),
         )
-        assert response.status_code == 202, response.text
+        assert response.ok, response.problem
         while True:
             event = websocket.receive_json()
             messages.append(event)
-            if completed(event, response.json()["id"]):
+            if completed(event, response.data["id"]):
                 break
         received_types = {event["event"] for event in messages}
         if types is None:
@@ -223,8 +224,8 @@ def test_reconnect_keeps_state_and_refresh_replays_it(
             {cell_id: "print('retained output')"},
             headers=headers("s1"),
         )
-        assert response.status_code == 202, response.text
-        receive_completed_run(websocket, response.json()["id"])
+        assert response.ok, response.problem
+        receive_completed_run(websocket, response.data["id"])
     with client.websocket_connect(url) as websocket:
         socket_snapshot(websocket)
         assert_reconnect_alert(websocket)
@@ -529,8 +530,8 @@ def test_untitled_editor_bootstraps_and_reconnects_with_host_events(
                     {first_cell_id(client, "new"): "x = 42"},
                     headers=headers("new"),
                 )
-                assert response.status_code == 202, response.text
-                receive_completed_run(ws, response.json()["id"])
+                assert response.ok, response.problem
+                receive_completed_run(ws, response.data["id"])
             with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
                 assert_reconnect_alert(ws)
@@ -577,15 +578,18 @@ def test_untitled_editor_restarts_its_runtime_through_the_host(
                     {cell_id: "x = 42"},
                     headers=headers("new"),
                 )
-                assert response.status_code == 202, response.text
-                receive_completed_run(ws, response.json()["id"])
+                assert response.ok, response.problem
+                receive_completed_run(ws, response.data["id"])
 
-                restarted = client.post(
-                    f"{HOST_API_PATH}/notebooks/{notebook_id}/runtime/restart",
-                    headers={**headers("new"), "Idempotency-Key": "restart"},
+                restarted = call_tool(
+                    client,
+                    "runtime.restart",
+                    headers=headers("new"),
+                    idempotency_key="restart",
+                    notebook_id=notebook_id,
                 )
-                assert restarted.status_code == 202, restarted.text
-                replacement = restarted.json()["id"]
+                assert restarted.ok, restarted.problem
+                replacement = restarted.data["id"]
                 while True:
                     try:
                         ws.receive_json()
@@ -618,7 +622,7 @@ def test_untitled_editor_restarts_its_runtime_through_the_host(
                     {cell_id: "x = 43"},
                     headers=headers("new"),
                 )
-                assert response.status_code == 202, response.text
-                receive_completed_run(ws, response.json()["id"])
+                assert response.ok, response.problem
+                receive_completed_run(ws, response.data["id"])
         finally:
             client.portal.call(bridge.close)

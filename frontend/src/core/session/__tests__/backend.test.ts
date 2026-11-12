@@ -45,8 +45,7 @@ const options = {
   snapshot: null,
   sessionArguments: () => ({ session_id: "s1", query_params: "" }),
   headers: () => ({}),
-  notebookUrl: (id: string) =>
-    new URL(`http://localhost/api/marimo/v1/notebooks/${id}`),
+  mcpUrl: () => new URL("http://localhost/api/mcp"),
   waitUntilReady: async () => undefined,
   checkHealth: async () => true,
 };
@@ -113,12 +112,12 @@ describe("createEditorBackend", () => {
     const result = await backend
       .notebook("n1")
       .edit([], { idempotencyKey: "edit-1" });
-    expect(result).toMatchObject({ ok: false, status: 409, problem });
+    expect(result).toMatchObject({ ok: false, problem });
     const [input, init] = fetch.mock.calls.at(-1)!;
     const call = (await new Request(input, init).json()) as {
       params: unknown;
     };
-    expect(String(input)).toBe("http://localhost/api/marimo/v1/mcp");
+    expect(String(input)).toBe("http://localhost/api/mcp");
     expect(call.params).toMatchObject({
       name: "notebook.edit",
       arguments: { notebook_id: "n1", idempotency_key: "edit-1", changes: [] },
@@ -135,7 +134,7 @@ describe("createEditorBackend", () => {
     const result = await createEditorBackend({ ...options, static: true })
       .notebook("n1")
       .edit([], { idempotencyKey: "edit-1" });
-    expect(result).toMatchObject({ ok: false, status: 501 });
+    expect(result).toMatchObject({ ok: false, problem: { status: 501 } });
     expect(fetch).not.toHaveBeenCalled();
   });
 

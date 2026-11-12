@@ -32,7 +32,7 @@ export const HostMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -116,7 +116,7 @@ export const ProjectMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -191,7 +191,7 @@ export const NotebookMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -285,7 +285,7 @@ export const DocumentMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -389,7 +389,7 @@ export const CellMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -465,7 +465,7 @@ export const RuntimeMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -550,7 +550,7 @@ export const AttachmentMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -583,7 +583,7 @@ export const RunId = zod
   .string()
   .min(1)
   .describe(
-    "Identifies a run independently of the request's `Idempotency-Key`. Events carry the key in `request_id`.",
+    "Identifies a run independently of the call's `idempotency_key`. Events carry the key in `request_id`.",
   );
 
 export type RunId = zod.input<typeof RunId>;
@@ -645,7 +645,7 @@ export const RunMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -928,7 +928,7 @@ export const ExecutionMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -995,7 +995,7 @@ export const ConsoleMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1049,7 +1049,7 @@ export const DisplayMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1118,7 +1118,7 @@ export const InputMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1173,7 +1173,7 @@ export const VariableMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1242,7 +1242,7 @@ export const AnalysisMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1297,7 +1297,7 @@ export const CustomMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.describe(
       "When the host emitted this event. Preserved on replay.",
@@ -1331,7 +1331,7 @@ export const RemovedMessage = zod
       .string()
       .optional()
       .describe(
-        "The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress.",
+        "The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress.",
       ),
     time: Timestamp.optional().describe(
       "When the host made this change. Present on live and replayed events; omitted on snapshots.",
@@ -1802,7 +1802,7 @@ export const PreconditionFailedProblem = zod.object({
     .int()
     .min(preconditionFailedProblemIndexMin)
     .describe(
-      "The position of the first stale entry in the request, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `If-Match`.",
+      "The position of the first stale entry in the call, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `expected_etag`.",
     ),
   cell: zod
     .union([Cell, zod.null()])
@@ -1901,140 +1901,49 @@ export const UnknownProblem = zod
 export type UnknownProblem = zod.input<typeof UnknownProblem>;
 export type UnknownProblemOutput = zod.output<typeof UnknownProblem>;
 
-export const UpdateNotebookRequest = zod
+export const CreateNotebookRequest = zod
   .strictObject({
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    project_id: ProjectId,
     path: zod
       .string()
       .optional()
       .describe(
-        "The new location, relative to the project root and written the way the host's operating system writes paths.",
+        "Where to put the file, relative to the project root and written the way the host's operating system writes paths.",
       ),
-    name: zod.string().optional().describe("The new label to show people."),
-  })
-  .describe("The fields to change. At least one is present.");
-
-export type UpdateNotebookRequest = zod.input<typeof UpdateNotebookRequest>;
-export type UpdateNotebookRequestOutput = zod.output<
-  typeof UpdateNotebookRequest
->;
-
-export const CellVersion = zod
-  .object({
-    etag: Etag,
-    code_fingerprint: CodeFingerprint,
-    version: zod.int().min(1).describe("The cell's version after the edit."),
-  })
-  .describe("A cell's etag, code fingerprint, and version after an edit.");
-
-export type CellVersion = zod.input<typeof CellVersion>;
-export type CellVersionOutput = zod.output<typeof CellVersion>;
-
-export const EditResponse = zod
-  .object({
-    document: Document,
-    cells: zod
-      .record(zod.string(), zod.union([CellVersion, zod.null()]))
-      .describe(
-        "The version of each cell the request created or changed, by id, and null for each cell it deleted.",
-      ),
-  })
-  .describe(
-    "The document as an edit or save left it, or at a later revision, and the cells it touched.",
-  );
-
-export type EditResponse = zod.input<typeof EditResponse>;
-export type EditResponseOutput = zod.output<typeof EditResponse>;
-
-export const SaveRequest = zod
-  .strictObject({
-    decisions: zod
-      .record(zod.string(), zod.string())
+    name: zod
+      .string()
       .optional()
       .describe(
-        "Answers to the questions in a `decision-required` problem, as for `runtime.start`.",
+        "A label to show people. In a project with a root it defaults to the filename.",
       ),
   })
   .describe(
-    "What a save needs from the client, which is nothing until the host asks a question. `{}` is the usual body.",
+    "The notebook's own fields, minus what the host assigns. A project with a root requires `path`; one without requires `name`.",
   );
 
-export type SaveRequest = zod.input<typeof SaveRequest>;
-export type SaveRequestOutput = zod.output<typeof SaveRequest>;
-
-export const StartRuntimeRequest = zod.strictObject({
-  decisions: zod
-    .record(zod.string(), zod.string())
-    .optional()
-    .describe(
-      "Answers to the questions in a `decision-required` problem.\nEach key is a decision's `id` and each value is the `id` of\nthe chosen option. A client that already knows its choices can\nsend them the first time.\n",
-    ),
-});
-
-export type StartRuntimeRequest = zod.input<typeof StartRuntimeRequest>;
-export type StartRuntimeRequestOutput = zod.output<typeof StartRuntimeRequest>;
-
-export const ExecuteRequest = zod
-  .strictObject({
-    code: zod
-      .string()
-      .describe(
-        "Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n",
-      ),
-  })
-  .describe("Python code to execute with access to notebook values.");
-
-export type ExecuteRequest = zod.input<typeof ExecuteRequest>;
-export type ExecuteRequestOutput = zod.output<typeof ExecuteRequest>;
-
-export const RequestedCell = zod.strictObject({
-  id: CellId,
-  etag: Etag.optional().describe(
-    "The cell's `etag` as last read. A cell whose source, name, or config differs is `precondition-failed`. Absent, the cell runs as it is.",
-  ),
-});
-
-export type RequestedCell = zod.input<typeof RequestedCell>;
-export type RequestedCellOutput = zod.output<typeof RequestedCell>;
-
-export const RunRequest = zod
-  .strictObject({
-    cells: zod
-      .array(RequestedCell)
-      .min(1)
-      .describe(
-        "Cells to run by id. The notebook's execution settings determine their order and whether dependent cells run too.",
-      ),
-  })
-  .describe("Notebook cells to run.");
-
-export type RunRequest = zod.input<typeof RunRequest>;
-export type RunRequestOutput = zod.output<typeof RunRequest>;
-
-export const InputReplyRequest = zod
-  .strictObject({
-    value: zod
-      .string()
-      .describe(
-        "The text to deliver to the input exactly as submitted, including an empty string when the answer is empty.",
-      ),
-  })
-  .describe("The answer to one pending input.");
-
-export type InputReplyRequest = zod.input<typeof InputReplyRequest>;
-export type InputReplyRequestOutput = zod.output<typeof InputReplyRequest>;
-
-export const OpenNotebookResponse = zod.object({
-  url: zod
-    .string()
-    .describe(
-      "The URL the host used to show the notebook, with the host's token omitted.",
-    ),
-});
-
-export type OpenNotebookResponse = zod.input<typeof OpenNotebookResponse>;
-export type OpenNotebookResponseOutput = zod.output<
-  typeof OpenNotebookResponse
+export type CreateNotebookRequest = zod.input<typeof CreateNotebookRequest>;
+export type CreateNotebookRequestOutput = zod.output<
+  typeof CreateNotebookRequest
 >;
+
+export const NotebookRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+  })
+  .describe("The notebook a call acts on, and the call's idempotency key.");
+
+export type NotebookRequest = zod.input<typeof NotebookRequest>;
+export type NotebookRequestOutput = zod.output<typeof NotebookRequest>;
 
 export const cellConfigInputColumnDefault = null;
 export const cellConfigInputDisabledDefault = false;
@@ -2134,36 +2043,211 @@ export const Change = zod
 export type Change = zod.input<typeof Change>;
 export type ChangeOutput = zod.output<typeof Change>;
 
-export const EditRequest = zod.strictObject({
-  changes: zod
-    .array(Change)
-    .describe("The changes, applied in order as one unit."),
-});
+export const EditRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    changes: zod
+      .array(Change)
+      .describe("The changes, applied in order as one unit."),
+  })
+  .describe("Changes to the document, applied as one unit.");
 
 export type EditRequest = zod.input<typeof EditRequest>;
 export type EditRequestOutput = zod.output<typeof EditRequest>;
 
-export const CreateNotebookRequest = zod
+export const CellVersion = zod
+  .object({
+    etag: Etag,
+    code_fingerprint: CodeFingerprint,
+    version: zod.int().min(1).describe("The cell's version after the edit."),
+  })
+  .describe("A cell's etag, code fingerprint, and version after an edit.");
+
+export type CellVersion = zod.input<typeof CellVersion>;
+export type CellVersionOutput = zod.output<typeof CellVersion>;
+
+export const EditResponse = zod
+  .object({
+    document: Document,
+    cells: zod
+      .record(zod.string(), zod.union([CellVersion, zod.null()]))
+      .describe(
+        "The version of each cell the request created or changed, by id, and null for each cell it deleted.",
+      ),
+  })
+  .describe(
+    "The document as an edit or save left it, or at a later revision, and the cells it touched.",
+  );
+
+export type EditResponse = zod.input<typeof EditResponse>;
+export type EditResponseOutput = zod.output<typeof EditResponse>;
+
+export const OpenNotebookResponse = zod.object({
+  url: zod
+    .string()
+    .describe(
+      "The URL the host used to show the notebook, with the host's token omitted.",
+    ),
+});
+
+export type OpenNotebookResponse = zod.input<typeof OpenNotebookResponse>;
+export type OpenNotebookResponseOutput = zod.output<
+  typeof OpenNotebookResponse
+>;
+
+export const InputReplyRequest = zod
   .strictObject({
-    project_id: ProjectId,
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    input_id: ItemId.describe("The input's item id."),
+    value: zod
+      .string()
+      .describe(
+        "The text to deliver to the input exactly as submitted, including an empty string when the answer is empty.",
+      ),
+  })
+  .describe("The answer to one pending input.");
+
+export type InputReplyRequest = zod.input<typeof InputReplyRequest>;
+export type InputReplyRequestOutput = zod.output<typeof InputReplyRequest>;
+
+export const CancelRunRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    run_id: RunId.describe("The run's id."),
+  })
+  .describe("The run to cancel.");
+
+export type CancelRunRequest = zod.input<typeof CancelRunRequest>;
+export type CancelRunRequestOutput = zod.output<typeof CancelRunRequest>;
+
+export const RequestedCell = zod.strictObject({
+  id: CellId,
+  etag: Etag.optional().describe(
+    "The cell's `etag` as last read. A cell whose source, name, or config differs is `precondition-failed`. Absent, the cell runs as it is.",
+  ),
+});
+
+export type RequestedCell = zod.input<typeof RequestedCell>;
+export type RequestedCellOutput = zod.output<typeof RequestedCell>;
+
+export const RunRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    cells: zod
+      .array(RequestedCell)
+      .min(1)
+      .describe(
+        "Cells to run by id. The notebook's execution settings determine their order and whether dependent cells run too.",
+      ),
+  })
+  .describe("Notebook cells to run.");
+
+export type RunRequest = zod.input<typeof RunRequest>;
+export type RunRequestOutput = zod.output<typeof RunRequest>;
+
+export const ExecuteRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    code: zod
+      .string()
+      .describe(
+        "Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n",
+      ),
+  })
+  .describe("Python code to execute with access to notebook values.");
+
+export type ExecuteRequest = zod.input<typeof ExecuteRequest>;
+export type ExecuteRequestOutput = zod.output<typeof ExecuteRequest>;
+
+export const StartRuntimeRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    decisions: zod
+      .record(zod.string(), zod.string())
+      .optional()
+      .describe(
+        "Answers to the questions in a `decision-required` problem.\nEach key is a decision's `id` and each value is the `id` of\nthe chosen option. A client that already knows its choices can\nsend them the first time.\n",
+      ),
+  })
+  .describe("The notebook whose runtime to start.");
+
+export type StartRuntimeRequest = zod.input<typeof StartRuntimeRequest>;
+export type StartRuntimeRequestOutput = zod.output<typeof StartRuntimeRequest>;
+
+export const SaveRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
+    expected_etag: Etag.optional().describe(
+      "The document etag the client last read, as a precondition. The host answers `precondition-failed` when the document's etag differs.",
+    ),
+    decisions: zod
+      .record(zod.string(), zod.string())
+      .optional()
+      .describe(
+        "Answers to the questions in a `decision-required` problem, as for `runtime.start`.",
+      ),
+  })
+  .describe(
+    "The notebook to save. A save needs nothing else until the host asks a question.",
+  );
+
+export type SaveRequest = zod.input<typeof SaveRequest>;
+export type SaveRequestOutput = zod.output<typeof SaveRequest>;
+
+export const UpdateNotebookRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    idempotency_key: zod
+      .string()
+      .describe(
+        "A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n",
+      ),
     path: zod
       .string()
       .optional()
       .describe(
-        "Where to put the file, relative to the project root and written the way the host's operating system writes paths.",
+        "The new location, relative to the project root and written the way the host's operating system writes paths.",
       ),
-    name: zod
-      .string()
-      .optional()
-      .describe(
-        "A label to show people. In a project with a root it defaults to the filename.",
-      ),
+    name: zod.string().optional().describe("The new label to show people."),
   })
-  .describe(
-    "The notebook's own fields, minus what the host assigns. A project with a root requires `path`; one without requires `name`.",
-  );
+  .describe("The fields to change. At least one is present.");
 
-export type CreateNotebookRequest = zod.input<typeof CreateNotebookRequest>;
-export type CreateNotebookRequestOutput = zod.output<
-  typeof CreateNotebookRequest
+export type UpdateNotebookRequest = zod.input<typeof UpdateNotebookRequest>;
+export type UpdateNotebookRequestOutput = zod.output<
+  typeof UpdateNotebookRequest
 >;

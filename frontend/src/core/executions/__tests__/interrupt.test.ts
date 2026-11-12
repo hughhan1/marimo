@@ -97,7 +97,6 @@ describe("interruptRuntime", () => {
       const { store, interrupt } = setup([]);
       interrupt.mockResolvedValue({
         ok: false,
-        status: problem.status,
         problem,
       });
 
@@ -175,7 +174,6 @@ describe("interruptRuntime", () => {
       const { store, interrupt } = setup([run("running")]);
       interrupt.mockResolvedValue({
         ok: false,
-        status: problem.status,
         problem,
       });
 
