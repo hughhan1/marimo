@@ -28,6 +28,7 @@ from mcp.types import INVALID_PARAMS, ErrorData
 from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 
+from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
 from marimo._server.api.deps import AppState
@@ -43,6 +44,8 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from holon.context import RequestContext
     from holon.ext.events import EventType
+
+LOGGER = _loggers.marimo_logger()
 
 request_var: ContextVar[Request] = ContextVar("marimo.events.request")
 
@@ -138,15 +141,21 @@ def events() -> Events:
         stream: SessionEventStream, subscription_id: str
     ) -> None:
         reset = serialize_event(RoutedEvent(protocol.ResetEvent(data={})))
-        async with aclosing(stream.stream()) as frames:
-            async for frame in frames:
-                if reset:
-                    send(reset, subscription_id)
-                    reset = ""
-                if isinstance(frame, Close):
-                    terminate(subscription_id, _CLOSED, frame.reason)
-                    return
-                send(stream.serialize(frame), subscription_id)
+        try:
+            async with aclosing(stream.stream()) as frames:
+                async for frame in frames:
+                    if reset:
+                        send(reset, subscription_id)
+                        reset = ""
+                    if isinstance(frame, Close):
+                        terminate(subscription_id, _CLOSED, frame.reason)
+                        return
+                    send(stream.serialize(frame), subscription_id)
+        except Exception:
+            # A subscription that stopped delivering must not stay open: the
+            # page follows the session again.
+            LOGGER.exception("An editor session's stream failed")
+            terminate(subscription_id, _CLOSED, "The session's stream failed")
 
     session: EventType[SessionArguments, SessionFrame] = served.event(
         "session",
