@@ -72,10 +72,19 @@ function afterStartup({
   };
 }
 
-/** The server's `session` event, through the editor's MCP client. */
+/**
+ * The server's `session` event, through the editor's MCP client.
+ *
+ * A lost stream ends the subscription rather than reconnecting inside it,
+ * so `NotebookEvents` retries and the page shows it is connecting.
+ */
 const subscribeSession: SubscribeSession = async (args, { signal }) => {
   const { ext } = await getMarimo();
-  return ext.events.subscribe("session", args, { signal, delivery: "push" });
+  return ext.events.subscribe("session", args, {
+    signal,
+    delivery: "push",
+    reconnect: false,
+  });
 };
 
 /**
