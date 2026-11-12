@@ -45,8 +45,7 @@ const options = {
   snapshot: null,
   sessionArguments: () => ({ session_id: "s1", query_params: "" }),
   headers: () => ({}),
-  notebookUrl: (id: string) =>
-    new URL(`http://localhost/api/marimo/v1/notebooks/${id}`),
+  mcpUrl: () => new URL("http://localhost/api/mcp"),
   waitUntilReady: async () => undefined,
   checkHealth: async () => true,
 };
@@ -74,15 +73,33 @@ describe("createEditorBackend", () => {
   });
 
   it("edits a reported notebook on its host with the session's headers", async () => {
+    const problem = {
+      type: "urn:marimo:problem:conflict",
+      title: "Conflict",
+      status: 409,
+    };
     const fetch = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(
-          JSON.stringify({ type: "conflict", title: "Conflict", status: 409 }),
-          {
-            status: 409,
-            headers: { "Content-Type": "application/problem+json" },
-          },
-        ),
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const { id, method } = (await new Request(input, init).json()) as {
+          id: unknown;
+          method: string;
+        };
+        const result =
+          method === "server/discover"
+            ? {
+                resultType: "complete",
+                supportedVersions: ["2026-07-28"],
+                capabilities: { tools: {} },
+              }
+            : {
+                resultType: "complete",
+                isError: true,
+                content: [{ type: "text", text: JSON.stringify(problem) }],
+              };
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id, result }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      },
     );
     vi.stubGlobal("fetch", fetch);
     const backend = createEditorBackend({
@@ -95,16 +112,20 @@ describe("createEditorBackend", () => {
     const result = await backend
       .notebook("n1")
       .edit([], { idempotencyKey: "edit-1" });
-    expect(result).toMatchObject({ ok: false, status: 409 });
-    const [[input, init]] = fetch.mock.calls;
-    expect(String(input)).toBe(
-      "http://localhost/api/marimo/v1/notebooks/n1/edits",
-    );
+    expect(result).toMatchObject({ ok: false, problem });
+    const [input, init] = fetch.mock.calls.at(-1)!;
+    const call = (await new Request(input, init).json()) as {
+      params: unknown;
+    };
+    expect(String(input)).toBe("http://localhost/api/mcp");
+    expect(call.params).toMatchObject({
+      name: "notebook.edit",
+      arguments: { notebook_id: "n1", idempotency_key: "edit-1", changes: [] },
+    });
     const headers = new Headers(init?.headers);
     expect(init?.method).toBe("POST");
     expect(headers.get("Authorization")).toBe("Bearer editor-token");
     expect(headers.get("Marimo-Server-Token")).toBe("server-token");
-    expect(headers.get("Idempotency-Key")).toBe("edit-1");
   });
 
   it("does not edit a static notebook", async () => {
@@ -113,7 +134,7 @@ describe("createEditorBackend", () => {
     const result = await createEditorBackend({ ...options, static: true })
       .notebook("n1")
       .edit([], { idempotencyKey: "edit-1" });
-    expect(result).toMatchObject({ ok: false, status: 501 });
+    expect(result).toMatchObject({ ok: false, problem: { status: 501 } });
     expect(fetch).not.toHaveBeenCalled();
   });
 

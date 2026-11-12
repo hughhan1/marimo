@@ -25,28 +25,17 @@ const header = [
   "\n",
 ].join("\n");
 
-interface Parameter {
+interface Reference {
+  $ref: string;
+}
+
+/** A tool as the spec's `x-tools` lists it. */
+interface Tool {
   name: string;
-  in: "path" | "query" | "header";
-  required?: boolean;
-}
-
-interface Response {
-  content?: Record<
-    string,
-    { schema?: { $ref?: string; anyOf?: { $ref: string }[] } }
-  >;
-}
-
-interface Operation {
-  operationId: string;
-  summary?: string;
-  parameters?: Parameter[];
-  requestBody?: {
-    required?: boolean;
-    content: Record<string, { schema: { $ref: string } }>;
-  };
-  responses: Record<string, Response>;
+  title: string;
+  inputSchema: Reference;
+  outputSchema?: Reference;
+  problems: Reference[];
 }
 
 /** The last segment of a local `$ref`, such as `EditRequest`. */
@@ -58,99 +47,57 @@ function refName(ref: string | undefined): string {
   return name;
 }
 
-/**
- * Describe each operation as data for the client to call.
- *
- * Shapes the client cannot call yet are rejected, so a change to the
- * spec fails here instead of producing a wrong table.
- */
-function operationsModule(spec: OpenApiDocument): string {
-  const entries: string[] = [];
-  for (const [path, item] of Object.entries(spec.paths ?? {})) {
-    for (const [method, value] of Object.entries(item ?? {})) {
-      if (!["get", "post", "put", "patch", "delete"].includes(method)) {
-        throw new Error(`Unsupported path item field ${method} on ${path}`);
-      }
-      const operation = value as Operation;
-      const id = operation.operationId;
-      const query: string[] = [];
-      const headers: string[] = [];
-      const pathNames: string[] = [];
-      for (const parameter of operation.parameters ?? []) {
-        const entry = `${JSON.stringify(parameter.name)}: ${parameter.required === true}`;
-        if (parameter.in === "path") {
-          pathNames.push(parameter.name);
-        } else if (parameter.in === "query") {
-          query.push(entry);
-        } else {
-          headers.push(entry);
-        }
-      }
-      const placeholders = [...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
-      if (placeholders.join() !== pathNames.join()) {
-        throw new Error(`${id} parameters do not match ${path}`);
-      }
-      let body = "null";
-      if (operation.requestBody !== undefined) {
-        const json = operation.requestBody.content["application/json"];
-        if (operation.requestBody.required !== true || json === undefined) {
-          throw new Error(`${id} has an unsupported request body`);
-        }
-        body = `Protocol.${refName(json.schema.$ref)}`;
-      }
-      const responses: string[] = [];
-      const problems: string[] = [];
-      for (const [status, response] of Object.entries(operation.responses)) {
-        const types = Object.keys(response.content ?? {});
-        if (types.join() === "application/problem+json") {
-          const schema = response.content?.["application/problem+json"]?.schema;
-          const members = schema?.anyOf ?? [schema];
-          problems.push(
-            `${status}: [${members.map((member) => `Protocol.${refName(member?.$ref)}`).join(", ")}]`,
-          );
-        } else if (types.length === 0) {
-          responses.push(`${status}: null`);
-        } else if (types.join() === "text/event-stream") {
-          responses.push(`${status}: "text/event-stream"`);
-        } else if (types.join() === "application/json") {
-          const schema = response.content?.["application/json"]?.schema;
-          responses.push(`${status}: Protocol.${refName(schema?.$ref)}`);
-        } else {
-          throw new Error(`${id} ${status} has unsupported content ${types}`);
-        }
-      }
-      entries.push(
-        [
-          operation.summary ? `/** ${operation.summary}. */` : "",
-          `${JSON.stringify(id)}: {`,
-          `method: ${JSON.stringify(method.toUpperCase())},`,
-          `path: ${JSON.stringify(path)},`,
-          `query: { ${query.join(", ")} },`,
-          `headers: { ${headers.join(", ")} },`,
-          `body: ${body},`,
-          `responses: { ${responses.join(", ")} },`,
-          `problems: { ${problems.join(", ")} },`,
-          "},",
-        ].join("\n"),
-      );
-    }
+/** An event as the spec's `x-events` lists it. */
+interface Event {
+  name: string;
+  inputSchema: Reference;
+  payloadSchema: Reference;
+}
+
+/** Describe each tool and event as data for the client to call and follow. */
+function toolsModule(spec: OpenApiDocument): string {
+  const { "x-tools": tools, "x-events": events } = spec as {
+    "x-tools"?: Tool[];
+    "x-events"?: Event[];
+  };
+  if (tools === undefined || events === undefined) {
+    throw new Error("Host protocol lists no tools or events");
   }
+  const entries = tools.map((tool) =>
+    [
+      `/** ${tool.title}. */`,
+      `${JSON.stringify(tool.name)}: {`,
+      `arguments: Protocol.${refName(tool.inputSchema.$ref)},`,
+      `result: ${tool.outputSchema ? `Protocol.${refName(tool.outputSchema.$ref)}` : "null"},`,
+      `problems: [${tool.problems.map((problem) => `Protocol.${refName(problem.$ref)}`).join(", ")}],`,
+      "},",
+    ].join("\n"),
+  );
   return `${header}import * as Protocol from "./protocol.ts";
 
 /**
- * The host API's operations by id.
- *
- * Path parameters are the placeholders in \`path\`. \`query\` and \`headers\`
- * map each parameter to whether it is required. \`responses\` maps each
- * success status to its schema, \`null\` for no content, or an event stream.
- * \`problems\` maps each error status to the problems it can carry.
+ * The host's tools by name: each one's arguments, its result, or \`null\`
+ * when it has none, and the problems it can answer with.
  */
-export const operations = {
+export const tools = {
 ${entries.join("\n")}
 } as const;
 
-/** An operation id, such as \`notebook.edit\`. */
-export type OperationId = keyof typeof operations;
+/** A tool's name, such as \`notebook.edit\`. */
+export type ToolName = keyof typeof tools;
+
+/** The host's events by name: each one's arguments and the events it carries. */
+export const events = {
+${events
+  .map(
+    (event) =>
+      `${JSON.stringify(event.name)}: { arguments: Protocol.${refName(event.inputSchema.$ref)}, payload: Protocol.${refName(event.payloadSchema.$ref)} },`,
+  )
+  .join("\n")}
+} as const;
+
+/** An event's name, such as \`notebook\`. */
+export type EventName = keyof typeof events;
 `;
 }
 
@@ -198,8 +145,8 @@ try {
     }
   }
   NodeFs.writeFileSync(output, header + generated);
-  const table = NodePath.join(temporary, "operations-table.ts");
-  NodeFs.writeFileSync(table, operationsModule(spec));
+  const table = NodePath.join(temporary, "tools-table.ts");
+  NodeFs.writeFileSync(table, toolsModule(spec));
   NodeChildProcess.execFileSync(
     NodePath.join(root, "node_modules/.bin/oxfmt"),
     ["--config", NodePath.join(root, ".oxfmtrc.json"), output, table],
@@ -209,7 +156,7 @@ try {
   }
   for (const [generated, name] of [
     [output, "protocol.ts"],
-    [table, "operations.ts"],
+    [table, "tools.ts"],
   ] as const) {
     const content = NodeFs.readFileSync(generated, "utf8");
     const destination = NodePath.join(source, name);

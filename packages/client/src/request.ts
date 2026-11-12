@@ -1,8 +1,9 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
+import { createApps, type RuntimeClient } from "holon-sh/runtime";
 import * as z from "zod";
-import { type OperationId, operations } from "./operations.ts";
 import { parseProblem, type Problem, type UnknownProblem } from "./problem.ts";
+import { type ToolName, tools } from "./tools.ts";
 
 /** How a client reaches and authenticates with a host. */
 export interface ClientOptions {
@@ -18,176 +19,79 @@ export interface ClientOptions {
 }
 
 /**
- * The outcome of a request the host answered.
+ * The outcome of a tool call the host answered.
  *
- * A request throws when the host cannot be reached or when its answer is not
- * one the protocol describes.
+ * A call throws when the host cannot be reached or when its answer is not one
+ * the protocol describes.
  */
 export type Result<T, P = Problem> =
-  | { readonly ok: true; readonly status: number; readonly data: T }
-  | { readonly ok: false; readonly status: number; readonly problem: P };
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly problem: P };
 
 /**
- * The problems an operation declares.
+ * The problems a tool declares.
  *
  * A host on a later version can answer with a type this client does not
  * define, which arrives as an `UnknownProblem`.
  */
-export type ProblemOf<Id extends OperationId> =
-  | z.output<Declared<Id>[keyof Declared<Id>][number]>
+export type ProblemOf<Name extends ToolName> =
+  | z.output<(typeof tools)[Name]["problems"][number]>
   | UnknownProblem;
 
-type Declared<Id extends OperationId> = {
-  readonly [
-    Status in keyof (typeof operations)[Id]["problems"]
-  ]: (typeof operations)[Id]["problems"][Status] extends readonly z.ZodType[]
-    ? (typeof operations)[Id]["problems"][Status]
-    : never;
-};
+/** A tool's result, or `undefined` when it has none. */
+type Data<Name extends ToolName> =
+  (typeof tools)[Name]["result"] extends z.ZodType
+    ? z.output<(typeof tools)[Name]["result"]>
+    : undefined;
 
-/** What a request for one operation resolves to. */
-export type ResultOf<Id extends RequestOperationId> = Result<
-  Data<Id>,
-  ProblemOf<Id>
+/** What a call to one tool resolves to. */
+export type ResultOf<Name extends ToolName> = Result<
+  Data<Name>,
+  ProblemOf<Name>
 >;
 
-/** Options for a request that changes state. */
+/** A tool's arguments as a caller gives them: the idempotency key is optional. */
+export type ArgumentsOf<Name extends ToolName> = Omit<
+  z.input<(typeof tools)[Name]["arguments"]>,
+  "idempotency_key"
+>;
+
+/** Options for a call. */
 export interface MutationOptions {
   readonly signal?: AbortSignal;
   /**
-   * The key the host uses to answer a repeated request once.
+   * The key the host uses to answer a repeated call once.
    *
-   * Defaults to a new random key. Pass the same key to retry a request.
+   * Defaults to a new random key. Pass the same key to retry a call.
    */
   readonly idempotencyKey?: string;
 }
 
-/** The operations a client calls as requests rather than streams. */
-type RequestOperationId = {
-  [Id in OperationId]: (typeof operations)[Id]["responses"] extends {
-    200: "text/event-stream";
-  }
-    ? never
-    : Id;
-}[OperationId];
-
-/** The request operations whose paths start with `prefix`. */
-export type OperationsBelow<Prefix extends string> = {
-  [Id in RequestOperationId]: (typeof operations)[Id]["path"] extends
-    | Prefix
-    | `${Prefix}/${string}`
-    ? Id
-    : never;
-}[RequestOperationId];
-
 /**
- * Where a client's requests go.
+ * A call as a transport sends it: the tool's name and its arguments, flat.
  *
- * `url` stands for `prefix`, so each operation's path below `prefix` resolves
- * below `url` and keeps its query string.
+ * `ToolCall` is any tool's call, and `ToolCall<"notebook.edit">` is one.
  */
-export interface Target<Prefix extends string> {
-  readonly url: URL;
-  readonly prefix: Prefix;
-  readonly client: ClientOptions;
-}
-
-/**
- * Where a client's requests go as calls rather than HTTP requests.
- *
- * `params` holds the values a URL would carry for `prefix`, such as the
- * notebook's id, so each call names every path parameter.
- */
-export interface CallTarget<Prefix extends string> {
-  readonly send: (call: CallMessage) => Promise<unknown>;
-  readonly prefix: Prefix;
-  readonly params: Readonly<Record<string, string>>;
-}
-
-/** A call as `request` builds it, before its type is narrowed to its operation. */
-export interface CallMessage {
-  readonly operation: RequestOperationId;
-  readonly params: Readonly<Record<string, string>>;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: unknown;
-}
-
-/** What a request reads from each entry of the operations table. */
-interface Operation {
-  readonly method: string;
-  readonly path: string;
-  readonly headers: Readonly<Record<string, boolean>>;
-  readonly body: z.ZodType | null;
-  readonly responses: Readonly<
-    Record<number, z.ZodType | null | "text/event-stream">
+export type ToolCall<Name extends ToolName = ToolName> = {
+  [N in Name]: { readonly operation: N } & z.output<
+    (typeof tools)[N]["arguments"]
   >;
-  readonly problems: Readonly<Record<number, readonly z.ZodType[]>>;
-}
-
-const table: Readonly<Record<OperationId, Operation>> = operations;
-
-type Entry<Id extends RequestOperationId> = (typeof operations)[Id];
-
-/** The data of each success response an operation describes. */
-type Data<Id extends RequestOperationId> = {
-  [
-    Status in keyof Entry<Id>["responses"]
-  ]: Entry<Id>["responses"][Status] extends z.ZodType
-    ? z.output<Entry<Id>["responses"][Status]>
-    : undefined;
-}[keyof Entry<Id>["responses"]];
-
-/** The placeholder names in a path, such as `notebook_id`. */
-type PathParams<Path extends string> =
-  Path extends `${string}{${infer Name}}${infer Rest}`
-    ? Name | PathParams<Rest>
-    : never;
-
-/** An operation's headers by lowercase name, with the required ones required. */
-type CallHeaders<Headers> = {
-  readonly [
-    Name in keyof Headers as Headers[Name] extends true
-      ? Lowercase<Name & string>
-      : never
-  ]: string;
-} & {
-  readonly [
-    Name in keyof Headers as Headers[Name] extends true
-      ? never
-      : Lowercase<Name & string>
-  ]?: string;
-};
-
-/** An operation as one message, the parts of its request without a URL. */
-export type OperationCall<Id extends RequestOperationId> = {
-  [K in Id]: {
-    readonly operation: K;
-    readonly params: {
-      readonly [Name in PathParams<Entry<K>["path"]>]: string;
-    };
-    readonly headers: CallHeaders<Entry<K>["headers"]>;
-    readonly body: Entry<K>["body"] extends z.ZodType
-      ? z.output<Entry<K>["body"]>
-      : undefined;
-  };
-}[Id];
-
-/** What a request sends besides its operation. */
-interface Call<Id extends RequestOperationId> {
-  /** Values for the placeholders in the path below the target's prefix. */
-  readonly params?: Readonly<Record<string, string>>;
-  readonly body?: Entry<Id>["body"] extends z.ZodType
-    ? z.input<Entry<Id>["body"]>
-    : undefined;
-  readonly headers?: Readonly<Record<string, string | undefined>>;
-  readonly options?: MutationOptions;
-}
+}[Name];
 
 /**
- * A random key for a request that changes state.
+ * Sends a call to a host and resolves with its reply, `{ ok: true, data }` or
+ * `{ ok: false, problem }`.
+ */
+export type CallTool = (
+  call: ToolCall,
+  signal?: AbortSignal,
+) => Promise<unknown>;
+
+/**
+ * A random key for a call that changes state.
  *
  * Send it again with a retry whose outcome is unknown, so the host applies the
- * request once. `crypto.randomUUID` exists only in secure contexts, such as
+ * call once. `crypto.randomUUID` exists only in secure contexts, such as
  * pages served over HTTPS or from localhost. A host on a local network is
  * often neither.
  */
@@ -210,11 +114,6 @@ export function idempotencyKey(): string {
     .join("-");
 }
 
-/** Whether a `Content-Type` names `type`, ignoring case and parameters. */
-export function isType(contentType: string | null, type: string): boolean {
-  return contentType?.split(";", 1)[0].trim().toLowerCase() === type;
-}
-
 /**
  * A URL below `url`, keeping its query string.
  *
@@ -226,183 +125,121 @@ export function below(url: URL, suffix: string): URL {
   return target;
 }
 
-/** The URL an operation's path resolves to below the target. */
-export function resolve<Prefix extends string>(
-  target: Target<Prefix>,
-  path: string,
-  params: Readonly<Record<string, string>>,
-): URL {
-  const suffix = path
-    .slice(target.prefix.length)
-    .replace(/\{(\w+)\}/g, (_, name: string) => {
-      const value = params[name];
-      // An empty or dot segment would name a different resource, and
-      // percent-encoding does not stop URLs from resolving dot segments.
-      if (
-        value === undefined ||
-        value === "" ||
-        value === "." ||
-        value === ".."
-      ) {
-        throw new Error(`${path} needs a valid ${name}`);
-      }
-      return encodeURIComponent(value);
-    });
-  return below(target.url, suffix);
-}
+const identity = { name: "@marimo-team/client", version: "0.1.0" };
 
-/** A host's answer, read the same way whichever way the request went. */
-interface Answer {
-  readonly status: number;
-  /** Whether the answer describes itself as a problem. */
-  readonly problem: boolean;
-  json(): Promise<unknown>;
+/** An MCP client of a host's tools and events at `endpoint`. */
+export function host(
+  endpoint: URL,
+  { token, fetch }: ClientOptions = {},
+): RuntimeClient {
+  return createApps(
+    identity,
+    { host: null },
+    {
+      host: {
+        endpoint,
+        ...(token === undefined
+          ? {}
+          : { authProvider: { token: async () => token } }),
+        fetch,
+      },
+    },
+  ).host;
 }
-
-const Reply = z.object({ status: z.number().int(), body: z.unknown() });
 
 /**
- * Send one request and decode the host's answer.
+ * A host's tools at an MCP `endpoint`, such as `/mcp` below the host API.
  *
- * The body is validated before it is sent, and the response is validated
- * against the schema the protocol gives its status, so the data has the type
- * the operation describes.
+ * A failure carries the problem as its text.
  */
-export async function request<
-  Prefix extends string,
-  Id extends OperationsBelow<Prefix>,
->(
-  target: Target<Prefix> | CallTarget<Prefix>,
-  id: Id,
-  { params = {}, body, headers = {}, options = {} }: Call<Id>,
-): Promise<ResultOf<Id>> {
-  const operation = table[id];
-  const sent: Record<string, string> = {};
-  if ("idempotency-key" in operation.headers) {
-    sent["idempotency-key"] = options.idempotencyKey ?? idempotencyKey();
-  }
-  for (const [name, value] of Object.entries(headers)) {
-    if (value !== undefined) {
-      sent[name] = value;
+export function mcp(endpoint: URL, options: ClientOptions = {}): CallTool {
+  let client: RuntimeClient | undefined;
+  return async ({ operation, ...args }, signal) => {
+    client ??= host(endpoint, options);
+    const result = await client.callTool(
+      { name: operation, arguments: args },
+      { signal },
+    );
+    if (result.resultType !== "complete") {
+      throw new Error(`${operation} asked a question no host tool asks`);
     }
-  }
-  const payload =
-    operation.body === null ? undefined : operation.body.parse(body);
-  const answer =
-    "send" in target
-      ? await call(
-          target,
-          {
-            operation: id,
-            params: { ...target.params, ...params },
-            headers: Object.fromEntries(
-              Object.entries(sent).map(([name, value]) => [
-                name.toLowerCase(),
-                value,
-              ]),
-            ),
-            body: payload,
-          },
-          options.signal,
-        )
-      : await fetchAnswer(
-          target,
-          operation,
-          params,
-          sent,
-          payload,
-          options.signal,
-        );
-  const status = answer.status;
-  const schema = operation.responses[status];
-  if (schema === null) {
-    // SAFETY: a `null` schema is how the table marks a status with no
-    // content, and `Data<Id>` maps that status to `undefined`.
-    return { ok: true, status, data: undefined as Data<Id> };
-  }
-  if (schema !== undefined && schema !== "text/event-stream") {
-    // SAFETY: `schema` is the table's schema for this status of `id`, and
-    // `Data<Id>` is the union of those schemas' outputs.
-    const data = schema.parse(await answer.json()) as Data<Id>;
-    return { ok: true, status, data };
-  }
-  if ((status < 200 || status >= 300) && answer.problem) {
-    const problem = parseProblem(await answer.json());
-    if (problem.status !== status) {
-      throw new Error(
-        `Problem status ${problem.status} does not match HTTP status ${status}`,
-      );
+    if (!result.isError) {
+      return { ok: true, data: result.structuredContent ?? {} };
     }
-    if (problem.type === "unknown") {
-      return { ok: false, status, problem };
+    const [block] = result.content;
+    let problem: unknown;
+    try {
+      problem = block?.type === "text" ? JSON.parse(block.text) : undefined;
+    } catch {
+      problem = undefined;
     }
-    for (const schema of operation.problems[status] ?? []) {
-      const parsed = schema.safeParse(problem);
-      if (parsed.success) {
-        // SAFETY: `schema` is one the table lists for this status of `id`.
-        return { ok: false, status, problem: parsed.data as ProblemOf<Id> };
-      }
+    if (typeof problem !== "object" || problem === null) {
+      throw new Error(`${operation} failed without a problem`);
     }
-    throw new Error(`Unexpected problem ${problem.type} response to ${id}`);
-  }
-  throw new Error(`Unexpected ${status} response to ${id}`);
+    return { ok: false, problem };
+  };
 }
 
-async function fetchAnswer<Prefix extends string>(
-  target: Target<Prefix>,
-  operation: Operation,
-  params: Readonly<Record<string, string>>,
-  headers: Readonly<Record<string, string>>,
-  payload: unknown,
-  signal: AbortSignal | undefined,
-): Promise<Answer> {
-  const sent = new Headers(headers);
-  sent.set("Accept", "application/json, application/problem+json");
-  if (target.client.token !== undefined) {
-    sent.set("Authorization", `Bearer ${target.client.token}`);
+/** What a transport resolves a call with: the tool's reply, or its problem. */
+const Reply = z.union([
+  z.object({ ok: z.literal(true), data: z.unknown() }),
+  z.object({ ok: z.literal(false), problem: z.unknown() }),
+]);
+
+/** Wait for `pending`, and stop waiting on abort. A call already sent may still apply. */
+function abortable<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) {
+    return pending;
   }
-  if (payload !== undefined) {
-    sent.set("Content-Type", "application/json");
-  }
-  const fetch = target.client.fetch ?? globalThis.fetch;
-  const response = await fetch(resolve(target, operation.path, params), {
-    method: operation.method,
-    headers: sent,
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-    signal,
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    pending
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
   });
-  return {
-    status: response.status,
-    problem: isType(
-      response.headers.get("Content-Type"),
-      "application/problem+json",
-    ),
-    json: () => response.json(),
-  };
 }
 
-/** Deliver a call, and stop waiting on abort. A call already sent may still apply. */
-async function call<Prefix extends string>(
-  target: CallTarget<Prefix>,
-  message: CallMessage,
-  signal: AbortSignal | undefined,
-): Promise<Answer> {
+/**
+ * Call one of a host's tools.
+ *
+ * The arguments are validated before they are sent, and the reply against the
+ * tool's result or the problems it declares, so the data has the type the
+ * tool describes.
+ */
+export async function call<Name extends ToolName>(
+  send: CallTool,
+  name: Name,
+  args: ArgumentsOf<Name>,
+  { signal, idempotencyKey: key = idempotencyKey() }: MutationOptions = {},
+): Promise<ResultOf<Name>> {
+  const tool = tools[name];
+  const parsed: object = tool.arguments.parse({
+    idempotency_key: key,
+    ...args,
+  });
   signal?.throwIfAborted();
-  const sending = target.send(message);
-  const reply = Reply.parse(
-    signal === undefined
-      ? await sending
-      : await new Promise((resolve, reject) => {
-          const abort = () => reject(signal.reason);
-          signal.addEventListener("abort", abort, { once: true });
-          sending
-            .then(resolve, reject)
-            .finally(() => signal.removeEventListener("abort", abort));
-        }),
-  );
-  return {
-    status: reply.status,
-    problem: true,
-    json: async () => reply.body,
-  };
+  // SAFETY: `parsed` is the output of `name`'s arguments schema.
+  const message = { operation: name, ...parsed } as unknown as ToolCall;
+  const reply = Reply.parse(await abortable(send(message, signal), signal));
+  if (reply.ok) {
+    // SAFETY: `Data<Name>` is the output of the tool's result schema, or
+    // `undefined` when it has none.
+    const data = (
+      tool.result === null ? undefined : tool.result.parse(reply.data)
+    ) as Data<Name>;
+    return { ok: true, data };
+  }
+  const problem = parseProblem(reply.problem);
+  if (problem.type === "unknown") {
+    return { ok: false, problem };
+  }
+  for (const schema of tool.problems) {
+    const declared = schema.safeParse(problem);
+    if (declared.success) {
+      // SAFETY: `schema` is one the table lists for `name`.
+      return { ok: false, problem: declared.data as ProblemOf<Name> };
+    }
+  }
+  throw new Error(`Unexpected problem ${problem.type} from ${name}`);
 }

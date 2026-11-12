@@ -5,13 +5,14 @@ import asyncio
 import os
 import sys
 import threading
+from contextlib import aclosing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect
 
 from marimo._environments import backends
 from marimo._environments.environment import Environment, ProcessPlan
@@ -91,28 +92,10 @@ def test_a_page_from_before_a_restart_follows_its_session(
         assert_kernel_ready_response(receive_notification(websocket))
 
 
-@pytest.mark.parametrize("failure", ["disconnect", "cancel"])
-async def test_failed_startup_progress_delivery_detaches_session(
-    failure: str,
+@pytest.mark.parametrize("ending", ["close", "cancel"])
+async def test_ending_the_stream_during_startup_detaches_session(
+    ending: str,
 ) -> None:
-    websocket = MagicMock(spec=WebSocket)
-    websocket.accept = AsyncMock()
-    websocket.close = AsyncMock()
-    sending = asyncio.Event()
-
-    async def send(_text: str) -> None:
-        sending.set()
-        await asyncio.sleep(0)
-        if failure == "disconnect":
-            raise WebSocketDisconnect(1006)
-        await asyncio.Event().wait()
-
-    websocket.send_text = send
-
-    async def receive() -> None:
-        await asyncio.Event().wait()
-
-    websocket.receive = receive
     manager = MagicMock(mode=SessionMode.RUN)
     session = manager.get_session.return_value
     session.ttl_seconds = 120
@@ -120,11 +103,8 @@ async def test_failed_startup_progress_delivery_detaches_session(
         consumer.on_detach()
     )
     handler = SessionEventStream(
-        connection=websocket,
-        notebook=None,
+        connection=MagicMock(),
         bridge=MagicMock(),
-        types=None,
-        cursor=None,
         manager=manager,
         params=ConnectionParams(
             session_id=SessionId("s1"),
@@ -133,6 +113,7 @@ async def test_failed_startup_progress_delivery_detaches_session(
             auto_instantiate=False,
         ),
     )
+    sending = asyncio.Event()
 
     async def connect(_connection: Any) -> None:
         handler.on_attach(session, MagicMock())
@@ -147,10 +128,18 @@ async def test_failed_startup_progress_delivery_detaches_session(
         )
         handler.status = ConnectionState.OPEN
 
+    async def deliver() -> None:
+        async with aclosing(handler.stream()) as events:
+            async for _event in events:
+                sending.set()
+                if ending == "close":
+                    return
+                await asyncio.Event().wait()
+
     with patch.object(handler, "_connect_session", side_effect=connect):
-        task = asyncio.create_task(handler.start())
+        task = asyncio.create_task(deliver())
         await asyncio.wait_for(sending.wait(), timeout=5)
-        if failure == "cancel":
+        if ending == "cancel":
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(task, timeout=5)
@@ -1045,10 +1034,7 @@ async def test_check_status_update_runs_off_the_event_loop(
 
     handler = SessionEventStream(
         connection=MagicMock(),
-        notebook=None,
         bridge=MagicMock(),
-        types=None,
-        cursor=None,
         manager=MagicMock(mode=SessionMode.EDIT),
         params=ConnectionParams(
             session_id=SessionId("s1"),

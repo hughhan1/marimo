@@ -1,8 +1,9 @@
 # Custom transports
 
-`Client` and `NotebookClient` send HTTP requests and read server-sent events.
-To follow events from an existing WebSocket, message channel, or another
-source, pass a `Transport` function to `NotebookEvents` or `CatalogEvents`.
+`Client` and `NotebookClient` call the host's MCP tools and follow its MCP
+events. To follow the protocol's events from another source, such as a
+WebSocket, a message channel, or a host running in the page, pass a
+`Transport` function to `NotebookEvents` or `CatalogEvents`.
 
 The stream calls the transport once for each connection attempt. The
 transport receives a cursor and an abort signal. A null cursor requests a
@@ -30,56 +31,5 @@ The transport sends any filters the host needs. The stream's `types` option
 filters delivered events locally. A notebook transport must apply `runId`
 itself. Each reconnect must use the same filters.
 
-## Build on server-sent events
-
-`sse` is the transport a stream uses for a URL. Use it directly when a host
-serves the protocol's events with a URL that changes between connections or
-with frames of its own that end the stream.
-
-```ts
-import { NotebookEvents, StreamStopped, sse } from "@marimo-team/client";
-
-const events = new NotebookEvents(
-  sse(() => `${base}/events?session_id=${session()}`, {
-    token,
-    stop: (frame) =>
-      frame.event === "close"
-        ? new StreamStopped("The session closed")
-        : undefined,
-  }),
-);
-```
-
-The URL function runs before each connection. A `StreamStopped` it throws
-stops the stream.
-
-Set `parseData` to decode each frame's raw data with a custom parser. It runs
-before `stop` and event delivery. The default is `JSON.parse`; if the parser
-throws, the frame keeps its original text.
-
 See the [transport contract](src/transport/frame.ts) for the function and
-event types.
-
-## Editor session connections
-
-marimo's editor uses the `/ws` and `/sse` session routes, which establish
-an editor session before streaming events. These routes have session-specific
-connection options in addition to the host protocol's event behavior.
-See the [session endpoints](../../marimo/_server/api/endpoints/ws_endpoint.py)
-for their implementation.
-
-Pass connection options such as `session_id`, `types`, and `cursor` as
-top-level URL parameters. The host notebook event endpoint accepts `run_id`;
-the editor session routes reject that filter.
-
-Forward notebook page parameters inside the `query_params` parameter as an
-encoded query string. For example, a page query of
-`?types=scatter&tag=a&tag=b` becomes
-`query_params=types%3Dscatter%26tag%3Da%26tag%3Db` on the connection URL.
-It does not change the stream's `types` filter, and repeated values are
-preserved. Missing or empty `query_params` supplies no notebook parameters;
-top-level connection parameters are not forwarded as notebook parameters.
-
-The editor's native `marimo` extension event has an application-specific
-payload. A transport can request that event explicitly and decode its data
-in the frontend; it is not part of the stable host event union.
+event types, and [the MCP transport](src/transport/mcp.ts) for one.

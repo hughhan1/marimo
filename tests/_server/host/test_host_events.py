@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Typed envelopes preserve transport framing and event routing."""
+"""Events encode as their protocol messages and route by notebook."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pytest
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent, Stream, snapshot_event
 from marimo._messaging.notification import CompletedRunNotification
-from marimo._server.host.api import _frame
 from marimo._server.host.events import (
     MarimoEvent,
     MarimoMessage,
@@ -57,14 +56,10 @@ from marimo._server.host.events import (
         ),
     ],
 )
-def test_transports_encode_the_same_envelope(
+def test_events_encode_as_their_protocol_messages(
     event: RoutedEvent, expected: dict[str, Any]
 ) -> None:
     assert json.loads(serialize_event(event)) == expected
-    frame = _frame(event).decode()
-    assert frame.endswith("\n\n")
-    fields = dict(line.split(": ", 1) for line in frame.strip().splitlines())
-    assert {**fields, "data": json.loads(fields["data"])} == expected
 
 
 def test_extension_routing_and_control_filters() -> None:

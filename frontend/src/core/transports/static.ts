@@ -159,7 +159,6 @@ export function createStaticNotebookBackend(
         options?.signal?.throwIfAborted();
         return {
           ok: false as const,
-          status: 501,
           problem: {
             type: "urn:marimo:problem:unsupported-operation",
             title: "Unsupported operation",

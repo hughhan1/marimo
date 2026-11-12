@@ -9,7 +9,7 @@ import { Execution, Run } from "./model/Execution.ts";
 import { Console, Display, Input, Variable } from "./model/Items.ts";
 import { Attachment, Runtime } from "./model/Runtime.ts";
 
-/** The catalog stream is `/events`. A notebook stream is `/notebooks/{notebook_id}/events`. */
+/** The events a host serves: `catalog`, and `notebook` for one notebook. */
 export type StreamName = "catalog" | "notebook";
 
 export interface ObjectKind {

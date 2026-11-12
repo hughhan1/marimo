@@ -42,13 +42,11 @@ function references(value: unknown, found = new Set<string>()) {
   return found;
 }
 
-/** The names of the component schemas that request bodies are made of. */
-function requestSchemas(paths: unknown, schemas: Node) {
+/** The names of the component schemas that tools' and events' arguments are made of. */
+function argumentSchemas(listed: ReadonlyArray<unknown>, schemas: Node) {
   const found = new Set<string>();
-  for (const item of Object.values(isNode(paths) ? paths : {})) {
-    for (const operation of Object.values(isNode(item) ? item : {})) {
-      references(isNode(operation) ? operation.requestBody : undefined, found);
-    }
+  for (const entry of listed) {
+    references(isNode(entry) ? entry.inputSchema : undefined, found);
   }
   // A set visits the members added while it is iterated.
   for (const name of found) {
@@ -67,9 +65,9 @@ function adjust(value: unknown, closed: boolean): unknown {
 function adjustNode(value: Node, closed: boolean): Node {
   const node: Node = {};
   for (const [key, child] of Object.entries(value)) {
-    // Effect closes every object. A host rejects members of a request body it
-    // does not recognize, and a client ignores them everywhere else. An object
-    // that declares no properties is empty on purpose.
+    // Effect closes every object. A host rejects arguments it does not
+    // recognize, and a client ignores members everywhere else. An object that
+    // declares no properties is empty on purpose.
     if (
       key === "additionalProperties" &&
       child === false &&
@@ -78,7 +76,7 @@ function adjustNode(value: Node, closed: boolean): Node {
     ) {
       continue;
     }
-    node[key] = adjust(child, closed || key === "requestBody");
+    node[key] = adjust(child, closed);
   }
   // Effect tolerates a problem without `status` or `title`. A host sends both,
   // and only `type` tells problems apart, so a client accepts any title. The
@@ -128,14 +126,17 @@ function adjustNode(value: Node, closed: boolean): Node {
 /**
  * Adjust the document Effect generates for consumers in other languages.
  *
- * Request bodies stay closed and other objects are open, descriptions sit
+ * Arguments stay closed and other objects are open, descriptions sit
  * beside the schema they describe, and each problem requires its `status` and
  * `title`.
  */
 export function forGenerators(spec: Record<string, unknown>) {
   const components = isNode(spec.components) ? spec.components : {};
   const schemas = isNode(components.schemas) ? components.schemas : {};
-  const requests = requestSchemas(spec.paths, schemas);
+  const listed = [spec["x-tools"], spec["x-events"]].flatMap((entries) =>
+    Array.isArray(entries) ? entries : [],
+  );
+  const closed = argumentSchemas(listed, schemas);
   return {
     ...adjustNode(spec, false),
     components: {
@@ -143,7 +144,7 @@ export function forGenerators(spec: Record<string, unknown>) {
       schemas: Object.fromEntries(
         Object.entries(schemas).map(([name, schema]) => [
           name,
-          adjust(schema, requests.has(name)),
+          adjust(schema, closed.has(name)),
         ]),
       ),
     },

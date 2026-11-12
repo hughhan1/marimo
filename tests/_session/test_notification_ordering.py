@@ -165,10 +165,7 @@ async def test_reconnect_snapshot_precedes_a_queued_live_update(
     session.notify(_progress("Before\n"), from_consumer_id=None)
     handler = SessionEventStream(
         connection=MagicMock(),
-        notebook=None,
         bridge=MagicMock(),
-        types=None,
-        cursor=None,
         manager=MagicMock(mode=SessionMode.EDIT),
         params=ConnectionParams(
             session_id=SessionId("reconnected"),

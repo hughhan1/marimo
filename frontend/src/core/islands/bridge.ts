@@ -104,14 +104,8 @@ export class IslandsPyodideBridge implements RunRequests, EditRequests {
         throw new Error("No island session is active");
       }
       const { appId, sessionGeneration } = session;
-      return NotebookClient.unstable_over(
-        (call) =>
-          this.rpc.proxy.request.notebookCall({
-            appId,
-            sessionGeneration,
-            call,
-          }),
-        { notebookId },
+      return new NotebookClient(notebookId, (call) =>
+        this.rpc.proxy.request.notebookCall({ appId, sessionGeneration, call }),
       );
     },
   };

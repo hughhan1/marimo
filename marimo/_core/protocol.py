@@ -15,7 +15,7 @@ from msgspec import UNSET, Meta, Struct, UnsetType
 Identity: TypeAlias = Annotated[
     str,
     Meta(
-        description="The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
+        description="The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
         max_length=128,
         min_length=1,
         pattern="^[!-~]+$",
@@ -26,7 +26,7 @@ Identity: TypeAlias = Annotated[
 Name: TypeAlias = Annotated[
     str,
     Meta(
-        description="A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty.",
+        description="A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty.",
         max_length=256,
     ),
 ]
@@ -45,6 +45,27 @@ else:
             ),
         ],
     )
+
+
+class CatalogEventsRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class CellConfig(Struct, frozen=True):
@@ -209,15 +230,6 @@ else:
     )
 
 
-class ExecuteRequest(Struct, frozen=True, forbid_unknown_fields=True):
-    code: Annotated[
-        str,
-        Meta(
-            description="Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n"
-        ),
-    ]
-
-
 if TYPE_CHECKING:
     ExecutionId = NewType("ExecutionId", str)
 else:
@@ -247,15 +259,6 @@ class Host(Struct, frozen=True):
         tuple[str, ...],
         Meta(
             description="The operations this host implements, such as `runtime.start`. Whether a client may call one on a given project or notebook is that object's `operations`. Clients accept names they do not recognize."
-        ),
-    ]
-
-
-class InputReplyRequest(Struct, frozen=True, forbid_unknown_fields=True):
-    value: Annotated[
-        str,
-        Meta(
-            description="The text to deliver to the input exactly as submitted, including an empty string when the answer is empty."
         ),
     ]
 
@@ -361,6 +364,16 @@ else:
             ),
         ],
     )
+
+
+class NotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 ObjectType: TypeAlias = Annotated[
@@ -555,7 +568,7 @@ else:
         Annotated[
             str,
             Meta(
-                description="Identifies a run independently of the request's `Idempotency-Key`. Events carry the key in `request_id`.",
+                description="Identifies a run independently of the call's `idempotency_key`. Events carry the key in `request_id`.",
                 min_length=1,
             ),
         ],
@@ -578,6 +591,13 @@ class RunRequest(Struct, frozen=True, forbid_unknown_fields=True):
             min_length=1,
         ),
     ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 if TYPE_CHECKING:
@@ -604,11 +624,27 @@ RuntimeStatus: TypeAlias = Annotated[
 
 
 class SaveRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     decisions: (
         Annotated[
             dict[str, str],
             Meta(
                 description="Answers to the questions in a `decision-required` problem, as for `runtime.start`."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    expected_etag: (
+        Annotated[
+            Etag,
+            Meta(
+                description="The document etag the client last read, as a precondition. The host answers `precondition-failed` when the document's etag differs."
             ),
         ]
         | UnsetType
@@ -656,6 +692,13 @@ class SkippedOutcome(Struct, frozen=True, tag_field="kind", tag="skipped"):
 
 
 class StartRuntimeRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     decisions: (
         Annotated[
             dict[str, str],
@@ -728,6 +771,13 @@ class UnsupportedOperationProblem(
 
 
 class UpdateNotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
     name: (
         Annotated[str, Meta(description="The new label to show people.")]
         | UnsetType
@@ -788,7 +838,7 @@ class VariableMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -810,7 +860,7 @@ class Attachment(Struct, frozen=True):
         Annotated[
             Identity,
             Meta(
-                description="The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n"
+                description="The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n"
             ),
         ]
         | None
@@ -818,7 +868,7 @@ class Attachment(Struct, frozen=True):
     kind: Annotated[
         str,
         Meta(
-            description="What kind of thing is attached, supplied by `Marimo-Attachment-Kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when the header is omitted. Clients accept kinds they do not recognize.",
+            description="What kind of thing is attached, supplied as `attachment_kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when it is omitted. Clients accept kinds they do not recognize.",
             pattern="^[a-z0-9-]+$",
         ),
     ]
@@ -826,7 +876,7 @@ class Attachment(Struct, frozen=True):
         Annotated[
             Name,
             Meta(
-                description="A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty."
+                description="A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty."
             ),
         ]
         | None
@@ -841,7 +891,7 @@ class AttachmentMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -855,6 +905,17 @@ class AttachmentMessage(Struct, frozen=True):
         ]
         | UnsetType
     ) = UNSET
+
+
+class CancelRunRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    run_id: Annotated[RunId, Meta(description="The run's id.")]
 
 
 class Cell(Struct, frozen=True):
@@ -903,7 +964,7 @@ class CellMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -956,7 +1017,7 @@ class ConsoleMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -973,6 +1034,12 @@ class ConsoleMessage(Struct, frozen=True):
 
 
 class CreateNotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
     project_id: ProjectId
     name: (
         Annotated[
@@ -1007,7 +1074,7 @@ class CustomMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1070,7 +1137,7 @@ class DisplayMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1141,7 +1208,7 @@ class DocumentMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1162,6 +1229,13 @@ class EditRequest(Struct, frozen=True, forbid_unknown_fields=True):
         tuple[Change, ...],
         Meta(description="The changes, applied in order as one unit."),
     ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
 
 
 class EditResponse(Struct, frozen=True):
@@ -1233,13 +1307,29 @@ class ErrorOutcome(Struct, frozen=True, tag_field="kind", tag="error"):
     error: Error
 
 
+class ExecuteRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    code: Annotated[
+        str,
+        Meta(
+            description="Python code that can read the notebook's current values.\nAssignments stay local to the call. Changes to shared objects persist.\n"
+        ),
+    ]
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+
+
 class HostMessage(Struct, frozen=True):
     host: Host
     request_id: (
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1288,7 +1378,7 @@ class InputMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1302,6 +1392,23 @@ class InputMessage(Struct, frozen=True):
         ]
         | UnsetType
     ) = UNSET
+
+
+class InputReplyRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    idempotency_key: Annotated[
+        str,
+        Meta(
+            description="A key the client makes up for this call, such as a UUID. It does\ntwo jobs. If the client makes the same call again, for example\nafter a timeout, the host returns the original result instead of\ndoing the work twice. And the host puts the key on every event\nabout the object the call changed, as `request_id`, until that\nobject reaches a final status, so the client can tell which changes\nit caused. Sending the same key with a different call is a\n`conflict`. Keys are scoped to the host, across all tools, for a\nhost-documented retry window independent of result and replay\nretention. Repeating a run returns its latest run record, even if\nits outputs have expired. Outside that window or after loss of host\nstate, the key may execute again. Failed calls do not reserve a\nkey. Clients use fresh keys for new work and decision retries.\n"
+        ),
+    ]
+    input_id: Annotated[ItemId, Meta(description="The input's item id.")]
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    value: Annotated[
+        str,
+        Meta(
+            description="The text to deliver to the input exactly as submitted, including an empty string when the answer is empty."
+        ),
+    ]
 
 
 class Notebook(Struct, frozen=True):
@@ -1339,13 +1446,74 @@ class Notebook(Struct, frozen=True):
     )
 
 
+class NotebookEventsRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    attachment_identity: (
+        Annotated[
+            str,
+            Meta(
+                description="An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`invalid-request`.\n",
+                max_length=128,
+                min_length=1,
+                pattern="^[!-~]+$",
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    attachment_kind: (
+        Annotated[
+            str,
+            Meta(
+                description="What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `invalid-request`.\n",
+                pattern="^[a-z0-9-]+$",
+            ),
+        ]
+        | UnsetType
+    ) = "client"
+    attachment_name: (
+        Annotated[
+            str,
+            Meta(
+                description="A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `invalid-request`.\n",
+                max_length=256,
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    run_id: (
+        Annotated[
+            RunId,
+            Meta(description="Narrows the notebook's events to one run."),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+
+
 class NotebookMessage(Struct, frozen=True):
     notebook: Notebook
     request_id: (
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1390,7 +1558,7 @@ class PreconditionFailedProblem(
     index: Annotated[
         int,
         Meta(
-            description="The position of the first stale entry in the request, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `If-Match`.",
+            description="The position of the first stale entry in the call, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `expected_etag`.",
             ge=0,
         ),
     ]
@@ -1466,7 +1634,7 @@ class ProjectMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1490,7 +1658,7 @@ class RemovedMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1559,7 +1727,7 @@ class RunMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1624,7 +1792,7 @@ class RuntimeMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -1947,7 +2115,7 @@ class ExecutionMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -2148,7 +2316,7 @@ class AnalysisMessage(Struct, frozen=True):
         Annotated[
             str,
             Meta(
-                description="The `Idempotency-Key` of the request that caused this event. Omitted when no request did, and on snapshots unless that request's work is still in progress."
+                description="The `idempotency_key` of the call that caused this event. Omitted when no call did, and on snapshots unless that call's work is still in progress."
             ),
         ]
         | UnsetType
@@ -2162,6 +2330,22 @@ class AnalysisMessage(Struct, frozen=True):
         ]
         | UnsetType
     ) = UNSET
+
+
+CatalogStreamEvent: TypeAlias = Annotated[
+    HostEvent
+    | ProjectEvent
+    | NotebookEvent
+    | RuntimeEvent
+    | AttachmentEvent
+    | ProjectRemovedEvent
+    | NotebookRemovedEvent
+    | RuntimeRemovedEvent
+    | AttachmentRemovedEvent
+    | ResetEvent
+    | ReadyEvent,
+    Meta(description="One event of the `catalog` event."),
+]
 
 
 class ExecutionEvent(Struct, frozen=True, tag_field="event", tag="execution"):
@@ -2223,4 +2407,33 @@ Event: TypeAlias = Annotated[
     Meta(
         description="A record, removal, or control message from a host stream. The data is decoded JSON. Snapshot records and reset events omit the cursor, and ready and live events carry it. Unknown event names belong to later versions or host extensions."
     ),
+]
+
+
+NotebookStreamEvent: TypeAlias = Annotated[
+    NotebookEvent
+    | DocumentEvent
+    | CellEvent
+    | RuntimeEvent
+    | AttachmentEvent
+    | RunEvent
+    | ExecutionEvent
+    | ConsoleEvent
+    | DisplayEvent
+    | InputEvent
+    | VariableEvent
+    | AnalysisEvent
+    | CustomEvent
+    | NotebookRemovedEvent
+    | CellRemovedEvent
+    | RuntimeRemovedEvent
+    | AttachmentRemovedEvent
+    | RunRemovedEvent
+    | ExecutionRemovedEvent
+    | ConsoleRemovedEvent
+    | DisplayRemovedEvent
+    | VariableRemovedEvent
+    | ResetEvent
+    | ReadyEvent,
+    Meta(description="One event of the `notebook` event."),
 ]

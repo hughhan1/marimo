@@ -168,6 +168,69 @@ def event_adapters(
     )
 
 
+def tools(document: dict[str, Any], *, relative_import: bool = False) -> str:
+    """Each tool's and each event's description and types."""
+    prefix = "#/components/schemas/"
+    module = "." if relative_import else "marimo._core"
+    lines = [
+        "# Copyright 2026 Marimo. All rights reserved.",
+        "# AUTO-GENERATED FILE — DO NOT EDIT.",
+        "# Generated from packages/host-protocol.",
+        f"# Regenerate with `{COMMAND}`.",
+        '"""The host protocol\'s tools and events, by name."""',
+        "",
+        "from __future__ import annotations",
+        "",
+        "from typing import Any, NamedTuple",
+        "",
+        f"from {module} import protocol",
+        "",
+        "",
+        "class Tool(NamedTuple):",
+        "    title: str",
+        "    description: str",
+        "    arguments: type[Any]",
+        "    result: type[Any] | None",
+        "",
+        "",
+        "class Event(NamedTuple):",
+        "    description: str",
+        "    arguments: type[Any]",
+        "    payload: Any",
+        "",
+        "",
+        "TOOLS: dict[str, Tool] = {",
+    ]
+    for tool in sorted(document["x-tools"], key=lambda tool: tool["name"]):
+        arguments = tool["inputSchema"]["$ref"].removeprefix(prefix)
+        result = (
+            f"protocol.{tool['outputSchema']['$ref'].removeprefix(prefix)}"
+            if "outputSchema" in tool
+            else "None"
+        )
+        lines += [
+            f'    "{tool["name"]}": Tool(',
+            f"        {tool['title']!r},",
+            f"        {tool['description']!r},",
+            f"        protocol.{arguments},",
+            f"        {result},",
+            "    ),",
+        ]
+    lines += ["}", "", "", "EVENTS: dict[str, Event] = {"]
+    for event in sorted(document["x-events"], key=lambda event: event["name"]):
+        arguments = event["inputSchema"]["$ref"].removeprefix(prefix)
+        payload = event["payloadSchema"]["$ref"].removeprefix(prefix)
+        lines += [
+            f'    "{event["name"]}": Event(',
+            f"        {event['description']!r},",
+            f"        protocol.{arguments},",
+            f"        protocol.{payload},",
+            "    ),",
+        ]
+    lines += ["}", ""]
+    return "\n".join(lines)
+
+
 def format_generated(output_path: Path) -> None:
     subprocess.run(
         [
@@ -262,7 +325,16 @@ def main() -> None:
             encoding="utf-8",
         )
         format_generated(adapters)
-        for generated in (output, adapters):
+        listed = Path(directory) / "protocol_tools.py"
+        listed.write_text(
+            tools(
+                document,
+                relative_import=destination.resolve() != default_destination,
+            ),
+            encoding="utf-8",
+        )
+        format_generated(listed)
+        for generated in (output, adapters, listed):
             target = destination / generated.name
             content = generated.read_bytes()
             if not target.exists() or target.read_bytes() != content:

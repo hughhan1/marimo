@@ -21,6 +21,7 @@ from marimo._cli.pair.client import (
     SSEEvent,
     StaleNotebookError,
 )
+from tests.mcp_request import stream_frame
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -171,33 +172,140 @@ def test_event_pump_cancels_without_draining_a_full_queue() -> None:
     assert incoming.empty()
 
 
-def test_open_events_uses_host_headers_and_cursor(
+class FakeEventResponse(io.BytesIO):
+    """An `events/stream` response: a stream, or a refusal in JSON."""
+
+    def __init__(self, body: bytes, content_type: str) -> None:
+        super().__init__(body)
+        self.content_type = content_type
+
+    def getheader(self, name: str, default: str = "") -> str:
+        return self.content_type if name == "Content-Type" else default
+
+
+def test_open_events_subscribes_at_the_hosts_mcp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = _patch_response(monkeypatch, io.BytesIO())
+    calls = _patch_response(
+        monkeypatch, FakeEventResponse(b"", "text/event-stream")
+    )
+    arguments = {"notebook_id": "nb-one", "cursor": "cursor-1"}
     client.open_events(
         url="http://localhost:2718/base/api/marimo/v1",
-        notebook="nb-one",
+        name="notebook",
+        arguments=arguments,
         token="private",
-        identity="p1_one",
-        name="Codex",
-        cursor="cursor-1",
     )
-    assert calls == [
-        {
-            "method": "GET",
-            "url": "http://localhost:2718/base/api/marimo/v1/notebooks/nb-one/events?types=custom,attachment",
-            "headers": {
-                "Marimo-Attachment-Identity": "p1_one",
-                "Marimo-Attachment-Kind": "agent",
-                "Marimo-Attachment-Name": "Codex",
-                "Authorization": "Bearer private",
-                "Last-Event-ID": "cursor-1",
+    (call,) = calls
+    assert {**call, "body": json.loads(call["body"])} == {
+        "method": "POST",
+        "url": "http://localhost:2718/base/api/marimo/v1/mcp",
+        "headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+            "Mcp-Method": "events/stream",
+            "Mcp-Name": "notebook",
+            "Authorization": "Bearer private",
+        },
+        "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "events/stream",
+            "params": {
+                "name": "notebook",
+                "arguments": arguments,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                },
             },
-            "body": None,
-            "read_timeout": 45,
-        }
+        },
+        "read_timeout": 45,
+    }
+
+
+def _refusal(problem: dict[str, object] | None) -> dict[str, object]:
+    """A JSON-RPC error refusing a subscription, carrying `problem`."""
+    if problem is None:
+        return {"code": -32602, "message": "Invalid arguments"}
+    return {"code": -32001, "message": "Refused", "data": {"problem": problem}}
+
+
+@pytest.mark.parametrize(
+    ("problem", "error", "message"),
+    [
+        (
+            {"type": "urn:marimo:problem:not-found", "detail": "no nb-one"},
+            StaleNotebookError,
+            "no nb-one",
+        ),
+        (
+            {"type": "urn:marimo:problem:invalid-request", "title": "Bad"},
+            PairError,
+            "Bad",
+        ),
+        (
+            {"type": "urn:marimo:problem:forbidden", "status": 403},
+            PairError,
+            "Authentication failed",
+        ),
+        (None, PairError, "Invalid arguments"),
+    ],
+)
+def test_a_refused_subscription_raises_its_problem(
+    monkeypatch: pytest.MonkeyPatch,
+    problem: dict[str, object] | None,
+    error: type[PairError],
+    message: str,
+) -> None:
+    body = {"jsonrpc": "2.0", "id": 1, "error": _refusal(problem)}
+    response = FakeEventResponse(json.dumps(body).encode(), "application/json")
+    _patch_response(monkeypatch, response)
+    with pytest.raises(error, match=message) as raised:
+        client.open_events(
+            url="http://localhost:2718/api/marimo/v1",
+            name="notebook",
+            arguments={"notebook_id": "nb-one"},
+            token=None,
+        )
+    assert type(raised.value) is error
+
+
+def test_iter_events_reads_the_protocols_events() -> None:
+    frames = [
+        stream_frame("active", {"cursor": "0", "truncated": False}),
+        stream_frame(
+            "event",
+            {"data": {"event": "custom", "id": "c1", "data": {"custom": 1}}},
+        ),
+        stream_frame("heartbeat", {"cursor": "1"}),
+        stream_frame("event", {"data": {"event": "ready", "data": {}}}),
     ]
+    lines = b"".join(frames).splitlines(keepends=True)
+    assert list(client.iter_events(lines)) == [
+        SSEEvent("custom", '{"custom": 1}', "c1"),
+        SSEEvent("ready", "{}"),
+    ]
+
+
+def test_iter_events_raises_how_the_host_ended_the_stream() -> None:
+    problem = {
+        "type": "urn:marimo:problem:internal",
+        "title": "The host failed",
+    }
+    lines = [
+        *stream_frame(
+            "event", {"data": {"event": "ready", "data": {}}}
+        ).splitlines(keepends=True),
+        *stream_frame("terminated", {"error": _refusal(problem)}).splitlines(
+            keepends=True
+        ),
+    ]
+    events = client.iter_events(lines)
+    assert next(events).name == "ready"
+    with pytest.raises(PairError, match="The host failed"):
+        next(events)
 
 
 @pytest.mark.parametrize(

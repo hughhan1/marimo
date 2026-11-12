@@ -15,8 +15,8 @@ from marimo._cli.pair.client import (
     HostEndpoint,
     PairError,
     display_url,
-    iter_sse,
-    open_response,
+    iter_events,
+    open_events,
 )
 from marimo._core import protocol
 from marimo._server.host import HOST_API_PATH
@@ -88,18 +88,18 @@ def _read_host(host: HostEndpoint) -> Listing:
 
 
 def _snapshot(host: HostEndpoint) -> Listing:
-    response = open_response(
-        method="GET",
-        url=host.url.rstrip("/") + "/events?types=project,notebook,runtime",
-        headers={"Authorization": f"Bearer {host.token}"},
-        body=None,
+    response = open_events(
+        url=host.url,
+        name="catalog",
+        arguments={"types": ["project", "notebook", "runtime"]},
+        token=host.token,
         read_timeout=_TIMEOUT,
     )
     projects: dict[protocol.ProjectId, protocol.Project] = {}
     notebooks: dict[protocol.NotebookId, protocol.Notebook] = {}
     runtimes: dict[protocol.NotebookId, protocol.Runtime] = {}
     try:
-        for event in iter_sse(_bounded_lines(response)):
+        for event in iter_events(_bounded_lines(response)):
             if event.name == "project":
                 project = msgspec.json.decode(
                     event.data, type=protocol.ProjectMessage

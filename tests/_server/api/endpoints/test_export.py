@@ -1292,7 +1292,7 @@ def test_auto_export_ipynb_with_new_cell(
         {"new_cell": "3.14"},
         headers=HEADERS,
     )
-    assert create_cell_response.status_code == 202
+    assert create_cell_response.ok, create_cell_response.problem
 
     time.sleep(0.5)
 

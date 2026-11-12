@@ -369,11 +369,7 @@ def test_forwarded_headers_are_not_used_directly() -> None:
 @pytest.mark.parametrize("base_url", ["", "/notebook"])
 @pytest.mark.parametrize(
     "path",
-    [
-        "/terminal/ws",
-        "/lsp/pylsp",
-        "/api/marimo/v1/notebooks/test/events/ws",
-    ],
+    ["/terminal/ws", "/lsp/pylsp"],
 )
 def test_app_websocket_origins(
     enable_auth: bool, base_url: str, path: str

@@ -32,6 +32,7 @@ from tests._server.api.endpoints.ws_helpers import (
     receive_notification,
     receive_until,
 )
+from tests._server.mcp_client import call_tool
 from tests._server.mocks import (
     get_session_manager,
     get_single_notebook_id,
@@ -194,12 +195,15 @@ class TestExecutionRoutes_EditMode:
         bridge = client.app.state.host_context.bridge  # type: ignore[union-attr]
         notebook = bridge.notebook_for_session(session)
         assert notebook is not None
-        response = client.post(
-            f"/api/marimo/v1/notebooks/{notebook.id}/runtime/interrupt",
-            headers={**HEADERS, "Idempotency-Key": "interrupt"},
+        response = call_tool(
+            client,
+            "runtime.interrupt",
+            headers=HEADERS,
+            idempotency_key="interrupt",
+            notebook_id=notebook.id,
         )
-        assert response.status_code == 202, response.text
-        assert response.json()["status"] == "running"
+        assert response.ok, response.problem
+        assert response.data["status"] == "running"
 
     @staticmethod
     @with_session(SESSION_ID)
@@ -260,8 +264,8 @@ class TestExecutionRoutes_EditMode:
             },
             headers=HEADERS,
         )
-        assert response.status_code == 202, response.text
-        assert response.json()["cells"] == ["cell-1", "cell-2"]
+        assert response.ok, response.problem
+        assert response.data["cells"] == ["cell-1", "cell-2"]
 
     @staticmethod
     @with_session(SESSION_ID)
@@ -594,7 +598,7 @@ class TestExecutionRoutes_EditMode:
             },
             headers=HEADERS,
         )
-        assert response.status_code == 202, response.text
+        assert response.ok, response.problem
 
         # Sleep for 1 second (test)
         time.sleep(1.0)
@@ -708,11 +712,14 @@ class TestExecutionRoutes_RunMode:
         bridge = client.app.state.host_context.bridge  # type: ignore[union-attr]
         notebook = bridge.notebook_for_session(session)
         assert notebook is not None
-        response = client.post(
-            f"/api/marimo/v1/notebooks/{notebook.id}/runtime/interrupt",
-            headers={**HEADERS, "Idempotency-Key": "read-interrupt"},
+        response = call_tool(
+            client,
+            "runtime.interrupt",
+            headers=HEADERS,
+            idempotency_key="read-interrupt",
+            notebook_id=notebook.id,
         )
-        assert response.status_code == 403, response.text
+        assert response.problem["type"].endswith(":forbidden")
 
     @staticmethod
     @with_read_session(SESSION_ID)
@@ -734,12 +741,15 @@ class TestExecutionRoutes_RunMode:
         bridge = client.app.state.host_context.bridge  # type: ignore[union-attr]
         notebook = bridge.notebook_for_session(session)
         assert notebook is not None
-        response = client.post(
-            f"/api/marimo/v1/notebooks/{notebook.id}/runtime/runs",
-            headers={**HEADERS, "Idempotency-Key": "read-run"},
-            json={"cells": [{"id": "cell-1"}]},
+        response = call_tool(
+            client,
+            "runtime.run",
+            headers=HEADERS,
+            idempotency_key="read-run",
+            notebook_id=notebook.id,
+            cells=[{"id": "cell-1"}],
         )
-        assert response.status_code == 403, response.text
+        assert response.problem["type"].endswith(":forbidden")
 
     @staticmethod
     @with_read_session(SESSION_ID)
@@ -776,7 +786,7 @@ class TestExecutionRoutes_RunMode:
             },
             headers=HEADERS,
         )
-        assert response.status_code == 202, response.text
+        assert response.ok, response.problem
 
         # Sleep for .5 seconds
         time.sleep(0.5)

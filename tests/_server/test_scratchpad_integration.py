@@ -160,7 +160,7 @@ class _Session:
         # ``session_id`` as a reconnection and keeps the kernel state.
         # This tears down only our session, not the module-wide server.
         try:
-            self._post("/api/kernel/restart_session", {})
+            self._tool("kernel_restart_session")
         except Exception:
             pass
         try:
@@ -200,50 +200,49 @@ class _Session:
         )
 
     def _post(
-        self,
-        path: str,
-        body: dict[str, Any],
-        headers: dict[str, str] | None = None,
+        self, path: str, body: Any, headers: dict[str, str] | None = None
     ) -> str:
         import urllib.request
 
-        # The kernel's routes are the editor's tools; the scratchpad stream
-        # and the host's edits stay on HTTP.
-        sent: dict[str, str] = dict(headers or {})
-        tool = path.startswith("/api/kernel/") and not path.endswith(
-            "/api/kernel/execute"
-        )
-        if tool:
-            name = re.sub(r"\W+", "_", path.removeprefix("/api/")).strip("_")
-            url, data = f"{self.base}/api/mcp", tool_payload(name, body)
-            sent = {**sent, **request_headers("tools/call", name)}
-        else:
-            url, data = f"{self.base}{path}", body
         req = urllib.request.Request(
-            url,
+            f"{self.base}{path}",
             method="POST",
-            data=json.dumps(data).encode(),
+            data=json.dumps(body).encode(),
             headers={
                 "Content-Type": "application/json",
                 "Marimo-Session-Id": self.session_id,
-                **sent,
+                **(headers or {}),
             },
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             text: str = resp.read().decode()
-        if tool:
-            return json.dumps(json.loads(text)["result"]["structuredContent"])
         return text
+
+    def _tool(self, name: str, **arguments: Any) -> dict[str, Any]:
+        """Call one of the editor's tools, such as the notebook tools."""
+        result: dict[str, Any] = json.loads(
+            self._post(
+                "/api/mcp",
+                tool_payload(name, arguments),
+                request_headers("tools/call", name),
+            )
+        )["result"]["structuredContent"]
+        return result
+
+    def _call(self, name: str, **arguments: Any) -> dict[str, Any]:
+        """Call a notebook tool on this notebook, under a fresh key."""
+        return self._tool(
+            name,
+            idempotency_key=uuid.uuid4().hex,
+            notebook_id=self.notebook_id,
+            **arguments,
+        )
 
     def edit(self, changes: list[dict[str, Any]]) -> None:
         """Edit the notebook through the host, as the frontend does."""
-        body = self._post(
-            f"/api/marimo/v1/notebooks/{self.notebook_id}/edits",
-            {"changes": changes},
-            headers={"Idempotency-Key": uuid.uuid4().hex},
-        )
-        # The response names each cell the edit touched, null if deleted.
-        for cell_id, cell in json.loads(body)["cells"].items():
+        reply = self._call("notebook.edit", changes=changes)
+        # The reply names each cell the edit touched, null if deleted.
+        for cell_id, cell in reply["cells"].items():
             if cell is None:
                 self.cells.pop(cell_id, None)
             else:
@@ -251,11 +250,7 @@ class _Session:
 
     def run_cells(self, cell_ids: list[str]) -> None:
         """Run cells of the document through the host, then wait for idle."""
-        self._post(
-            f"/api/marimo/v1/notebooks/{self.notebook_id}/runtime/runs",
-            {"cells": [{"id": cid} for cid in cell_ids]},
-            headers={"Idempotency-Key": uuid.uuid4().hex},
-        )
+        self._call("runtime.run", cells=[{"id": cid} for cid in cell_ids])
         self.wait_for_completed_run()
 
     def setup_cells(

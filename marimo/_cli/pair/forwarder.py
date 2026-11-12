@@ -24,7 +24,7 @@ from marimo._cli.pair.client import (
     PairError,
     SSEEvent,
     StaleNotebookError,
-    iter_sse,
+    iter_events,
     open_events,
     pump_events,
 )
@@ -159,16 +159,21 @@ def _read_stream(
     def events() -> Iterator[SSEEvent]:
         response = open_events(
             url=config.url,
-            notebook=config.notebook,
+            name="notebook",
+            arguments={
+                "notebook_id": config.notebook,
+                "types": ["custom", "attachment"],
+                "attachment_identity": config.identity,
+                "attachment_kind": "agent",
+                "attachment_name": config.target.label,
+                **({} if cursor is None else {"cursor": cursor}),
+            },
             token=config.token,
-            identity=config.identity,
-            cursor=cursor,
-            name=config.target.label,
         )
         responses.append(response)
         try:
             if not stopped.is_set():
-                yield from iter_sse(response)
+                yield from iter_events(response)
         finally:
             response.close()
 

@@ -1,58 +1,39 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import Any, get_args, get_type_hints
+from typing import Any
 
 import msgspec
 import pytest
 
-from marimo._core import calls, protocol
-from marimo._core.backend import RequestInfo
-from marimo._core.calls import (
-    CALLS,
-    CancelCall,
-    InterruptCall,
-    MutationHeaders,
-    NotebookParams,
-    OperationCall,
-    RunParams,
-)
-from marimo._core.operations import NotebookBridge
-from tests.utils import host_openapi
+from marimo._core import protocol
+from marimo._core.calls import decode
 
 NOTEBOOK = protocol.NotebookId("n1")
+KEYED = {"idempotency_key": "k", "notebook_id": "n1"}
 
 
-def test_calls_decode_from_request_parts() -> None:
-    def decode(**parts: object) -> OperationCall:
-        return msgspec.json.decode(
-            msgspec.json.encode(parts), type=OperationCall
+def test_a_call_is_its_tools_arguments() -> None:
+    assert decode("runtime.cancel", {**KEYED, "run_id": "r1"}) == (
+        protocol.CancelRunRequest(
+            idempotency_key="k",
+            notebook_id=NOTEBOOK,
+            run_id=protocol.RunId("r1"),
         )
-
-    headers = {"idempotency-key": "k", "authorization": "Bearer t"}
-    assert decode(
-        operation="runtime.cancel",
-        params={"notebook_id": "n1", "run_id": "r1"},
-        headers=headers,
-    ) == CancelCall(
-        RunParams(NOTEBOOK, protocol.RunId("r1")), MutationHeaders("k")
     )
-    assert decode(
-        operation="runtime.interrupt",
-        params={"notebook_id": "n1"},
-        headers=headers,
-    ) == InterruptCall(NotebookParams(NOTEBOOK), MutationHeaders("k"))
-    for invalid in (
-        {"operation": "runtime.cancel", "params": {"notebook_id": "n1"}},
-        {"operation": "notebook.missing", "params": {"notebook_id": "n1"}},
-    ):
-        with pytest.raises(msgspec.ValidationError):
-            decode(**invalid, headers=headers)
+    assert decode("runtime.interrupt", KEYED) == protocol.NotebookRequest(
+        idempotency_key="k", notebook_id=NOTEBOOK
+    )
 
 
 @pytest.mark.parametrize(
-    ("operation", "body"),
+    ("name", "arguments"),
     [
+        ("notebook.missing", {}),
+        ("runtime.cancel", {}),
+        ("runtime.interrupt", {"authorization": "Bearer t"}),
+        ("notebook.save", {"if_match": '"a"'}),
+        # Each execution tool refuses the other's payload.
         ("runtime.run", {"code": "1"}),
         ("runtime.run", {"cells": []}),
         ("runtime.run", {"cells": [{"id": "c1"}], "code": "1"}),
@@ -60,98 +41,8 @@ def test_calls_decode_from_request_parts() -> None:
         ("runtime.execute", {"code": "1", "cells": [{"id": "c1"}]}),
     ],
 )
-def test_execution_calls_reject_the_other_operations_payload(operation, body):
+def test_a_call_takes_only_its_tools_arguments(
+    name: str, arguments: dict[str, Any]
+) -> None:
     with pytest.raises(msgspec.ValidationError):
-        msgspec.convert(
-            {
-                "operation": operation,
-                "params": {"notebook_id": "n1"},
-                "headers": {"idempotency-key": "k"},
-                "body": body,
-            },
-            OperationCall,
-        )
-
-
-def test_calls_match_the_spec() -> None:
-    document = host_openapi()
-
-    def resolve(value: dict[str, Any]) -> dict[str, Any]:
-        if "$ref" not in value:
-            return value
-        target = document
-        for part in value["$ref"].removeprefix("#/").split("/"):
-            target = target[part]
-        return target
-
-    def schema_name(content: dict[str, Any]) -> str:
-        reference: str = content["application/json"]["schema"]["$ref"]
-        return reference.rsplit("/", 1)[1]
-
-    def names(kind: type[msgspec.Struct]) -> set[str]:
-        return {field.encode_name for field in msgspec.structs.fields(kind)}
-
-    specified = {
-        operation["operationId"]: (method.upper(), path, item, operation)
-        for path, item in document["paths"].items()
-        for method, operation in item.items()
-        if isinstance(operation, dict) and "operationId" in operation
-    }
-    assert set(get_args(OperationCall)) == set(CALLS)
-    assert {kind.__struct_config__.tag for kind in CALLS} == {
-        operation_id
-        for operation_id in specified
-        if operation_id.startswith("runtime.")
-        or operation_id in {"notebook.edit", "notebook.save"}
-    }
-
-    for kind in CALLS:
-        method, path, item, operation = specified[
-            str(kind.__struct_config__.tag)
-        ]
-        assert (kind.METHOD, kind.PATH) == (method, path)
-
-        parameters = [
-            resolve(parameter)
-            for parameter in [
-                *item.get("parameters", []),
-                *operation.get("parameters", []),
-            ]
-        ]
-        fields = {field.name: field for field in msgspec.structs.fields(kind)}
-        assert names(fields["params"].type) == {
-            parameter["name"]
-            for parameter in parameters
-            if parameter["in"] == "path"
-        }
-        assert names(fields["headers"].type) == {
-            parameter["name"].lower()
-            for parameter in parameters
-            if parameter["in"] == "header"
-        }
-        body = operation.get("requestBody")
-        if body is None:
-            assert set(fields) == {"params", "headers"}
-        else:
-            assert set(fields) == {"params", "headers", "body"}
-            assert fields["body"].type.__name__ == schema_name(
-                resolve(body)["content"]
-            )
-
-        hints = get_type_hints(
-            kind.handle,
-            {
-                **vars(calls),
-                "NotebookBridge": NotebookBridge,
-                "RequestInfo": RequestInfo,
-            },
-        )
-        statuses, response = get_args(hints["return"])
-        success = {
-            int(status): resolve(value)
-            for status, value in operation["responses"].items()
-            if status.startswith("2")
-        }
-        assert set(get_args(statuses)) == set(success)
-        for value in success.values():
-            assert schema_name(value["content"]) == response.__name__
+        decode(name, {**KEYED, **arguments})

@@ -13,7 +13,7 @@ from marimo._server.host.context import HostContext
 from marimo._server.main import create_starlette_app
 from marimo._server.workspace import SingleFileWorkspace
 from marimo._utils.marimo_path import MarimoPath
-from tests._server.host.drive import PORT, finished, request, wait_for
+from tests._server.host.drive import PORT, TOKEN, call, subscribe, wait_for
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
@@ -27,13 +27,6 @@ if TYPE_CHECKING:
 
     from marimo._config.types import OnCellChangeType
     from tests._server.host.drive import Response
-
-TOKEN = "execution-test"
-AUTH = {"Authorization": f"Bearer {TOKEN}"}
-
-
-def key(value: str) -> dict[str, str]:
-    return {**AUTH, "Idempotency-Key": value}
 
 
 @contextlib.asynccontextmanager
@@ -70,20 +63,20 @@ async def open_host(
             bridge=bridge, token=TOKEN, port=PORT
         )
         notebook = next(iter(bridge.host.notebooks.values()))
-        events, task, disconnect = request(
-            app, "GET", f"/notebooks/{notebook.id}/events", headers=AUTH
+        events, task, disconnect = subscribe(
+            app, "notebook", notebook_id=notebook.id
         )
         cleanup.push_async_callback(asyncio.wait_for, task, 5)
         cleanup.callback(disconnect)
-        started = await finished(
+        started = await call(
             app,
-            "PUT",
-            f"/notebooks/{notebook.id}/runtime",
-            headers=key("start"),
-            # The first request also loads the notebook from disk.
+            "runtime.start",
+            idempotency_key="start",
+            notebook_id=notebook.id,
+            # The first call also loads the notebook from disk.
             timeout=15,
         )
-        assert started.status == 202
+        assert started.ok, started.problem
         await wait_for(
             events,
             lambda response: any(

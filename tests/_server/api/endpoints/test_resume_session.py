@@ -32,6 +32,7 @@ from tests._server.api.endpoints.ws_helpers import (
     receive_notification,
 )
 from tests._server.host.drive import socket_snapshot
+from tests._server.mcp_client import call_tool
 from tests._server.mocks import get_session_manager, workspace_scope
 from tests._server.session_events import connect_session
 
@@ -168,41 +169,42 @@ def test_edited_document_survives_resume(client: TestClient) -> None:
         # Replace the notebook's cells through the host.
         session = get_session(client, SessionId("123"))
         assert session is not None
-        response = client.post(
-            f"/api/marimo/v1/notebooks/{notebook_id}/edits",
-            headers={**headers("123"), "Idempotency-Key": "edit-1"},
-            json={
-                "changes": [
-                    *(
-                        {
-                            "kind": "delete_cell",
-                            "id": cell_id,
-                            "base_etag": "*",
-                        }
-                        for cell_id in session.document.cell_ids
-                    ),
+        response = call_tool(
+            client,
+            "notebook.edit",
+            headers=headers("123"),
+            idempotency_key="edit-1",
+            notebook_id=notebook_id,
+            changes=[
+                *(
                     {
-                        "kind": "put_cell",
-                        "base_etag": None,
-                        "cell": {
-                            "id": "2",
-                            "code": "slider = mo.ui.slider(0, 100)",
-                            "name": "cell_0",
-                        },
+                        "kind": "delete_cell",
+                        "id": cell_id,
+                        "base_etag": "*",
+                    }
+                    for cell_id in session.document.cell_ids
+                ),
+                {
+                    "kind": "put_cell",
+                    "base_etag": None,
+                    "cell": {
+                        "id": "2",
+                        "code": "slider = mo.ui.slider(0, 100)",
+                        "name": "cell_0",
                     },
-                    {
-                        "kind": "put_cell",
-                        "base_etag": None,
-                        "cell": {
-                            "id": "1",
-                            "code": "import marimo as mo",
-                            "name": "cell_1",
-                        },
+                },
+                {
+                    "kind": "put_cell",
+                    "base_etag": None,
+                    "cell": {
+                        "id": "1",
+                        "code": "import marimo as mo",
+                        "name": "cell_1",
                     },
-                ]
-            },
+                },
+            ],
         )
-        assert response.status_code == 200, response.text
+        assert response.ok, response.problem
 
     # Check the session still exists after closing the websocket
     assert get_session(client, "123")

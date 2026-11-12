@@ -24,7 +24,6 @@ from marimo._runtime.commands import RenameNotebookCommand
 from marimo._server.host import OPERATIONS, document as documents
 from marimo._server.host.analysis import HostAnalyzer
 from marimo._server.host.backend import RequestMetadata, SessionBackend
-from marimo._server.host.events import notification_event
 from marimo._server.host.index import WorkspaceIndex
 from marimo._server.host.sessions import AppSessionNotebooks
 from marimo._session.events import SessionEventListener
@@ -431,18 +430,6 @@ class SessionBridge(SessionEventListener):
         return protocol.EditResponse(
             cells=response.cells, document=mirrored.document
         )
-
-    def session_snapshot(
-        self, notebook_id: protocol.NotebookId
-    ) -> list[RoutedEvent]:
-        """Return retained marimo events for one client without publishing them."""
-        session = self.session_for_notebook(notebook_id)
-        if session is None:
-            return []
-        return [
-            notification_event(notebook_id, notification)
-            for notification in session.session_view.snapshot_notifications()
-        ]
 
     def session_for_notebook(
         self, notebook_id: protocol.NotebookId

@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 from conftest import scratch
-from contract import Frame, Host
+from contract import Event, Host
 
 
 @asynccontextmanager
@@ -34,7 +34,7 @@ async def scratch_probe(*, root="/tmp", **overrides: Any):
         "updated_at": None,
     }
     catalog = [
-        Frame(event=kind, data=json.dumps({kind: value}))
+        Event(kind, {kind: value})
         for kind, value in (
             ("host", {"operations": ["notebook.create", "notebook.delete"]}),
             ("project", project),
@@ -44,21 +44,29 @@ async def scratch_probe(*, root="/tmp", **overrides: Any):
     requests = []
 
     def respond(request):
-        requests.append((request.method, request.url.path))
-        if request.method == "POST":
-            body = json.loads(request.content)
-            return httpx.Response(
-                201,
-                json={
-                    **existing,
-                    "id": "new",
-                    "path": body.get("path"),
-                    "name": body.get("name", body.get("path")),
-                    **overrides,
-                },
-            )
-        assert request.method == "DELETE"
-        return httpx.Response(204)
+        assert request.url.path == "/mcp"
+        call = json.loads(request.content)["params"]
+        name, arguments = call["name"], call["arguments"]
+        requests.append((name, arguments.get("notebook_id")))
+        reply: dict[str, Any] = {}
+        if name == "notebook.create":
+            reply = {
+                **existing,
+                "id": "new",
+                "path": arguments.get("path"),
+                "name": arguments.get("name", arguments.get("path")),
+                **overrides,
+            }
+        else:
+            assert name == "notebook.delete"
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"content": [], "structuredContent": reply},
+            },
+        )
 
     async with httpx.AsyncClient(
         base_url="http://127.0.0.1/", transport=httpx.MockTransport(respond)
@@ -87,8 +95,8 @@ async def test_invalid_create_metadata_is_cleaned_up(overrides):
         with pytest.raises(AssertionError):
             await anext(create())
         assert requests == [
-            ("POST", "/notebooks"),
-            ("DELETE", "/notebooks/new"),
+            ("notebook.create", None),
+            ("notebook.delete", "new"),
         ]
 
 
@@ -99,7 +107,7 @@ async def test_existing_notebook_is_never_deleted():
     ):
         with pytest.raises(AssertionError, match="existing notebook"):
             await anext(create())
-        assert requests == [("POST", "/notebooks")]
+        assert requests == [("notebook.create", None)]
 
 
 async def test_undeletable_notebook_skips_remaining_scratch_checks():
@@ -111,16 +119,16 @@ async def test_undeletable_notebook_skips_remaining_scratch_checks():
                 pytest.skip.Exception, match=r"'new'.*notebook\.delete"
             ):
                 await anext(create())
-        assert requests == [("POST", "/notebooks")]
+        assert requests == [("notebook.create", None)]
 
 
 async def test_scratch_is_deleted_after_use():
     async with scratch_probe() as (create, requests):
         fixture = create()
         assert (await anext(fixture))["id"] == "new"
-        assert requests == [("POST", "/notebooks")]
+        assert requests == [("notebook.create", None)]
         await fixture.aclose()
         assert requests == [
-            ("POST", "/notebooks"),
-            ("DELETE", "/notebooks/new"),
+            ("notebook.create", None),
+            ("notebook.delete", "new"),
         ]

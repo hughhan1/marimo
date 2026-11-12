@@ -27,9 +27,9 @@ from starlette.websockets import WebSocketDisconnect
 from marimo._server.codes import WebSocketCodes
 from tests.mcp_request import (
     SessionClosed,
-    request_headers,
     session_message,
-    session_payload,
+    stream_headers,
+    stream_payload,
 )
 
 if TYPE_CHECKING:
@@ -141,13 +141,12 @@ def connect_session(
         if "access_token" in query
         else {}
     )
-    body = json.dumps(session_payload(arguments)).encode()
+    body = json.dumps(stream_payload("session", arguments)).encode()
     sent = {
         name.lower(): value
         for name, value in {
-            **request_headers("events/stream", "session"),
+            **stream_headers("session"),
             "content-type": "application/json",
-            "accept": "application/json, text/event-stream",
             "host": "testserver",
             **(headers or {}),
         }.items()

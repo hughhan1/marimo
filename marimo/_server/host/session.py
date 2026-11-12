@@ -1,14 +1,13 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Editor and app sessions carried by the host event stream."""
+"""An editor or app session, followed with the host's events about its notebook."""
 
 from __future__ import annotations
 
 import asyncio
-from contextlib import aclosing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
+from starlette.websockets import WebSocketDisconnect
 
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
@@ -55,14 +54,11 @@ class SessionEventStream(SessionHandler):
 
     def __init__(
         self,
-        connection: WebSocket | Request,
+        connection: Request,
         *,
-        notebook: Notebook | None,
         bridge: SessionBridge,
         manager: SessionManager,
         params: ConnectionParams,
-        types: set[str] | None,
-        cursor: str | None,
     ) -> None:
         super().__init__(
             manager=manager,
@@ -71,10 +67,8 @@ class SessionEventStream(SessionHandler):
         )
         self.connection = connection
         self._stream_finished = False
-        self.notebook = notebook
+        self.notebook: Notebook | None = None
         self.bridge = bridge
-        self.types = types
-        self.cursor = cursor
         self._attachment: protocol.Attachment | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._ready_id = 0
@@ -87,8 +81,7 @@ class SessionEventStream(SessionHandler):
             self.notebook.id if self.notebook is not None else None,
             deserialize_kernel_message(notification),
         )
-        if event.wanted(self.types):
-            self._events.put_nowait(event)
+        self._events.put_nowait(event)
 
     def _on_host_event(self, event: RoutedEvent) -> None:
         # The session delivers marimo notifications with recipient filtering,
@@ -99,33 +92,20 @@ class SessionEventStream(SessionHandler):
             self._events.put_nowait(event)
 
     async def _prepare_session(self, session: Session) -> None:
-        if self.notebook is None:
-            if (
-                self.cursor is not None
-                and self.bridge.notebook_for_session(session) is None
-            ):
-                self._events.put_nowait(
-                    RoutedEvent(protocol.ResetEvent(data={}))
-                )
-                self.cursor = None
-            notebook = await self.bridge.adopt(session)
-            if notebook is None:
-                raise WebSocketDisconnect(
-                    WebSocketCodes.UNEXPECTED_ERROR, "Notebook unavailable"
-                )
-            self._subscribe(notebook)
-        else:
-            await self.bridge.bind(self.notebook.id, session)
+        notebook = await self.bridge.adopt(session)
+        if notebook is None:
+            raise WebSocketDisconnect(
+                WebSocketCodes.UNEXPECTED_ERROR, "Notebook unavailable"
+            )
+        self._subscribe(notebook)
 
     def _subscribe(self, notebook: Notebook) -> None:
         self.notebook = notebook
         self._attachment = notebook.attach(identity=self.params.session_id)
         self._unsubscribe = self.bridge.host.subscribe(
-            self._on_host_event, notebook_id=notebook.id, types=self.types
+            self._on_host_event, notebook_id=notebook.id
         )
-        initial = self.bridge.host.events(
-            self.cursor, notebook_id=notebook.id, types=self.types
-        )
+        initial = self.bridge.host.events(None, notebook_id=notebook.id)
         self._ready_id = initial[-1].position or 0
         for event in initial:
             # Native replay must retain the session's recipient filtering.
@@ -135,10 +115,8 @@ class SessionEventStream(SessionHandler):
     async def stream(
         self,
     ) -> AsyncGenerator[RoutedEvent | Close, None]:
-        """Broker the session and deliver its host events until disconnect."""
+        """Broker the session and deliver its host events until it ends."""
         try:
-            if self.notebook is not None:
-                self._subscribe(self.notebook)
             async with self._connection_lifetime(self.connection) as startup:
 
                 async def connect_and_listen() -> None:
@@ -195,31 +173,9 @@ class SessionEventStream(SessionHandler):
             event, include_code=self.manager.should_send_code_to_frontend()
         )
 
-    async def start(self) -> None:
-        """Deliver the host stream over a WebSocket."""
-        websocket = self.connection
-        assert isinstance(websocket, WebSocket)
-        await websocket.accept()
-        try:
-            async with aclosing(self.stream()) as events:
-                async for event in events:
-                    if isinstance(event, Close):
-                        if (
-                            websocket.client_state
-                            is not WebSocketState.DISCONNECTED
-                        ):
-                            await websocket.close(event.code, event.reason)
-                    else:
-                        await websocket.send_text(self.serialize(event))
-        except WebSocketDisconnect:
-            pass
-
     async def _wait_for_disconnect(self) -> None:
-        assert isinstance(self.connection, WebSocket)
-        while True:
-            message = await self.connection.receive()
-            if message["type"] == "websocket.disconnect":
-                return
+        # A subscription lasts until it is cancelled.
+        await asyncio.Future()
 
     def _request_close(self, code: int, reason: str) -> None:
         self._events.put_nowait(Close(code, reason))

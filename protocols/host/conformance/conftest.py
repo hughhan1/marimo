@@ -8,12 +8,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
 import pytest
-from contract import Host, accepted, objects, validate
+from contract import Failure, Host, failed, objects, validate
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -30,9 +30,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=float,
         default=10.0,
         help="Seconds to wait for host responses and events (default: %(default)s)",
-    )
-    parser.addoption(
-        "--slow", action="store_true", help="Include idle ping checks"
     )
     parser.addoption(
         "--require-operation",
@@ -104,7 +101,7 @@ async def host(
 
 @pytest.fixture
 async def catalog(host: Host) -> list:
-    return await host.snapshot()
+    return await host.snapshot("catalog")
 
 
 @pytest.fixture
@@ -125,12 +122,10 @@ async def scratch(
     if project is None:
         pytest.skip("no project permits notebook.create")
     name = f"conformance-{uuid4().hex}.py"
-    body = {
-        "project_id": project["id"],
-        "path" if project["root"] else "name": name,
-    }
-    notebook = accepted(
-        await host.request("POST", "/notebooks", json=body), 201, "Notebook"
+    notebook = await host.call(
+        "notebook.create",
+        project_id=project["id"],
+        **{"path" if project["root"] else "name": name},
     )
     existing = {n["id"] for n in objects(catalog, "notebook")}
     assert notebook["id"] not in existing, (
@@ -154,20 +149,23 @@ async def scratch(
         )
         yield notebook
     finally:
-        path = f"/notebooks/{quote(notebook['id'], safe='')}"
         if "runtime.stop" in notebook["operations"]:
-            response = await host.request("DELETE", path + "/runtime")
-            assert response.status_code in (202, 409), (
-                "could not clean up runtime"
+            stopped = await host.call(
+                "runtime.stop", notebook_id=notebook["id"]
             )
-            if response.status_code == 202:
-                async with host.watch(path + "/events") as watch:
-                    snapshot = await watch.ready()
+            if isinstance(stopped, Failure):
+                failed(stopped, "no-runtime")
+            else:
+                async with host.subscribe(
+                    "notebook", notebook_id=notebook["id"]
+                ) as events:
+                    snapshot = await events.ready()
                     if objects(snapshot, "runtime"):
-                        await watch.until(
-                            lambda f: f.event == "runtime.removed"
+                        await events.until(
+                            lambda e: e.event == "runtime.removed"
                         )
-        response = await host.request("DELETE", path)
-        assert response.status_code in (204, 404), (
-            "could not clean up scratch notebook"
+        deleted = await host.call(
+            "notebook.delete", notebook_id=notebook["id"]
         )
+        if isinstance(deleted, Failure):
+            failed(deleted, "not-found")

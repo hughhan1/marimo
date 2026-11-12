@@ -1,12 +1,12 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Internal marimo events for the host stream."""
+"""The host's events as their protocol messages, and marimo's own events."""
 
 from __future__ import annotations
 
 import msgspec
 
 from marimo._core import protocol
-from marimo._core.stream import ExtensionEvent, RoutedEvent, event_name
+from marimo._core.stream import ExtensionEvent, RoutedEvent
 from marimo._messaging.notification import NotificationMessage
 
 
@@ -54,20 +54,7 @@ def _visible_event(
 
 
 def serialize_event(event: RoutedEvent, *, include_code: bool = True) -> str:
-    """Encode a host WebSocket envelope."""
+    """Encode an event as its protocol message."""
     return msgspec.json.encode(
         _visible_event(event, include_code=include_code)
     ).decode()
-
-
-def serialize_sse_event(
-    event: RoutedEvent, *, include_code: bool = True
-) -> str:
-    """Encode the same host event using SSE fields."""
-    message = _visible_event(event, include_code=include_code)
-    lines = []
-    if message.id is not msgspec.UNSET:
-        lines.append(f"id: {message.id}")
-    lines.append(f"event: {event_name(message)}")
-    lines.append(f"data: {msgspec.json.encode(message.data).decode()}")
-    return "\n".join(lines) + "\n\n"

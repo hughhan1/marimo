@@ -13,6 +13,7 @@ from marimo._cli.pair import discovery
 from marimo._cli.pair.client import HostEndpoint
 from marimo._core import protocol
 from tests._core.conftest import project, record
+from tests.mcp_request import stream_frame
 
 
 def catalog(*, ready: bool = True) -> bytes:
@@ -49,11 +50,10 @@ def catalog(*, ready: bool = True) -> bytes:
     if ready:
         entries.append(("ready", {}))
     return b"".join(
-        b"event: "
-        + name.encode()
-        + b"\ndata: "
-        + msgspec.json.encode(value)
-        + b"\n\n"
+        stream_frame(
+            "event",
+            {"data": {"event": name, "data": msgspec.to_builtins(value)}},
+        )
         for name, value in entries
     )
 
@@ -65,7 +65,13 @@ def test_listing_keeps_only_running_notebooks_and_closes_the_snapshot(
     response.__iter__.side_effect = lambda: iter(
         catalog().splitlines(keepends=True)
     )
-    monkeypatch.setattr(discovery, "open_response", lambda **_: response)
+    subscribed: list[dict[str, object]] = []
+
+    def open_events(**kwargs: object) -> MagicMock:
+        subscribed.append(kwargs)
+        return response
+
+    monkeypatch.setattr(discovery, "open_events", open_events)
     result = discovery.list_running_notebooks(
         [HostEndpoint("http://127.0.0.1:2718/base/api/marimo/v1", "secret")]
     )
@@ -90,6 +96,15 @@ def test_listing_keeps_only_running_notebooks_and_closes_the_snapshot(
             "warnings": [],
         }
     )
+    assert subscribed == [
+        {
+            "url": "http://127.0.0.1:2718/base/api/marimo/v1",
+            "name": "catalog",
+            "arguments": {"types": ["project", "notebook", "runtime"]},
+            "token": "secret",
+            "read_timeout": discovery._TIMEOUT,
+        }
+    ]
     response.close.assert_called_once()
 
 
@@ -98,7 +113,7 @@ def test_listing_preserves_other_servers_when_a_snapshot_fails(
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
 ) -> None:
-    def open_response(*, url: str, **_: object) -> MagicMock:
+    def open_events(*, url: str, **_: object) -> MagicMock:
         response = MagicMock()
         data = catalog()
         if ":2719/" in url:
@@ -107,12 +122,12 @@ def test_listing_preserves_other_servers_when_a_snapshot_fails(
             data = (
                 catalog(ready=False)
                 if failure == "incomplete"
-                else b'event: notebook\ndata: {"secret":}\n\n'
+                else b'event: message\ndata: {"secret":}\n\n'
             )
         response.__iter__.return_value = iter(data.splitlines(keepends=True))
         return response
 
-    monkeypatch.setattr(discovery, "open_response", open_response)
+    monkeypatch.setattr(discovery, "open_events", open_events)
     result = discovery.list_running_notebooks(
         [
             HostEndpoint(f"http://127.0.0.1:{port}/api/marimo/v1", "secret")
@@ -130,7 +145,8 @@ def test_snapshot_deadline_includes_heartbeat_traffic(
 ) -> None:
     ticks = iter([0.0, 1.0, 10.0])
     monkeypatch.setattr(discovery, "monotonic", lambda: next(ticks))
-    lines = discovery._bounded_lines([b": ping\n", b": ping\n"])
-    assert next(lines) == b": ping\n"
+    heartbeat = stream_frame("heartbeat", {"cursor": "1"})
+    lines = discovery._bounded_lines([heartbeat, heartbeat])
+    assert next(lines) == heartbeat
     with pytest.raises(TimeoutError):
         next(lines)

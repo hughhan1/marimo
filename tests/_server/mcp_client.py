@@ -5,7 +5,8 @@
 `/api/mcp` whose arguments are the body's fields, and the result becomes an
 ordinary response: a success is a 200 whose JSON is the structured result, a
 file is a response with the file's type and bytes, and a failure has its
-problem's status and `{"detail": ...}` as its body.
+problem's status and `{"detail": ...}` as its body. `call_tool` calls a tool
+by its name, such as the host protocol's notebook tools the editor serves.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from starlette.testclient import TestClient
 
 from marimo._server.api.router import build_routes  # noqa: F401
 from marimo._server.api.tools import TOOLS
-from tests.mcp_request import request_headers, tool_payload
+from tests.mcp_request import Called, called, request_headers, tool_payload
 
 _PAIR = re.compile(
     r"/api/pair/notebooks/([^/]+)/(messages|attachments/detach)"
@@ -163,6 +164,26 @@ def _request(self: TestClient, method: str, url: Any, **kwargs: Any) -> Any:
     )
     download = isinstance(body, dict) and bool(body.get("download"))
     return _response(outer, name, outer.request, download)
+
+
+def call_tool(
+    client: TestClient,
+    name: str,
+    /,
+    *,
+    url: str = "/api/mcp",
+    headers: dict[str, str] | None = None,
+    **arguments: Any,
+) -> Called:
+    """Call a tool of the editor's MCP server at `url`, by its name."""
+    response = _original_request(
+        client,
+        "POST",
+        url,
+        json=tool_payload(name, arguments),
+        headers={**request_headers("tools/call", name), **(headers or {})},
+    )
+    return called(response.content)
 
 
 def install() -> None:

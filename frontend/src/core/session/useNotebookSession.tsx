@@ -388,7 +388,7 @@ export function useNotebookSession(opts: {
     snapshot: useAtomValue(embeddedSnapshotAtom),
     sessionArguments: () => runtimeManager.getSessionArguments(sessionId),
     headers: () => runtimeManager.headers(),
-    notebookUrl: (notebookId) => runtimeManager.getNotebookURL(notebookId),
+    mcpUrl: () => runtimeManager.getMcpURL(),
     // Only the server's transport reads the session's arguments, so static
     // and WASM never wait.
     waitUntilReady: async () => {

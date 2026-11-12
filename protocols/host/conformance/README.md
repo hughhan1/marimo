@@ -9,7 +9,10 @@ make host-protocol-check
 
 The suite validates against the OpenAPI document, which it asks the
 [host protocol package](../README.md#get-the-openapi-document) to print. That
-needs Node and the package's one dependency.
+needs Node and the package's one dependency. The document's `x-tools` lists
+the tools: each one's arguments, result and the problems it may fail with.
+Its `x-events` lists the two event streams, `catalog` and `notebook`: each
+one's arguments and the protocol events it carries.
 
 ```sh
 pnpm install --filter @marimo-team/host-protocol --prod
@@ -22,8 +25,13 @@ covers TypeScript generation and package checks.
 ## Check a running host
 
 Start a host in a disposable workspace and pass its
-[discovery record](../spec.md#local-discovery). The suite creates and modifies
-notebooks and starts and stops runtimes; you manage the host's lifecycle.
+[discovery record](../spec.md#local-discovery). The suite calls the host's
+tools and subscribes to its events over MCP at `/mcp` below the record's URL.
+It checks each result against the tool's `outputSchema`, each failure against
+the tool's `problems`, each protocol event against its event's
+`payloadSchema`, and each refused subscription's problem against `Problem`.
+It creates and modifies notebooks and starts and stops runtimes; you manage
+the host's lifecycle.
 
 ```sh
 uv run --locked --project protocols/host/conformance \
@@ -34,5 +42,4 @@ uv run --locked --project protocols/host/conformance \
 
 The suite skips tests for capabilities the host does not offer, so review the
 skipped tests. Repeat `--require-operation <operation>` to assert advertised
-operations, and use `--slow` to include idle ping checks. Replace `--record`
-and its path with `--help` for all options.
+operations. Replace `--record` and its path with `--help` for all options.

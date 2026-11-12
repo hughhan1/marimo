@@ -8,7 +8,7 @@ import queue
 import socket
 import threading
 import urllib.request
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import httpx
 
@@ -96,6 +96,33 @@ def tool_problem(result: dict[str, Any]) -> dict[str, Any] | None:
     return problem
 
 
+class Called(NamedTuple):
+    """A tool call's outcome: its result's data, or the problem that failed it."""
+
+    ok: bool
+    data: Any = None
+    problem: Any = None
+
+
+def called(body: bytes) -> Called:
+    """The outcome of a `tools/call` the server answered with `body`.
+
+    A call refused before it reaches the transport, such as one without the
+    server's credentials, fails with the response's own body, and one the
+    transport refuses with its JSON-RPC error.
+    """
+    message = json.loads(body)
+    if "jsonrpc" not in message:
+        return Called(False, problem=message)
+    if "error" in message:
+        return Called(False, problem=message["error"])
+    result = message["result"]
+    problem = tool_problem(result)
+    if problem is not None:
+        return Called(False, problem=problem)
+    return Called(True, data=result["structuredContent"])
+
+
 def tool_status(result: dict[str, Any]) -> int:
     """The status a result stands for: its problem's, or 200 for a success."""
     problem = tool_problem(result)
@@ -123,17 +150,36 @@ def _closed(error: dict[str, Any]) -> SessionClosed:
     )
 
 
-def session_payload(arguments: dict[str, Any]) -> dict[str, Any]:
+def stream_headers(name: str) -> dict[str, str]:
+    """The headers of a subscription to the event `name`, which streams."""
+    return {
+        **request_headers("events/stream", name),
+        "Accept": "application/json, text/event-stream",
+    }
+
+
+def stream_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """A subscription to the event `name`, pushed on the request's stream."""
     return {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "events/stream",
         "params": {
-            "name": "session",
+            "name": name,
             "arguments": arguments,
             "_meta": request_meta(),
         },
     }
+
+
+def stream_frame(method: str, params: dict[str, Any]) -> bytes:
+    """One frame of an `events/stream` response: an events notification."""
+    message = {
+        "jsonrpc": "2.0",
+        "method": f"notifications/events/{method}",
+        "params": params,
+    }
+    return f"event: message\ndata: {json.dumps(message)}\n\n".encode()
 
 
 def session_message(message: dict[str, Any]) -> str | SessionClosed | None:
@@ -169,12 +215,8 @@ class SessionEvents:
             self._client.build_request(
                 "POST",
                 f"{url}/api/mcp",
-                json=session_payload(arguments),
-                headers={
-                    **request_headers("events/stream", "session"),
-                    "Accept": "application/json, text/event-stream",
-                    **(headers or {}),
-                },
+                json=stream_payload("session", arguments),
+                headers={**stream_headers("session"), **(headers or {})},
             ),
             stream=True,
         )

@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING, Literal
 import msgspec
 
 from marimo._core import protocol
-from tests._server.host.drive import request, wait_for
-from tests._server.host.live import AUTH
+from tests._server.host.drive import subscribe, until_ready, wait_for
 
 if TYPE_CHECKING:
     from typing import Any
@@ -130,18 +129,17 @@ async def read_events(
     app: Starlette, notebook_id: str, *, cursor: str | None = None
 ) -> list[dict[str, Any]]:
     """Read a snapshot or replay through its ready boundary, then disconnect."""
-    headers = AUTH if cursor is None else {**AUTH, "Last-Event-ID": cursor}
-    response, task, disconnect = request(
-        app, "GET", f"/notebooks/{notebook_id}/events", headers=headers
+    resumed = {} if cursor is None else {"cursor": cursor}
+    response, task, disconnect = subscribe(
+        app, "notebook", notebook_id=notebook_id, **resumed
     )
     try:
-        await wait_for(response, lambda r: "ready" in r.names())
+        await wait_for(response, until_ready)
     finally:
         disconnect()
         await asyncio.wait_for(task, 5)
-    records = [r for r in response.records if "event" in r]
-    ready = next(i for i, r in enumerate(records) if r["event"] == "ready")
-    return records[: ready + 1]
+    ready = response.names().index("ready")
+    return response.records[: ready + 1]
 
 
 async def snapshot(app: Starlette, notebook_id: str) -> Snapshot:

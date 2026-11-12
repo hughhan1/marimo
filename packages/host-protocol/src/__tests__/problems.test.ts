@@ -123,9 +123,9 @@ it.each([
   [Notebook.Run, "precondition-failed", true],
   [Notebook.Delete, "precondition-failed", false],
 ] as const)(
-  "restricts %s to its declared errors (%s)",
+  "restricts %s to its declared problems (%s)",
   (rpc, name, accepted) => {
-    const schema = Schema.toEncoded(Schema.Union([...rpc.error]));
+    const schema = Schema.toEncoded(rpc.failureSchema);
     expect(Schema.is(schema)(fixture(name))).toBe(accepted);
   },
 );

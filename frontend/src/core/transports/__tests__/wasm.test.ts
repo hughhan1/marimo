@@ -20,8 +20,8 @@ function worker() {
     .document;
   assert(document);
   const listeners = new Set<(event: unknown) => void>();
-  const reply = { ok: true, status: 200, data: { document, cells: {} } };
-  const wire = { status: 200, body: reply.data };
+  const reply = { ok: true, data: { document, cells: {} } };
+  const wire = { ok: true, data: reply.data };
   const bridge = {
     subscribe: vi.fn(
       async (_cursor: string | null, emit: (event: unknown) => void) => {
@@ -113,22 +113,21 @@ describe("WASM notebook backend", () => {
       );
       expect(bridge.call).toHaveBeenCalledWith({
         operation: `notebook.${operation}`,
-        params: { notebook_id: "n1" },
-        headers: { "idempotency-key": `${operation}-7` },
-        body: operation === "edit" ? { changes: [] } : {},
+        notebook_id: "n1",
+        idempotency_key: `${operation}-7`,
+        ...(operation === "edit" ? { changes: [] } : {}),
       });
       const problem = {
         type: "urn:marimo:problem:forbidden",
         title: "Forbidden",
         status: 403,
       };
-      bridge.call.mockResolvedValue({ status: 403, body: problem });
+      bridge.call.mockResolvedValue({ ok: false, problem });
       expect(await command()).toEqual({
         ok: false,
-        status: 403,
         problem,
       });
-      bridge.call.mockResolvedValue({ status: 200, body: {} });
+      bridge.call.mockResolvedValue({ ok: true, data: {} });
       await expect(command()).rejects.toThrow(/Invalid input/);
     },
   );

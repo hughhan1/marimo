@@ -8,7 +8,7 @@ import socket
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import msgspec
@@ -42,27 +42,14 @@ def main() -> None:
     calls = 0
 
     def controlled_events(
-        *,
-        url: str,
-        notebook: str,
-        token: str | None,
-        identity: str,
-        name: str,
-        cursor: str | None = None,
+        *, arguments: dict[str, object], **kwargs: Any
     ) -> EventStream:
         nonlocal calls
         calls += 1
         if calls == 2:
-            print(json.dumps({"cursor": cursor}), flush=True)
+            print(json.dumps({"cursor": arguments.get("cursor")}), flush=True)
             assert sys.stdin.readline() == "resume\n"
-        response = open_events(
-            url=url,
-            notebook=notebook,
-            token=token,
-            identity=identity,
-            name=name,
-            cursor=cursor,
-        )
+        response = open_events(arguments=arguments, **kwargs)
         if calls == 1:
 
             def drop() -> None:

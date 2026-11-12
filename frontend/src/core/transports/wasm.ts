@@ -5,7 +5,7 @@
 import {
   NotebookClient,
   StreamStopped,
-  type unstable_NotebookCall,
+  type ToolCall,
 } from "@marimo-team/client";
 import type { NotebookBackend } from "../notebook/replica";
 
@@ -16,8 +16,8 @@ export interface WasmNotebookBridge {
     emit: (event: unknown) => void,
     signal: AbortSignal,
   ): Promise<() => void>;
-  /** Deliver a call to the worker and resolve with its status and body. */
-  call(call: unstable_NotebookCall): Promise<unknown>;
+  /** Deliver a tool call to the worker and resolve with its reply. */
+  call(call: ToolCall): Promise<unknown>;
 }
 
 /** Stop waiting on cancellation; a command already sent may still commit. */
@@ -90,6 +90,6 @@ export function createWasmNotebookBackend(bridge: WasmNotebookBridge) {
       }
     },
     notebook: (notebookId) =>
-      NotebookClient.unstable_over((call) => bridge.call(call), { notebookId }),
+      new NotebookClient(notebookId, (call) => bridge.call(call)),
   } satisfies NotebookBackend;
 }

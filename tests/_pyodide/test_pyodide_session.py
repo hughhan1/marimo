@@ -885,25 +885,20 @@ async def test_pyodide_bridge_document_export(
             json.dumps(
                 {
                     "operation": "notebook.edit",
-                    "params": {"notebook_id": pyodide_bridge.notebook.id},
-                    "headers": {"idempotency-key": "edit-1"},
-                    "body": {
-                        "changes": [
-                            {
-                                "kind": "put_cell",
-                                "base_etag": None,
-                                "cell": {
-                                    "id": "test",
-                                    "code": 'message = "NEW"',
-                                },
-                            }
-                        ]
-                    },
+                    "notebook_id": pyodide_bridge.notebook.id,
+                    "idempotency_key": "edit-1",
+                    "changes": [
+                        {
+                            "kind": "put_cell",
+                            "base_etag": None,
+                            "cell": {"id": "test", "code": 'message = "NEW"'},
+                        }
+                    ],
                 }
             )
         )
     )
-    assert result["status"] == 200, result
+    assert result["ok"], result
 
     request = json.dumps({"download": False})
     script = json.loads(pyodide_bridge.export_script(request))

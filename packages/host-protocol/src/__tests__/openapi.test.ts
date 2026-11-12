@@ -10,11 +10,13 @@ const stable = OpenApi.fromApi(Host.Api, { referencePolicy });
 const experimental = OpenApi.fromApi(Analysis.Api, { referencePolicy });
 const schemas = stable.components.schemas;
 
-it("closes request bodies and keeps other objects open", () => {
+it("closes tools' arguments and keeps other objects open", () => {
   const closed = Object.entries(schemas)
     .filter(([, schema]) => schema.additionalProperties === false)
     .map(([name]) => name);
   expect(closed.toSorted()).toEqual([
+    "CancelRunRequest",
+    "CatalogEventsRequest",
     "CellConfigInput",
     "CellInput",
     "CreateNotebookRequest",
@@ -22,6 +24,8 @@ it("closes request bodies and keeps other objects open", () => {
     "EditRequest",
     "ExecuteRequest",
     "InputReplyRequest",
+    "NotebookEventsRequest",
+    "NotebookRequest",
     "PutCell",
     "RequestedCell",
     "RunRequest",
@@ -62,19 +66,56 @@ it("puts descriptions beside their schemas and names each problem", () => {
   }
 });
 
-it("lists the problems each route can answer with", () => {
-  const save = stable.paths["/notebooks/{notebook_id}/save"].post;
+it("lists each tool with its arguments, result and problems", () => {
+  const tools = (stable as { "x-tools"?: Array<Record<string, unknown>> })[
+    "x-tools"
+  ];
+  const save = tools?.find((tool) => tool.name === "notebook.save");
+  expect(save).toMatchObject({
+    title: "Write the document to the host's store",
+    inputSchema: { $ref: "#/components/schemas/SaveRequest" },
+    outputSchema: { $ref: "#/components/schemas/EditResponse" },
+  });
+  expect(save?.problems).toContainEqual({
+    $ref: "#/components/schemas/PreconditionFailedProblem",
+  });
   expect(
-    save?.responses[412]?.content?.["application/problem+json"]?.schema,
-  ).toEqual({ $ref: "#/components/schemas/PreconditionFailedProblem" });
-  expect(save?.security).toEqual([{ hostToken: [] }]);
+    tools?.find((tool) => tool.name === "notebook.delete"),
+  ).not.toHaveProperty("outputSchema");
+});
+
+it("lists each event with its arguments and payload, and no HTTP paths", () => {
+  expect(stable.paths).toEqual({});
+  const events = (stable as { "x-events"?: Array<Record<string, unknown>> })[
+    "x-events"
+  ];
+  expect(events).toEqual([
+    expect.objectContaining({
+      name: "catalog",
+      inputSchema: { $ref: "#/components/schemas/CatalogEventsRequest" },
+      payloadSchema: { $ref: "#/components/schemas/CatalogStreamEvent" },
+    }),
+    expect.objectContaining({
+      name: "notebook",
+      inputSchema: { $ref: "#/components/schemas/NotebookEventsRequest" },
+      payloadSchema: { $ref: "#/components/schemas/NotebookStreamEvent" },
+    }),
+  ]);
 });
 
 it("adds experimental features without changing the stable protocol", () => {
   expect(experimental.paths).toEqual(stable.paths);
+  expect(experimental["x-tools" as keyof typeof experimental]).toEqual(
+    stable["x-tools" as keyof typeof stable],
+  );
   const extended = experimental.components.schemas;
   for (const [name, schema] of Object.entries(schemas)) {
-    if (name === "Event" || name === "ObjectType") {
+    if (
+      name === "Event" ||
+      name === "ObjectType" ||
+      name === "CatalogStreamEvent" ||
+      name === "NotebookStreamEvent"
+    ) {
       continue;
     }
     expect(extended[name]).toEqual(schema);

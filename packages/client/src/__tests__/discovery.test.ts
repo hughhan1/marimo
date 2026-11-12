@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "../index.ts";
 import { discoverHosts, type DiscoverHostsOptions } from "../node.ts";
 import type { HostRecordOutput } from "../protocol.ts";
+import { host as fakeHost } from "./fixtures.ts";
 
 const runPs = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({
@@ -77,16 +78,15 @@ describe.skipIf(!["darwin", "linux"].includes(process.platform))(
       const records = await collect();
       expect(records).toHaveLength(2);
       expect(records).toContainEqual(record);
-      const fetch = vi.fn(
-        async (_input: RequestInfo | URL, _init?: RequestInit) =>
-          new Response(null, { status: 204 }),
-      );
+      const { fetch, calls } = fakeHost(() => ({}));
       const host = records.find((host) => host.name === "marimo")!;
       const client = new Client(host.url, { token: host.token, fetch });
       await client.notebook("n1").delete();
-      const request = new Request(...fetch.mock.calls[0]);
-      expect(request.url).toBe(`${record.url}/notebooks/n1`);
-      expect(request.headers.get("Authorization")).toBe("Bearer secret");
+      expect(String(fetch.mock.calls[0][0])).toBe(`${record.url}/mcp`);
+      expect(calls[0]).toMatchObject({
+        name: "notebook.delete",
+        authorization: "Bearer secret",
+      });
       expect(runPs).toHaveBeenCalledWith(
         "/bin/ps",
         ["-p", "123", "-o", "lstart=", "-o", "stat="],

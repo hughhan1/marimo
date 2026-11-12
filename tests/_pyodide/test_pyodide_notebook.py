@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 from marimo._ast.app_config import _AppConfig
 from marimo._ast.cell import CellConfig
 from marimo._config.config import DEFAULT_CONFIG
-from marimo._core.calls import EditCall, dispatch
+from marimo._core.calls import Caller, decode, dispatch
 from marimo._messaging.notebook import CreateCell, Transaction
 from marimo._messaging.notification import (
     ModelLifecycleNotification,
@@ -88,6 +88,7 @@ def ops(notifications):
 
 
 async def send(bridge, call):
+    """Call a notebook tool as the page does, for its `{ok, data|problem}`."""
     return json.loads(await bridge.notebook.call(json.dumps(call)))
 
 
@@ -97,22 +98,20 @@ def edit(events, code="x = 2", request_id="edit-1"):
     )
     return {
         "operation": "notebook.edit",
-        "params": {"notebook_id": cell["notebook_id"]},
-        "headers": {"idempotency-key": request_id},
-        "body": {
-            "changes": [
-                {
-                    "kind": "put_cell",
-                    "base_etag": cell["etag"],
-                    "cell": {
-                        "id": cell["id"],
-                        "code": code,
-                        "name": cell["name"],
-                        "config": cell["config"],
-                    },
-                }
-            ]
-        },
+        "idempotency_key": request_id,
+        "notebook_id": cell["notebook_id"],
+        "changes": [
+            {
+                "kind": "put_cell",
+                "base_etag": cell["etag"],
+                "cell": {
+                    "id": cell["id"],
+                    "code": code,
+                    "name": cell["name"],
+                    "config": cell["config"],
+                },
+            }
+        ],
     }
 
 
@@ -136,8 +135,8 @@ async def test_snapshot_edit_and_retry(bridge):
     ]
     request = edit(events)
     response = await send(bridge, request)
-    assert response["status"] == 200
-    assert response["body"]["document"] == events[-1]["data"]["document"]
+    assert response["ok"], response
+    assert response["data"]["document"] == events[-1]["data"]["document"]
     assert [event["event"] for event in events[-2:]] == ["cell", "document"]
     assert all(
         event["data"]["request_id"] == "edit-1" for event in events[-2:]
@@ -149,19 +148,18 @@ async def test_snapshot_edit_and_retry(bridge):
     assert await send(bridge, request) == response
     assert len(events) == count
     # A call dispatched directly shares the worker's retry receipts.
+    arguments = {k: v for k, v in request.items() if k != "operation"}
     direct = await dispatch(
         bridge.notebook.mutations,
         bridge.notebook,
-        msgspec.json.decode(json.dumps(request), type=EditCall),
-        request=None,
+        "notebook.edit",
+        decode("notebook.edit", arguments),
+        Caller(),
     )
-    assert msgspec.json.decode(msgspec.json.encode(direct)) == [
-        response["status"],
-        response["body"],
-    ]
+    assert msgspec.json.decode(msgspec.json.encode(direct)) == response["data"]
     assert len(events) == count
     conflict = await send(bridge, edit(events, "x = 3"))
-    assert conflict["body"]["type"].endswith(":conflict")
+    assert conflict["problem"]["type"].endswith(":conflict")
     assert list(bridge.session.app_manager.app.cell_manager.codes()) == [
         "x = 2"
     ]
@@ -178,7 +176,7 @@ async def test_atomic_conflict_and_kernel_update(bridge):
     cell_id = events[1]["data"]["cell"]["id"]
     assert update.codes == {cell_id: "x = 2"}
     request = edit(events, "x = 3", request_id="conflict")
-    request["body"]["changes"].insert(
+    request["changes"].insert(
         0,
         {
             "kind": "put_cell",
@@ -187,10 +185,10 @@ async def test_atomic_conflict_and_kernel_update(bridge):
             "cell": {"id": "new", "code": "y = 1"},
         },
     )
-    result = await send(bridge, request)
-    assert result["status"] == 412
-    assert result["body"]["index"] == 1
-    assert result["body"]["cell"]["code"] == "x = 2"
+    problem = (await send(bridge, request))["problem"]
+    assert problem["type"].endswith(":precondition-failed")
+    assert problem["index"] == 1
+    assert problem["cell"]["code"] == "x = 2"
     assert list(bridge.session.app_manager.app.cell_manager.codes()) == [
         "x = 2"
     ]
@@ -246,24 +244,37 @@ async def test_permissions_and_unsupported_operations(bridge):
     events = await snapshot(bridge)
     assert events[0]["data"]["notebook"]["operations"] == []
     request = edit(events)
-    assert (await send(bridge, request))["status"] == 403
-    save = {**request, "operation": "notebook.save", "body": {}}
-    assert (await send(bridge, save))["status"] == 403
+    save = {
+        "operation": "notebook.save",
+        "idempotency_key": "save",
+        "notebook_id": request["notebook_id"],
+    }
+    for call in (request, save):
+        reply = await send(bridge, call)
+        assert reply["problem"]["type"].endswith(":forbidden")
 
 
 async def test_invalid_calls(bridge):
     request = edit(await snapshot(bridge))
+    unnamed = {
+        key: value for key, value in request.items() if key != "notebook_id"
+    }
     for invalid in (
-        {**request, "body": "not a request"},
+        {**request, "body": "not an argument"},
         {**request, "operation": "notebook.missing"},
-        {**request, "params": {}},
+        # Only a host serves the catalog's tools.
+        {**unnamed, "operation": "notebook.create", "project_id": "p"},
+        unnamed,
     ):
         reply = await send(bridge, invalid)
-        assert reply["status"] == 400
-        assert reply["body"]["type"].endswith(":invalid-request")
-    assert json.loads(await bridge.notebook.call("{"))["status"] == 400
-    other = {**request, "params": {"notebook_id": "elsewhere"}}
-    assert (await send(bridge, other))["status"] == 404
+        assert reply["problem"]["status"] == 400
+        assert reply["problem"]["type"].endswith(":invalid-request")
+    malformed = json.loads(await bridge.notebook.call("{"))
+    assert malformed["problem"]["status"] == 400
+    other = {**request, "notebook_id": "elsewhere"}
+    assert (await send(bridge, other))["problem"]["type"].endswith(
+        ":not-found"
+    )
 
 
 async def test_kernel_ready_follows_the_snapshot(bridge):
@@ -368,16 +379,15 @@ async def test_live_notifications_reach_each_subscription_until_it_closes(
     assert bridge.session.consumers[2:] == [backend._notify]
 
 
-def save_call(bridge, key="save-1", if_match=None):
-    headers = {"idempotency-key": key}
-    if if_match is not None:
-        headers["if-match"] = if_match
-    return {
+def save_call(bridge, key="save-1", expected_etag=None):
+    call = {
         "operation": "notebook.save",
-        "params": {"notebook_id": bridge.notebook.id},
-        "headers": headers,
-        "body": {},
+        "idempotency_key": key,
+        "notebook_id": bridge.notebook.id,
     }
+    if expected_etag is not None:
+        call["expected_etag"] = expected_etag
+    return call
 
 
 async def test_save_keeps_newer_edits_and_kernel_updates(bridge):
@@ -410,8 +420,8 @@ async def test_save_keeps_newer_edits_and_kernel_updates(bridge):
     assert list(update.codes.values()) == ["x = 3"]
     release.set()
     reply = await saving
-    assert reply["status"] == 200
-    assert reply["body"]["document"]["saved_etag"] == saved_revision
+    assert reply["ok"], reply
+    assert reply["data"]["document"]["saved_etag"] == saved_revision
     assert notebook.document.etag != notebook.saved_etag
     assert list(bridge.session.app_manager.app.cell_manager.codes()) == [
         "x = 3"
@@ -434,13 +444,13 @@ async def test_failed_save_stays_dirty_and_can_retry(bridge):
     bridge.notebook.set_persistence(persist)
     request = save_call(bridge)
     count = len(events)
-    failed = await send(bridge, request)
-    assert failed["status"] == 409
-    assert "storage full" in failed["body"]["detail"]
+    failed = (await send(bridge, request))["problem"]
+    assert failed["type"].endswith(":conflict")
+    assert "storage full" in failed["detail"]
     assert notebook.saved_etag == saved != notebook.document.etag
     assert len(events) == count
     persist.side_effect = None
-    assert (await send(bridge, request))["status"] == 200
+    assert (await send(bridge, request))["ok"]
     assert notebook.saved_etag == notebook.document.etag
     assert persist.await_count == 2
 
@@ -470,9 +480,10 @@ async def test_save_serializes_writes_and_checks_revision_after_waiting(
     await asyncio.sleep(0)
     assert len(writes) == 1
     release.set()
-    assert (await first)["status"] == 200
-    assert (await stale)["status"] == 412
-    assert (await second)["status"] == 200
+    assert (await first)["ok"]
+    stale_problem = (await stale)["problem"]
+    assert stale_problem["type"].endswith(":precondition-failed")
+    assert (await second)["ok"]
     assert len(writes) == 2
     assert "x = 2" in writes[1]
     assert notebook.saved_etag == notebook.document.etag
@@ -485,31 +496,29 @@ async def test_host_edits_config_layout_and_reload(bridge):
         bridge,
         {
             "operation": "notebook.edit",
-            "params": {"notebook_id": bridge.notebook.id},
-            "headers": {"idempotency-key": "edit-1"},
-            "body": {
-                "changes": [
-                    {
-                        "kind": "put_cell",
-                        "base_etag": cell["etag"],
-                        "cell": {
-                            "id": cell["id"],
-                            "code": "x = 9",
-                            "name": "example",
-                            "config": cell["config"],
-                        },
+            "idempotency_key": "edit-1",
+            "notebook_id": bridge.notebook.id,
+            "changes": [
+                {
+                    "kind": "put_cell",
+                    "base_etag": cell["etag"],
+                    "cell": {
+                        "id": cell["id"],
+                        "code": "x = 9",
+                        "name": "example",
+                        "config": cell["config"],
                     },
-                    {
-                        "kind": "put_cell",
-                        "base_etag": None,
-                        "before": cell["id"],
-                        "cell": {"id": "new", "code": "y = 2"},
-                    },
-                ]
-            },
+                },
+                {
+                    "kind": "put_cell",
+                    "base_etag": None,
+                    "before": cell["id"],
+                    "cell": {"id": "new", "code": "y = 2"},
+                },
+            ],
         },
     )
-    assert edited["status"] == 200, edited
+    assert edited["ok"], edited
     await bridge.save_app_config(json.dumps({"config": {"width": "full"}}))
     layout = {"type": "slides", "data": {"slides": [[cell["id"]]]}}
     await bridge.notebook.set_layout(json.dumps(layout))
@@ -521,7 +530,7 @@ async def test_host_edits_config_layout_and_reload(bridge):
         await asyncio.to_thread(Path(filename).write_text, contents)
 
     bridge.notebook.set_persistence(persist)
-    assert (await send(bridge, save_call(bridge)))["status"] == 200
+    assert (await send(bridge, save_call(bridge)))["ok"]
     restored = AppFileManager(path)
     assert list(restored.app.cell_manager.codes()) == ["y = 2", "x = 9"]
     assert list(restored.app.cell_manager.names()) == ["_", "example"]
@@ -531,20 +540,18 @@ async def test_host_edits_config_layout_and_reload(bridge):
         bridge,
         {
             "operation": "notebook.edit",
-            "params": {"notebook_id": bridge.notebook.id},
-            "headers": {"idempotency-key": "edit-2"},
-            "body": {
-                "changes": [
-                    {
-                        "kind": "delete_cell",
-                        "id": "new",
-                        "base_etag": edited["body"]["cells"]["new"]["etag"],
-                    }
-                ]
-            },
+            "idempotency_key": "edit-2",
+            "notebook_id": bridge.notebook.id,
+            "changes": [
+                {
+                    "kind": "delete_cell",
+                    "id": "new",
+                    "base_etag": edited["data"]["cells"]["new"]["etag"],
+                }
+            ],
         },
     )
-    assert deleted["status"] == 200, deleted
+    assert deleted["ok"], deleted
     assert list(bridge.session.app_manager.app.cell_manager.codes()) == [
         "x = 9"
     ]
@@ -583,7 +590,7 @@ async def test_save_includes_kernel_document_edits(bridge):
             )
         )
     )
-    assert (await send(bridge, save_call(bridge)))["status"] == 200
+    assert (await send(bridge, save_call(bridge)))["ok"]
     contents, _filename = persist.call_args.args
     assert "y = 8" in contents
     assert list(bridge.session.app_manager.app.cell_manager.codes()) == [

@@ -503,7 +503,8 @@ def test_cell_run_request_and_results() -> None:
     request = json.loads(
         (FIXTURES / "run-cells-request.json").read_text(encoding="utf-8")
     )
-    assert request == {"cells": [{"id": "c3", "etag": cells["c3"]["etag"]}]}
+    msgspec.convert(request, protocol.RunRequest)
+    assert request["cells"] == [{"id": "c3", "etag": cells["c3"]["etag"]}]
     executions = {
         m["execution"]["id"]: m["execution"]
         for m in messages("run-cells.sse", "execution")
@@ -708,13 +709,13 @@ def test_cell_source_is_required_but_nullable_only_in_records() -> None:
     ids=lambda case: f"{case['schema']}: {case['name']}",
 )
 def test_execution_requests(case: dict[str, Any]) -> None:
-    body = msgspec.json.encode(case["body"])
+    # A case's body sits beside the arguments every notebook call carries.
+    arguments = {"idempotency_key": "k", "notebook_id": "n1", **case["body"]}
+    body = msgspec.json.encode(arguments)
     schema = getattr(protocol, case["schema"])
     if case["valid"]:
         decoded = msgspec.json.decode(body, type=schema)
-        assert (
-            msgspec.json.decode(msgspec.json.encode(decoded)) == case["body"]
-        )
+        assert msgspec.json.decode(msgspec.json.encode(decoded)) == arguments
     else:
         with pytest.raises(msgspec.ValidationError):
             msgspec.json.decode(body, type=schema)

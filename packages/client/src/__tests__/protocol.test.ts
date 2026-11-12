@@ -268,17 +268,25 @@ const requestCases: {
     "utf8",
   ),
 );
+/** The arguments every call on a notebook carries. */
+const call = { notebook_id: "n1", idempotency_key: "k" };
+
 it.each(requestCases)("validates $schema: $name", ({ schema, body, valid }) => {
-  expect(Protocol[schema].safeParse(body).success).toBe(valid);
+  const args =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? { ...call, ...body }
+      : body;
+  expect(Protocol[schema].safeParse(args).success).toBe(valid);
 });
 
 it("separates cell runs from scratch execution", () => {
-  expectTypeOf<{
-    cells: Protocol.RequestedCell[];
-  }>().toExtend<Protocol.RunRequest>();
-  expectTypeOf<{ code: string }>().toExtend<Protocol.ExecuteRequest>();
-  expectTypeOf<{ code: string }>().not.toExtend<Protocol.RunRequest>();
-  expectTypeOf<{
-    cells: Protocol.RequestedCell[];
-  }>().not.toExtend<Protocol.ExecuteRequest>();
+  type Call = typeof call;
+  expectTypeOf<
+    Call & { cells: Protocol.RequestedCell[] }
+  >().toExtend<Protocol.RunRequest>();
+  expectTypeOf<Call & { code: string }>().toExtend<Protocol.ExecuteRequest>();
+  expectTypeOf<Call & { code: string }>().not.toExtend<Protocol.RunRequest>();
+  expectTypeOf<
+    Call & { cells: Protocol.RequestedCell[] }
+  >().not.toExtend<Protocol.ExecuteRequest>();
 });

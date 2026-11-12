@@ -55,7 +55,6 @@ describe("document hooks", () => {
       .fn<FakeEdit>()
       .mockResolvedValueOnce({
         ok: true,
-        status: 200,
         data: { document: accepted.revision, cells: {} },
       })
       .mockImplementation(

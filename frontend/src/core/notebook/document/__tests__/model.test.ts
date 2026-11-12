@@ -14,7 +14,6 @@ import { cell, document, withCells } from "./fixtures";
 function response(confirmed: Document): ResultOf<"notebook.edit"> {
   return {
     ok: true,
-    status: 200,
     data: { document: confirmed.revision, cells: {} },
   };
 }

@@ -115,14 +115,16 @@ async function waitForFrame(frames, predicate) {
   throw new Error(`Timed out waiting for a host event: ${JSON.stringify(frames)}`);
 }
 
+/** Call a notebook operation with its tool's arguments, flat; it replies `{ok, data}` or `{ok, problem}`. */
+async function callOperation(notebook, operation, args) {
+  return JSON.parse(await notebook.call(JSON.stringify({ operation, ...args })));
+}
+
 async function testHostInputs(notebook, notebookId, frames) {
-  const call = async (operation, key, body, params = {}) =>
-    JSON.parse(await notebook.call(JSON.stringify({
-      operation,
-      params: { notebook_id: notebookId, ...params },
-      headers: { "idempotency-key": key },
-      body,
-    })));
+  const call = (operation, key, body, params = {}) =>
+    callOperation(notebook, operation, {
+      notebook_id: notebookId, idempotency_key: key, ...params, ...body,
+    });
 
   const answer = async (prompt, value, password = false) => {
     const { data: { input } } = await waitForFrame(frames, (frame) =>
@@ -135,8 +137,8 @@ async function testHostInputs(notebook, notebookId, frames) {
     );
     const answered = await reply();
     assert.deepEqual(answered, {
-      status: 200,
-      body: { ...input, status: "answered" },
+      ok: true,
+      data: { ...input, status: "answered" },
     });
     assert.deepEqual(await reply(), answered);
   };
@@ -155,10 +157,10 @@ async function testHostInputs(notebook, notebookId, frames) {
     "_blank = input('Empty: ')",
     "assert _secret == 'secret' and _blank == ''",
   ].join("\n") });
-  assert.equal(run.status, 202);
+  assert.equal(run.ok, true);
   await answer("Password: ", "secret", true);
   await answer("Empty: ", "");
-  await assertSucceeded(run.body.id);
+  await assertSucceeded(run.data.id);
   assert.doesNotMatch(
     JSON.stringify(frames.filter((frame) => frame.event === "input")),
     /secret/,
@@ -177,7 +179,7 @@ async function testHostInputs(notebook, notebookId, frames) {
     "    _thread.join()",
     "assert _answers == {'first': 'one', 'second': 'two'}",
   ].join("\n") });
-  assert.equal(concurrent.status, 202);
+  assert.equal(concurrent.ok, true);
   const values = { first: "one", second: "two" };
   for (const prompt of Object.keys(values)) {
     await waitForFrame(frames, (frame) =>
@@ -196,27 +198,24 @@ async function testHostInputs(notebook, notebookId, frames) {
       await answer(prompt, value);
     }
   }
-  await assertSucceeded(concurrent.body.id);
+  await assertSucceeded(concurrent.data.id);
 }
 
 async function testIdleInterrupt(pyodide, notebook, notebookId, frames) {
   const buffer = new Uint8Array(new SharedArrayBuffer(1));
   pyodide.setInterruptBuffer(buffer);
-  const call = (operation, key, body) => notebook.call(JSON.stringify({
-    operation,
-    params: { notebook_id: notebookId },
-    headers: { "idempotency-key": key },
-    body,
-  }));
+  const call = (operation, key, body) => callOperation(notebook, operation, {
+    notebook_id: notebookId, idempotency_key: key, ...body,
+  });
   try {
     buffer[0] = 2;
-    const receipt = JSON.parse(await call("runtime.interrupt", "idle-interrupt"));
-    assert.equal(receipt.status, 202);
+    const receipt = await call("runtime.interrupt", "idle-interrupt");
+    assert.equal(receipt.ok, true);
     assert.equal(buffer[0], 0, "The acknowledgement must not leave a pending signal");
-    const run = JSON.parse(await call("runtime.execute", "after-idle-interrupt", { code: "42" }));
-    assert.equal(run.status, 202);
+    const run = await call("runtime.execute", "after-idle-interrupt", { code: "42" });
+    assert.equal(run.ok, true);
     const completed = await waitForFrame(frames, (frame) =>
-      frame.event === "run" && frame.data.run.id === run.body.id &&
+      frame.event === "run" && frame.data.run.id === run.data.id &&
       frame.data.run.status === "completed",
     );
     assert.equal(completed.data.run.outcome, "succeeded");
@@ -435,37 +434,33 @@ json.dumps(result)
       assert.equal(frames.at(-1).event, "ready");
       const cell = frames.find((frame) => frame.event === "cell").data.cell;
       await testIdleInterrupt(pyodide, notebook, cell.notebook_id, frames);
-      const call = JSON.stringify({
-        operation: "notebook.edit",
-        params: { notebook_id: cell.notebook_id },
-        headers: { "idempotency-key": "wasm-acceptance-edit" },
-        body: { changes: [{
+      const edit = () => callOperation(notebook, "notebook.edit", {
+        notebook_id: cell.notebook_id,
+        idempotency_key: "wasm-acceptance-edit",
+        changes: [{
           kind: "put_cell", base_etag: cell.etag,
           cell: { id: cell.id, code: "x = 7", name: cell.name, config: cell.config },
-        }] },
+        }],
       });
-      const reply = JSON.parse(await notebook.call(call));
-      assert.equal(reply.status, 200);
-      assert.deepEqual(frames.at(-1).data.document, reply.body.document);
+      const reply = await edit();
+      assert.equal(reply.ok, true);
+      assert.deepEqual(frames.at(-1).data.document, reply.data.document);
       assert.equal(frames.at(-2).data.cell.code, "x = 7");
       assert.equal(frames.at(-1).data.request_id, "wasm-acceptance-edit");
       const count = frames.length;
-      assert.deepEqual(JSON.parse(await notebook.call(call)), reply);
+      assert.deepEqual(await edit(), reply);
       assert.equal(frames.length, count);
       assert.equal(pyodide.runPython("list(session.app_manager.app.cell_manager.codes())[0]"), "x = 7");
       notebook.set_persistence(async (contents, filename) => {
         await Promise.resolve();
         pyodide.FS.writeFile(filename, contents);
       });
-      const save = JSON.stringify({
-        operation: "notebook.save",
-        params: { notebook_id: cell.notebook_id },
-        headers: { "idempotency-key": "wasm-acceptance-save" },
-        body: {},
+      const saved = await callOperation(notebook, "notebook.save", {
+        notebook_id: cell.notebook_id,
+        idempotency_key: "wasm-acceptance-save",
       });
-      const saved = JSON.parse(await notebook.call(save));
-      assert.equal(saved.status, 200);
-      assert.equal(saved.body.document.etag, saved.body.document.saved_etag);
+      assert.equal(saved.ok, true);
+      assert.equal(saved.data.document.etag, saved.data.document.saved_etag);
       assert.match(
         pyodide.FS.readFile("/home/pyodide/test_notebook.py", { encoding: "utf8" }),
         /x = 7/,

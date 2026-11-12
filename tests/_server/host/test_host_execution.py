@@ -1,18 +1,17 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Host commands executed by real sessions and kernels."""
+"""Host tools served by real sessions and kernels."""
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from marimo._core.code import code_fingerprint
 from marimo._session.notebook import AppFileManager
 from marimo._session.requests import InstantiateNotebookRequest
-from tests._server.host.drive import finished, wait_for
-from tests._server.host.live import key, open_host
+from tests._server.host.drive import call, wait_for
+from tests._server.host.live import open_host
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -44,6 +43,58 @@ async def live_host(
         yield host
 
 
+def run_outcome(stream: Response, run_id: str) -> str | None:
+    return next(
+        (
+            r["data"]["run"]["outcome"]
+            for r in reversed(stream.records)
+            if r.get("data", {}).get("run", {}).get("id") == run_id
+            and r["data"]["run"]["status"] == "completed"
+        ),
+        None,
+    )
+
+
+async def completed(stream: Response, run_id: str) -> str:
+    """Wait for the run to complete on the stream, and return its outcome."""
+    await wait_for(stream, lambda s: run_outcome(s, run_id) is not None)
+    outcome = run_outcome(stream, run_id)
+    assert outcome is not None
+    return outcome
+
+
+async def execute(
+    app: Starlette, notebook_id: str, key: str, code: str
+) -> dict[str, Any]:
+    """Execute `code` in the notebook, returning the run it was accepted as."""
+    accepted = await call(
+        app,
+        "runtime.execute",
+        idempotency_key=key,
+        notebook_id=notebook_id,
+        code=code,
+    )
+    assert accepted.ok, accepted.problem
+    run: dict[str, Any] = accepted.data
+    return run
+
+
+async def run_cell(
+    app: Starlette, notebook_id: str, key: str, cell: Any
+) -> dict[str, Any]:
+    """Run one cell as it was read, returning the run it was accepted as."""
+    accepted = await call(
+        app,
+        "runtime.run",
+        idempotency_key=key,
+        notebook_id=notebook_id,
+        cells=[{"id": cell.id, "etag": cell.etag}],
+    )
+    assert accepted.ok, accepted.problem
+    run: dict[str, Any] = accepted.data
+    return run
+
+
 async def test_move_preserves_the_running_notebook(
     live_host: tuple[Starlette, str, Response], tmp_path: Path
 ) -> None:
@@ -54,38 +105,22 @@ async def test_move_preserves_the_running_notebook(
     session = next(iter(app.state.session_manager.sessions.values()))
     cells = list(session.app_file_manager.app.cell_manager.codes())
 
-    moved = await finished(
+    moved = await call(
         app,
-        "PATCH",
-        f"/notebooks/{notebook_id}",
-        headers=key("move"),
-        body=b'{"path":"moved.py"}',
+        "notebook.update",
+        idempotency_key="move",
+        notebook_id=notebook_id,
+        path="moved.py",
     )
-    assert moved.status == 200
-    assert (moved.json()["id"], moved.json()["path"]) == (
-        notebook_id,
-        "moved.py",
-    )
+    assert moved.ok, moved.problem
+    assert (moved.data["id"], moved.data["path"]) == (notebook_id, "moved.py")
     assert not source.exists()
     assert list(AppFileManager(str(target)).app.cell_manager.codes()) == cells
     assert session.app_file_manager.path == str(target)
     assert (await host.notebook(notebook_id)).runtime == runtime
 
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("after-move"),
-        body=b'{"code":"6 * 7"}',
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("status") == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "after-move", "6 * 7")
+    await completed(events, accepted["id"])
     [outcome] = [
         r["data"]["execution"]["outcome"]
         for r in events.records
@@ -123,21 +158,8 @@ async def test_scratch_outcomes_from_the_kernel(
     value: str | None,
 ) -> None:
     app, notebook_id, events = live_host
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("run"),
-        body=json.dumps({"code": code}).encode(),
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("status") == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "run", code)
+    await completed(events, accepted["id"])
     [execution] = [
         r["data"]["execution"]
         for r in events.records
@@ -181,65 +203,31 @@ async def test_cell_runs_preserve_order_with_later_deletions(
     notebook = await app.state.host_context.bridge.host.notebook(notebook_id)
     cell = next(iter(notebook.document))
     session = next(iter(app.state.session_manager.sessions.values()))
-    runs = f"/notebooks/{notebook_id}/runtime/runs"
-    execute = f"/notebooks/{notebook_id}/runtime/execute"
-    body = json.dumps({"cells": [{"id": cell.id, "etag": cell.etag}]}).encode()
-
-    async def completed(response: Response) -> None:
-        assert response.status == 202, response.body
-        await wait_for(
-            events,
-            lambda stream: any(
-                r.get("data", {}).get("run", {}).get("id")
-                == response.json()["id"]
-                and r["data"]["run"]["status"] == "completed"
-                for r in stream.records
-            ),
-        )
 
     await completed(
-        await finished(app, "POST", runs, headers=key("warm"), body=body)
+        events, (await run_cell(app, notebook_id, "warm", cell))["id"]
     )
     # A scratch client must not let a later edit overtake an accepted cell run.
     async with session.scratchpad_lock:
-        accepted = await finished(
-            app, "POST", runs, headers=key("run"), body=body
-        )
-        assert accepted.status == 202, accepted.body
-        change = {"kind": "delete_cell", "id": cell.id, "base_etag": "*"}
-        edited = await finished(
+        accepted = await run_cell(app, notebook_id, "run", cell)
+        edited = await call(
             app,
-            "POST",
-            f"/notebooks/{notebook_id}/edits",
-            headers=key("edit"),
-            body=json.dumps({"changes": [change]}).encode(),
+            "notebook.edit",
+            idempotency_key="edit",
+            notebook_id=notebook_id,
+            changes=[{"kind": "delete_cell", "id": cell.id, "base_etag": "*"}],
         )
-        assert edited.status == 200, edited.body
-    await completed(accepted)
+        assert edited.ok, edited.problem
+    await completed(events, accepted["id"])
 
-    assertion = f"assert {cell.id!r} not in _graph.cells"
-    checked = await finished(
+    checked = await execute(
         app,
-        "POST",
-        execute,
-        headers=key("check-graph"),
-        body=json.dumps(
-            {
-                "code": "from marimo._runtime.context import get_context as _ctx\n"
-                "_graph = _ctx().graph\n" + assertion
-            }
-        ).encode(),
+        notebook_id,
+        "check-graph",
+        "from marimo._runtime.context import get_context as _ctx\n"
+        f"assert {cell.id!r} not in _ctx().graph.cells",
     )
-    await completed(checked)
-    assert (
-        next(
-            r["data"]["run"]["outcome"]
-            for r in reversed(events.records)
-            if r.get("data", {}).get("run", {}).get("id")
-            == checked.json()["id"]
-        )
-        == "succeeded"
-    )
+    assert await completed(events, checked["id"]) == "succeeded"
     assert notebook.document.cell(cell.id) is None
 
 
@@ -272,48 +260,22 @@ def run_transitions(stream: Response, *run_ids: str) -> list[tuple[str, str]]:
     ]
 
 
-def run_outcome(stream: Response, run_id: str) -> str | None:
-    return next(
-        (
-            r["data"]["run"]["outcome"]
-            for r in reversed(stream.records)
-            if r.get("data", {}).get("run", {}).get("id") == run_id
-            and r["data"]["run"]["status"] == "completed"
-        ),
-        None,
-    )
-
-
-def cell_target(cell: object) -> bytes:
-    return json.dumps(
-        {"cells": [{"id": cell.id, "etag": cell.etag}]}  # type: ignore[attr-defined]
-    ).encode()
-
-
 async def test_runs_accepted_while_busy_start_in_order(
     gated_host: tuple[Starlette, str, Response, Path],
 ) -> None:
     app, notebook_id, events, gate = gated_host
     notebook = await app.state.host_context.bridge.host.notebook(notebook_id)
     slow, quick = notebook.document
-    runs = f"/notebooks/{notebook_id}/runtime/runs"
 
-    first = await finished(
-        app, "POST", runs, headers=key("first"), body=cell_target(slow)
-    )
-    assert first.status == 202, first.body
-    first_id = first.json()["id"]
+    first_id = (await run_cell(app, notebook_id, "first", slow))["id"]
     await wait_for(
         events, lambda s: (first_id, "running") in run_transitions(s, first_id)
     )
 
-    second = await finished(
-        app, "POST", runs, headers=key("second"), body=cell_target(quick)
-    )
-    assert second.status == 202, second.body
-    second_id = second.json()["id"]
-    assert second.json()["status"] == "queued"
-    assert second.json()["started_at"] is None
+    second = await run_cell(app, notebook_id, "second", quick)
+    second_id = second["id"]
+    assert second["status"] == "queued"
+    assert second["started_at"] is None
     await wait_for(
         events,
         lambda s: (second_id, "queued") in run_transitions(s, second_id),
@@ -336,55 +298,40 @@ async def test_interrupting_a_queued_run_cancels_it_before_it_starts(
     app, notebook_id, events, gate = gated_host
     notebook = await app.state.host_context.bridge.host.notebook(notebook_id)
     slow, quick = notebook.document
-    runs = f"/notebooks/{notebook_id}/runtime/runs"
-    execute = f"/notebooks/{notebook_id}/runtime/execute"
 
-    first = await finished(
-        app, "POST", runs, headers=key("first"), body=cell_target(slow)
-    )
-    assert first.status == 202, first.body
-    first_id = first.json()["id"]
+    first_id = (await run_cell(app, notebook_id, "first", slow))["id"]
     await wait_for(
         events, lambda s: (first_id, "running") in run_transitions(s, first_id)
     )
-    queued = await finished(
-        app, "POST", runs, headers=key("queued"), body=cell_target(quick)
-    )
-    assert queued.status == 202, queued.body
-    queued_id = queued.json()["id"]
+    queued_id = (await run_cell(app, notebook_id, "queued", quick))["id"]
     await wait_for(
         events,
         lambda s: (queued_id, "queued") in run_transitions(s, queued_id),
     )
 
-    cancelled = await finished(
-        app, "DELETE", f"{runs}/{queued_id}", headers=key("cancel")
+    cancelled = await call(
+        app,
+        "runtime.cancel",
+        idempotency_key="cancel",
+        notebook_id=notebook_id,
+        run_id=queued_id,
     )
-    assert cancelled.status == 202, cancelled.body
+    assert cancelled.ok, cancelled.problem
     assert run_outcome(events, first_id) is None
 
     # The kernel reaches the cancellation once the first run lets it go.
     gate.touch()
-    await wait_for(events, lambda s: run_outcome(s, queued_id) is not None)
+    assert await completed(events, queued_id) == "interrupted"
     assert run_outcome(events, first_id) == "succeeded"
-    assert run_outcome(events, queued_id) == "interrupted"
     assert not any(
         r.get("data", {}).get("execution", {}).get("run_id") == queued_id
         for r in events.records
     )
 
-    checked = await finished(
-        app,
-        "POST",
-        execute,
-        headers=key("check"),
-        body=json.dumps({"code": "assert 'quick' not in globals()"}).encode(),
+    checked = await execute(
+        app, notebook_id, "check", "assert 'quick' not in globals()"
     )
-    assert checked.status == 202
-    await wait_for(
-        events, lambda s: run_outcome(s, checked.json()["id"]) is not None
-    )
-    assert run_outcome(events, checked.json()["id"]) == "succeeded"
+    assert await completed(events, checked["id"]) == "succeeded"
 
 
 @pytest.mark.parametrize(
@@ -403,22 +350,8 @@ async def test_host_cell_input_fails_without_waiting_for_stdin(
     app, notebook_id, events = live_host
     notebook = await app.state.host_context.bridge.host.notebook(notebook_id)
     cell = next(iter(notebook.document))
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/runs",
-        headers=key("run"),
-        body=json.dumps({"cells": [{"id": cell.id}]}).encode(),
-    )
-    assert accepted.status == 202, accepted.body
-    await wait_for(
-        events,
-        lambda stream: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in stream.records
-        ),
-    )
+    accepted = await run_cell(app, notebook_id, "run", cell)
+    await completed(events, accepted["id"])
     [execution] = [
         r["data"]["execution"]
         for r in events.records
@@ -437,7 +370,6 @@ async def test_background_output_after_a_scratch_run_is_dropped(
     current execution to join and never reaches clients.
     """
     app, notebook_id, events = live_host
-    execute = f"/notebooks/{notebook_id}/runtime/execute"
     code = """import builtins
 import threading
 import marimo as mo
@@ -449,51 +381,15 @@ def worker():
     builtins._host_test_printed.set()
 mo.Thread(target=worker).start()
 """
-    first = await finished(
+    first = await execute(app, notebook_id, "first", code)
+    await completed(events, first["id"])
+    second = await execute(
         app,
-        "POST",
-        execute,
-        headers=key("first"),
-        body=json.dumps({"code": code}).encode(),
+        notebook_id,
+        "second",
+        "import builtins\nbuiltins._host_test_gate.set()\nassert builtins._host_test_printed.wait(5)\ndel builtins._host_test_gate, builtins._host_test_printed",
     )
-    assert first.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == first.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
-    second = await finished(
-        app,
-        "POST",
-        execute,
-        headers=key("second"),
-        body=json.dumps(
-            {
-                "code": "import builtins\nbuiltins._host_test_gate.set()\nassert builtins._host_test_printed.wait(5)\ndel builtins._host_test_gate, builtins._host_test_printed"
-            }
-        ).encode(),
-    )
-    assert second.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == second.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
-    assert (
-        next(
-            r["data"]["run"]["outcome"]
-            for r in reversed(events.records)
-            if r.get("data", {}).get("run", {}).get("id")
-            == second.json()["id"]
-        )
-        == "succeeded"
-    )
+    assert await completed(events, second["id"]) == "succeeded"
     console = [
         r["data"]["console"]
         for r in events.records
@@ -508,54 +404,30 @@ async def test_queued_cancellation_never_executes_the_code(
     app, notebook_id, events = live_host
     session = next(iter(app.state.session_manager.sessions.values()))
     marker = tmp_path / "executed"
-    runs = f"/notebooks/{notebook_id}/runtime/runs"
-    execute = f"/notebooks/{notebook_id}/runtime/execute"
     async with session.scratchpad_lock:
-        accepted = await finished(
+        accepted = await execute(
             app,
-            "POST",
-            execute,
-            headers=key("canceled"),
-            body=json.dumps(
-                {
-                    "code": f"__import__('pathlib').Path({str(marker)!r}).touch()"
-                }
-            ).encode(),
+            notebook_id,
+            "canceled",
+            f"__import__('pathlib').Path({str(marker)!r}).touch()",
         )
-        assert accepted.status == 202
-        interrupted = await finished(
+        cancelled = await call(
             app,
-            "DELETE",
-            runs + "/" + accepted.json()["id"],
-            headers=key("interrupt"),
+            "runtime.cancel",
+            idempotency_key="interrupt",
+            notebook_id=notebook_id,
+            run_id=accepted["id"],
         )
-        assert interrupted.status == 202
-        await wait_for(
-            events,
-            lambda response: any(
-                r.get("data", {}).get("run", {}).get("status") == "completed"
-                for r in response.records
-            ),
-        )
+        assert cancelled.ok, cancelled.problem
+        await completed(events, accepted["id"])
     [outcome] = [
         r["data"]["execution"]["outcome"]
         for r in events.records
         if r.get("data", {}).get("execution", {}).get("status") == "completed"
     ]
     assert outcome == {"kind": "interrupted"}
-    following = await finished(
-        app, "POST", execute, headers=key("next"), body=b'{"code":"42"}'
-    )
-    assert following.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id")
-            == following.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    following = await execute(app, notebook_id, "next", "42")
+    await completed(events, following["id"])
     assert not marker.exists()
 
 
@@ -563,45 +435,29 @@ async def test_run_retries_return_the_result_even_after_restart(
     live_host: tuple[Starlette, str, Response], tmp_path: Path
 ) -> None:
     app, notebook_id, events = live_host
-    runtime = f"/notebooks/{notebook_id}/runtime"
-    runs = runtime + "/execute"
     marker = tmp_path / "executions"
-    body = json.dumps(
-        {
-            "code": (
-                f"_marker = __import__('pathlib').Path({str(marker)!r})\n"
-                "_marker.write_text((_marker.read_text() if _marker.exists() else '') + 'x')"
-            )
-        }
-    ).encode()
-    accepted = await finished(
-        app, "POST", runs, headers=key("once"), body=body
+    code = (
+        f"_marker = __import__('pathlib').Path({str(marker)!r})\n"
+        "_marker.write_text((_marker.read_text() if _marker.exists() else '') + 'x')"
     )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("status") == "completed"
-            for r in response.records
-        ),
-    )
-    [completed] = [
+    accepted = await execute(app, notebook_id, "once", code)
+    await completed(events, accepted["id"])
+    [done] = [
         r["data"]["run"]
         for r in events.records
         if r.get("data", {}).get("run", {}).get("status") == "completed"
     ]
-    replayed = await finished(
-        app, "POST", runs, headers=key("once"), body=body
-    )
-    assert replayed.status == 202
-    assert replayed.json() == completed
+    assert await execute(app, notebook_id, "once", code) == done
 
-    restarted = await finished(
-        app, "POST", runtime + "/restart", headers=key("restart")
+    restarted = await call(
+        app,
+        "runtime.restart",
+        idempotency_key="restart",
+        notebook_id=notebook_id,
     )
-    assert restarted.status == 202
-    new_runtime_id = restarted.json()["id"]
-    assert restarted.json()["status"] == "starting"
+    assert restarted.ok, restarted.problem
+    new_runtime_id = restarted.data["id"]
+    assert restarted.data["status"] == "starting"
     await wait_for(
         events,
         lambda response: any(
@@ -612,11 +468,7 @@ async def test_run_retries_return_the_result_even_after_restart(
         ),
         timeout=15,
     )
-    replayed = await finished(
-        app, "POST", runs, headers=key("once"), body=body
-    )
-    assert replayed.status == 202
-    assert replayed.json() == completed
+    assert await execute(app, notebook_id, "once", code) == done
     assert marker.read_text() == "x"
 
 
@@ -701,22 +553,10 @@ async def test_scratch_run_includes_the_full_reactive_cycle(
 ) -> None:
     app, notebook_id, events = live_host
     await initialize_cascade(app, events)
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("cascade"),
-        body=json.dumps({"code": f"counter.value = {value}"}).encode(),
+    accepted = await execute(
+        app, notebook_id, "cascade", f"counter.value = {value}"
     )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    await completed(events, accepted["id"])
     records = [
         r
         for r in events.records
@@ -735,7 +575,7 @@ async def test_scratch_run_includes_the_full_reactive_cycle(
     assert root["cell_id"] is None
     assert root["outcome"]["kind"] == "value"
     assert all(
-        e["run_id"] == accepted.json()["id"]
+        e["run_id"] == accepted["id"]
         and e["cell_id"] is not None
         and e["caused_by"] == root["id"]
         for e in downstream
@@ -779,24 +619,9 @@ async def test_detached_reactivity_starts_a_new_run(
         ("origin", origin),
         ("release", "gate.set()"),
     ]:
-        accepted = await finished(
-            app,
-            "POST",
-            f"/notebooks/{notebook_id}/runtime/execute",
-            headers=key(request_id),
-            body=json.dumps({"code": code}).encode(),
-        )
-        assert accepted.status == 202
-        run_id = accepted.json()["id"]
+        run_id = (await execute(app, notebook_id, request_id, code))["id"]
         submitted[request_id] = run_id
-        await wait_for(
-            events,
-            lambda response, run_id=run_id: any(
-                r.get("data", {}).get("run", {}).get("id") == run_id
-                and r["data"]["run"]["status"] == "completed"
-                for r in response.records
-            ),
-        )
+        await completed(events, run_id)
     await wait_for(
         events,
         lambda response: any(
@@ -816,21 +641,18 @@ async def test_detached_reactivity_starts_a_new_run(
         == printed["execution_id"]
     )
     assert execution["run_id"] not in submitted.values()
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == execution["run_id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
-    origin = [
+    await completed(events, execution["run_id"])
+    origin_runs = [
         r["data"]["run"]
         for r in events.records
         if r.get("data", {}).get("run", {}).get("id") == submitted["origin"]
     ]
-    assert [r["status"] for r in origin] == ["queued", "running", "completed"]
-    assert origin[-1]["outcome"] == "succeeded"
+    assert [r["status"] for r in origin_runs] == [
+        "queued",
+        "running",
+        "completed",
+    ]
+    assert origin_runs[-1]["outcome"] == "succeeded"
 
 
 async def test_nested_evaluations_keep_the_scratch_result_and_skipped_child(
@@ -846,28 +668,13 @@ async def test_nested_evaluations_keep_the_scratch_result_and_skipped_child(
         "    ctx.run_cell(b)\n"
         "42"
     )
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("nested"),
-        body=json.dumps({"code": code}).encode(),
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "nested", code)
+    assert await completed(events, accepted["id"]) == "failed"
     records = [
         r
         for r in events.records
         if r.get("data", {}).get("request_id") == "nested"
     ]
-    assert records[-1]["data"]["run"]["outcome"] == "failed"
     executions = [
         r["data"]["execution"]
         for r in records
@@ -897,22 +704,8 @@ async def test_a_fixed_cell_replaces_its_failed_compilation(
         "await cm.get_context().execute_command(ExecuteCellsCommand(execution_requests=[ExecuteCellCommand(cell_id='child', code='x = 42')]))\n"
         "42"
     )
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("retry"),
-        body=json.dumps({"code": code}).encode(),
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "retry", code)
+    assert await completed(events, accepted["id"]) == "failed"
     executions = [
         r["data"]["execution"]
         for r in events.records
@@ -926,12 +719,6 @@ async def test_a_fixed_cell_replaces_its_failed_compilation(
         (code_fingerprint("x = 42"), "value"),
     ]
     assert len({e["id"] for e in executions}) == 2
-    runs = [
-        r["data"]["run"]
-        for r in events.records
-        if r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-    ]
-    assert runs[-1]["outcome"] == "failed"
 
 
 async def test_nested_commands_can_run_a_cell_queued_by_the_outer_command(
@@ -951,22 +738,8 @@ async def test_nested_commands_can_run_a_cell_queued_by_the_outer_command(
         "await cm.get_context().execute_command(ExecuteCellsCommand("
         f"execution_requests=[ExecuteCellCommand(cell_id='a', code={inner!r}), ExecuteCellCommand(cell_id='b', code='print(x)')]))"
     )
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("nested-queue"),
-        body=json.dumps({"code": code}).encode(),
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "nested-queue", code)
+    assert await completed(events, accepted["id"]) == "succeeded"
     executions = [
         r["data"]["execution"]
         for r in events.records
@@ -975,12 +748,6 @@ async def test_nested_commands_can_run_a_cell_queued_by_the_outer_command(
     ]
     assert [e["outcome"]["kind"] for e in executions] == ["value", "value"]
     assert len({e["id"] for e in executions}) == 2
-    runs = [
-        r["data"]["run"]
-        for r in events.records
-        if r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-    ]
-    assert runs[-1]["outcome"] == "succeeded"
 
 
 @pytest.mark.parametrize("nested_scratch", [False, True])
@@ -1007,26 +774,11 @@ async def test_awaited_commands_join_the_enclosing_run(
         f"await cm.get_context().execute_command({command})\n{sibling}42"
     )
     before = len(events.records)
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("awaited"),
-        body=json.dumps({"code": code}).encode(),
-    )
-    assert accepted.status == 202
-    await wait_for(
-        events,
-        lambda response: any(
-            r.get("data", {}).get("run", {}).get("id") == accepted.json()["id"]
-            and r["data"]["run"]["status"] == "completed"
-            for r in response.records
-        ),
-    )
+    accepted = await execute(app, notebook_id, "awaited", code)
+    assert await completed(events, accepted["id"]) == "failed"
     records = events.records[before:]
     runs = [r["data"]["run"] for r in records if r.get("event") == "run"]
-    assert {r["id"] for r in runs} == {accepted.json()["id"]}
-    assert runs[-1]["outcome"] == "failed"
+    assert {r["id"] for r in runs} == {accepted["id"]}
     executions = [
         r["data"]["execution"]
         for r in records
@@ -1042,7 +794,7 @@ async def test_awaited_commands_join_the_enclosing_run(
     assert "42" in root["outcome"]["display"]["data"]
     assert child["outcome"]["kind"] == "error"
     assert child["code_fingerprint"] == code_fingerprint(child_code)
-    assert all(e["run_id"] == accepted.json()["id"] for e in executions)
+    assert all(e["run_id"] == accepted["id"] for e in executions)
 
 
 @pytest.mark.parametrize(
@@ -1069,14 +821,14 @@ async def test_rename_reactivity_completes_its_run(
         ),
     )
     before = len(events.records)
-    moved = await finished(
+    moved = await call(
         app,
-        "PATCH",
-        f"/notebooks/{notebook_id}",
-        headers=key("rename"),
-        body=b'{"path":"renamed.py"}',
+        "notebook.update",
+        idempotency_key="rename",
+        notebook_id=notebook_id,
+        path="renamed.py",
     )
-    assert moved.status == 200
+    assert moved.ok, moved.problem
     await wait_for(
         events,
         lambda response: any(
@@ -1090,11 +842,4 @@ async def test_rename_reactivity_completes_its_run(
         if r.get("event") == "run"
     ]
     assert runs[-1]["outcome"] == "succeeded"
-    accepted = await finished(
-        app,
-        "POST",
-        f"/notebooks/{notebook_id}/runtime/execute",
-        headers=key("after-rename"),
-        body=b'{"code":"42"}',
-    )
-    assert accepted.status == 202
+    await execute(app, notebook_id, "after-rename", "42")

@@ -7,14 +7,9 @@ import queue
 import socket
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
-from marimo._server.host import (
-    ATTACHMENT_IDENTITY,
-    ATTACHMENT_KIND,
-    ATTACHMENT_NAME,
-    HOST_API_PATH,
-)
+from marimo._server.host import HOST_API_PATH
 
 if TYPE_CHECKING:
     import threading
@@ -127,9 +122,7 @@ def _endpoint_url(url: str, path: str) -> str:
     ).geturl()
 
 
-def iter_sse(
-    lines: Iterable[bytes], *, heartbeats: bool = False
-) -> Iterator[SSEEvent]:
+def iter_sse(lines: Iterable[bytes]) -> Iterator[SSEEvent]:
     name = "message"
     data: list[str] = []
     cursor: str | None = None
@@ -143,8 +136,6 @@ def iter_sse(
             data = []
             continue
         if line.startswith(":"):
-            if heartbeats:
-                yield SSEEvent(name="heartbeat", data="")
             continue
 
         field, separator, value = line.partition(":")
@@ -405,32 +396,73 @@ class EventStream:
 def open_events(
     *,
     url: str,
-    notebook: str,
-    token: str | None,
-    identity: str,
     name: str,
-    cursor: str | None = None,
-    kind: str = "agent",
-    types: str = "custom,attachment",
+    arguments: dict[str, object],
+    token: str | None,
     read_timeout: float | None = 45,
 ) -> EventStream:
-    headers = {
-        ATTACHMENT_IDENTITY: identity,
-        ATTACHMENT_KIND: kind,
-        ATTACHMENT_NAME: name,
-    }
-    if token is not None:
-        headers["Authorization"] = f"Bearer {token}"
-    if cursor is not None:
-        headers["Last-Event-ID"] = cursor
-    return open_response(
-        method="GET",
-        url=_endpoint_url(url, f"/notebooks/{quote(notebook, safe='')}/events")
-        + f"?types={types}",
-        headers=headers,
-        body=None,
+    """Subscribe to one of the host's events at its `/mcp`.
+
+    Read the subscription's events with `iter_events`. A host that refuses
+    the subscription answers at once, which raises here.
+    """
+    stream = open_response(
+        method="POST",
+        url=_endpoint_url(url, "/mcp"),
+        headers=_mcp_headers("events/stream", name, token, stream=True),
+        body=_mcp_body("events/stream", name, arguments),
         read_timeout=read_timeout,
     )
+    if stream.response.getheader("Content-Type", "").startswith(
+        "application/json"
+    ):
+        try:
+            payload = json.load(stream.response)
+        except (OSError, UnicodeError, ValueError, http.client.HTTPException):
+            payload = None
+        finally:
+            stream.close()
+        error = payload.get("error") if isinstance(payload, dict) else None
+        raise _refusal(error if isinstance(error, dict) else {})
+    return stream
+
+
+def iter_events(
+    lines: Iterable[bytes],
+) -> Iterator[SSEEvent]:
+    """The host's events in an `events/stream` response, as named events."""
+    for frame in iter_sse(lines):
+        message = json.loads(frame.data)
+        method = message.get("method")
+        params = message.get("params") or {}
+        if method == "notifications/events/event":
+            event = params["data"]
+            yield SSEEvent(
+                name=event["event"],
+                data=json.dumps(event["data"]),
+                id=event.get("id"),
+            )
+        elif method == "notifications/events/terminated":
+            raise _refusal(params.get("error") or {})
+        elif "error" in message:
+            raise _refusal(message["error"])
+
+
+def _refusal(error: dict[str, object]) -> PairError:
+    """The error a refused or ended subscription describes."""
+    data = error.get("data")
+    problem = data.get("problem") if isinstance(data, dict) else None
+    if not isinstance(problem, dict):
+        message = error.get("message")
+        return PairError(
+            str(message) if message else "The host ended the stream."
+        )
+    detail = str(problem.get("detail") or problem.get("title") or "")
+    if problem.get("type") == "urn:marimo:problem:not-found":
+        return StaleNotebookError(detail or "Unknown notebook.")
+    if problem.get("status") in (401, 403):
+        return PairError("Authentication failed.")
+    return PairError(detail or "The host ended the stream.")
 
 
 @dataclass(frozen=True)
@@ -482,6 +514,42 @@ def resolve_host(url: str, *, root: Path | None = None) -> HostEndpoint:
 _PROTOCOL_VERSION = "2026-07-28"
 
 
+def _mcp_headers(
+    method: str, name: str, token: str | None, *, stream: bool = False
+) -> dict[str, str]:
+    """The headers of an MCP request, which mirror its method and name."""
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+        if stream
+        else "application/json",
+        "MCP-Protocol-Version": _PROTOCOL_VERSION,
+        "Mcp-Method": method,
+        "Mcp-Name": name,
+    }
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _mcp_body(method: str, name: str, arguments: dict[str, object]) -> bytes:
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": {
+                "name": name,
+                "arguments": arguments,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": _PROTOCOL_VERSION,
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                },
+            },
+        }
+    ).encode()
+
+
 def call_tool(
     *,
     url: str,
@@ -491,33 +559,11 @@ def call_tool(
 ) -> object:
     """Call one of the editor's tools and return its structured result."""
     request_url = _endpoint_url(url, "/api/mcp")
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "MCP-Protocol-Version": _PROTOCOL_VERSION,
-        "Mcp-Method": "tools/call",
-        "Mcp-Name": name,
-    }
-    if token is not None:
-        headers["Authorization"] = f"Bearer {token}"
-    body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": name,
-            "arguments": arguments or {},
-            "_meta": {
-                "io.modelcontextprotocol/protocolVersion": _PROTOCOL_VERSION,
-                "io.modelcontextprotocol/clientCapabilities": {},
-            },
-        },
-    }
     response = open_response(
         method="POST",
         url=request_url,
-        headers=headers,
-        body=json.dumps(body).encode(),
+        headers=_mcp_headers("tools/call", name, token),
+        body=_mcp_body("tools/call", name, arguments or {}),
     )
     unexpected = f"Unexpected response from {display_url(request_url)}."
     try:

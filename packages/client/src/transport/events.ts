@@ -1,9 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import type * as Protocol from "../protocol.ts";
-import type { ClientOptions } from "../request.ts";
 import { type Transport, StreamStopped } from "./frame.ts";
-import { sse } from "./sse.ts";
 import {
   type StreamEvent,
   EventStream,
@@ -31,9 +29,10 @@ function delay(attempt: number): number {
 /** Whether a stream is receiving events. */
 type Status = "connecting" | "connected" | "closed";
 
-/** How an event stream reaches its host and what it follows. */
-export interface EventsOptions<K extends string = Protocol.ObjectTypeOutput>
-  extends ClientOptions, EventStreamOptions<K> {
+/** What an event stream follows. */
+export interface EventsOptions<
+  K extends string = Protocol.ObjectTypeOutput,
+> extends EventStreamOptions<K> {
   /** Aborting closes the stream. */
   readonly signal?: AbortSignal;
   /**
@@ -57,11 +56,8 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * A host stream, followed across reconnects.
- *
- * Given a URL, it follows the stream there with `sse` and sends `types` as a
- * query parameter. Given a `Transport`, it follows whatever connection the
- * transport opens.
+ * A host stream, followed across reconnects through whatever connection its
+ * `Transport` opens.
  *
  * - It starts with a snapshot that ends in `ready`, then delivers changes.
  * - After a dropped connection it resumes from its cursor, backing off between
@@ -89,20 +85,10 @@ export class Events<
   readonly #onErrors = new Set<(error: unknown) => void>();
 
   public constructor(
-    source: string | URL | Transport,
+    transport: Transport,
     init: EventsOptions<K>,
     kinds: readonly string[],
   ) {
-    let transport: Transport;
-    if (typeof source === "function") {
-      transport = source;
-    } else {
-      const url = new URL(source);
-      if (init.types !== undefined) {
-        url.searchParams.set("types", init.types.join(","));
-      }
-      transport = sse(url, init);
-    }
     this.#stream = new EventStream<K>(
       {
         types: init.types,

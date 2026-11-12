@@ -21,7 +21,6 @@ afterEach(() => {
 
 const conflict = {
   ok: false,
-  status: 412,
   problem: {
     type: "urn:marimo:problem:precondition-failed",
     title: "Precondition failed",
@@ -67,7 +66,6 @@ describe("DocumentSyncStatus", () => {
       .mockResolvedValueOnce(conflict)
       .mockResolvedValueOnce({
         ok: true,
-        status: 200,
         data: {
           document: { ...accepted, version: 2, etag: "document-2" },
           cells: {},

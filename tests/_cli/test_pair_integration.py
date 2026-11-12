@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING, Literal
 
 import pytest
 
+from marimo._server.host import HOST_API_PATH
 from tests._cli._pair_server import PairTestServer, pair_test_server
+from tests.mcp_request import tool_request, tool_result, tool_status
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -312,16 +314,18 @@ def test_execution_without_runtime_reports_error(tmp_path: Path) -> None:
 
     with pair_test_server(tmp_path) as server:
         host = resolve_host(server.url)
-        request = urllib.request.Request(
-            f"{host.url}/notebooks/{server.notebook_id}/runtime",
-            method="DELETE",
-            headers={
-                "Authorization": f"Bearer {host.token}",
-                "Idempotency-Key": "stop-test-runtime",
+        request = tool_request(
+            server.url,
+            "runtime.stop",
+            {
+                "notebook_id": server.notebook_id,
+                "idempotency_key": "stop-test-runtime",
             },
+            headers={"Authorization": f"Bearer {host.token}"},
+            endpoint=f"{HOST_API_PATH}/mcp",
         )
-        with urllib.request.urlopen(request, timeout=5):
-            pass
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert tool_status(tool_result(response)) == 200
         result = _run(server, "-c", "1")
         assert result.returncode == 2
         payload = json.loads(result.stdout)
@@ -459,17 +463,18 @@ def test_notebook_id_targets_the_replacement_kernel(
     monkeypatch.delenv("MARIMO_TOKEN", raising=False)
     with pair_test_server(tmp_path, token="restart-editor-secret") as running:
         host = resolve_host(running.url)
-        request = urllib.request.Request(
-            f"{host.url}/notebooks/{running.notebook_id}/runtime/restart",
-            method="POST",
-            data=b"{}",
-            headers={
-                "Authorization": f"Bearer {host.token}",
-                "Idempotency-Key": "pair-restart-test",
+        request = tool_request(
+            running.url,
+            "runtime.restart",
+            {
+                "notebook_id": running.notebook_id,
+                "idempotency_key": "pair-restart-test",
             },
+            headers={"Authorization": f"Bearer {host.token}"},
+            endpoint=f"{HOST_API_PATH}/mcp",
         )
         with urllib.request.urlopen(request, timeout=5) as response:
-            assert response.status == 202
+            assert tool_status(tool_result(response)) == 200
         deadline = time.monotonic() + 10
         while not list_running_notebooks([host]).notebooks:
             assert time.monotonic() < deadline, (

@@ -9,7 +9,7 @@ import type { StreamEvent } from "../transport/stream.ts";
 /** An event delivered for the requested notebook kinds, plus ready and reset. */
 export type NotebookEvent<K extends string = NotebookKind> = StreamEvent<K>;
 
-/** How a notebook stream reaches its host and what it follows. */
+/** What a notebook stream follows. */
 export interface NotebookEventsOptions<
   K extends string = NotebookKind,
 > extends EventsOptions<K> {
@@ -22,19 +22,15 @@ export interface NotebookEventsOptions<
  *
  * Starts with a snapshot ending in `ready`, then delivers changes. A dropped
  * connection resumes from its cursor. On `reset`, discard accumulated state
- * before applying the fresh snapshot. A custom transport may replace SSE.
+ * before applying the fresh snapshot.
  */
 export class NotebookEvents<
   const K extends string = NotebookKind,
 > extends Events<K> {
   public constructor(
-    source: string | URL | NotebookTransport,
+    transport: NotebookTransport,
     init: NotebookEventsOptions<K> = {},
   ) {
-    if (typeof source !== "function" && init.runId !== undefined) {
-      source = new URL(source);
-      source.searchParams.set("run_id", init.runId);
-    }
-    super(source, init, notebookKinds);
+    super(transport, init, notebookKinds);
   }
 }

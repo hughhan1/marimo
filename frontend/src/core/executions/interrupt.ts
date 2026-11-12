@@ -25,10 +25,10 @@ export async function interruptRuntime(
       return;
     }
     // The runtime can stop before the request arrives.
-    if (result.status === 409) {
+    if (result.problem.status === 409) {
       return;
     }
-    if (result.status === 403) {
+    if (result.problem.status === 403) {
       Logger.warn("Interrupt refused, connection is read-only", result.problem);
       return;
     }

@@ -290,10 +290,10 @@ it("raises the interrupt buffer for a cancelled running run before the worker ta
     }) as unknown as NotebookReplica;
   const buffer = workerState.interruptBuffer!;
   buffer[0] = 0;
-  mockNotebookCall.mockResolvedValue({ status: 202, body: run });
+  mockNotebookCall.mockResolvedValue({ ok: true, data: run });
   mockNotebookCall.mockImplementationOnce(async () => {
     expect(buffer[0]).toBe(2);
-    return { status: 202, body: run };
+    return { ok: true, data: run };
   });
   try {
     const backend = await PyodideBridge.INSTANCE.createNotebookBackend();
@@ -343,8 +343,8 @@ it.each(["running", "completed", null])(
     const buffer = workerState.interruptBuffer!;
     buffer[0] = 0;
     const accepted = {
-      status: 202,
-      body: {
+      ok: true,
+      data: {
         id: "r1",
         notebook_id: "n1",
         status: "running",
@@ -421,7 +421,7 @@ it("raises the interrupt buffer once a run cancelled while queued starts", async
   } as unknown as NotebookReplica);
   const buffer = workerState.interruptBuffer!;
   buffer[0] = 0;
-  mockNotebookCall.mockResolvedValue({ status: 202, body: run });
+  mockNotebookCall.mockResolvedValue({ ok: true, data: run });
   const deliver = (status: string) =>
     rpcListeners.notebookEvent({
       id: "sub",
@@ -484,8 +484,8 @@ it("signals an interrupt once across pending, completed, and lost-reply retries"
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);
   const pending = new Deferred<unknown>();
   const accepted = {
-    status: 202,
-    body: {
+    ok: true,
+    data: {
       id: "r1",
       notebook_id: "n1",
       status: "running",

@@ -26,7 +26,7 @@ export function useNotebookReplica(options: Options): NotebookReplica {
   const replica = useMemo(() => createNotebookReplica(store), [store]);
   const sessionArguments = useEvent(options.sessionArguments);
   const headers = useEvent(options.headers);
-  const notebookUrl = useEvent(options.notebookUrl);
+  const mcpUrl = useEvent(options.mcpUrl);
   const waitUntilReady = useEvent(options.waitUntilReady);
   const checkHealth = useEvent(options.checkHealth);
   const onNotification = useEvent(options.onNotification);
@@ -38,7 +38,7 @@ export function useNotebookReplica(options: Options): NotebookReplica {
         snapshot,
         sessionArguments,
         headers,
-        notebookUrl,
+        mcpUrl,
         waitUntilReady,
         checkHealth,
       }),
@@ -47,7 +47,7 @@ export function useNotebookReplica(options: Options): NotebookReplica {
       snapshot,
       sessionArguments,
       headers,
-      notebookUrl,
+      mcpUrl,
       waitUntilReady,
       checkHealth,
     ],

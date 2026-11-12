@@ -27,7 +27,7 @@ from tests._core.conftest import (
     record,
     runtime_id_of,
 )
-from tests._server.host.drive import finished
+from tests._server.host.drive import call, refused
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
@@ -100,7 +100,7 @@ async def test_run_mode_writes_no_record_and_serves_no_host_api(
 
     async with app.router.lifespan_context(app):
         assert not (tmp_path / "hosts-v1").exists()
-        assert (await finished(app, "GET", "/notebooks")).status == 404
+        assert (await refused(app, "catalog"))["status"] == 404
 
 
 @pytest.mark.parametrize("external_port", [1234, 8443])
@@ -130,21 +130,20 @@ async def test_the_lifespan_serves_the_host_while_the_server_runs(
             assert stat.S_IMODE(path.stat().st_mode) == 0o600
             assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
-        probe = "/notebooks/x/runtime"
-        refused = await finished(
-            app, "DELETE", probe, headers={"Idempotency-Key": "k"}
-        )
-        assert refused.status == 401
-        admitted = await finished(
-            app,
-            "DELETE",
-            probe,
-            headers={
-                "Authorization": f"Bearer {record.token}",
-                "Idempotency-Key": "k",
-            },
-        )
-        assert admitted.status == 404
+        async def stop(headers: dict[str, str]) -> str:
+            stopped = await call(
+                app,
+                "runtime.stop",
+                headers=headers,
+                idempotency_key="k",
+                notebook_id="x",
+            )
+            kind: str = stopped.problem["type"]
+            return kind.rsplit(":", 1)[1]
+
+        assert await stop({}) == "unauthorized"
+        admitted = {"Authorization": f"Bearer {record.token}"}
+        assert await stop(admitted) == "not-found"
 
     assert list((tmp_path / "hosts-v1").glob("*.json")) == []
 
@@ -171,19 +170,16 @@ async def test_idle_host_expires_results_and_stops_maintenance(
         )
         notebook.adopt(lambda _: None)
         notebook.observe(be.Running(runtime_id_of(notebook)))
-        headers = {
-            "Authorization": f"Bearer {context.token}",
-            "Idempotency-Key": "run",
-        }
-        response = await finished(
+        response = await call(
             app,
-            "POST",
-            f"/notebooks/{notebook.id}/runtime/execute",
-            headers=headers,
-            body=b'{"code":"42"}',
+            "runtime.execute",
+            headers={"Authorization": f"Bearer {context.token}"},
+            idempotency_key="run",
+            notebook_id=notebook.id,
+            code="42",
         )
-        assert response.status == 202
-        run_id = protocol.RunId(response.json()["id"])
+        assert response.ok, response.problem
+        run_id = protocol.RunId(response.data["id"])
         eid = protocol.ExecutionId("execution")
         notebook.observe(
             be.Planned(run_id, (be.PlannedExecution(eid, None, "hash", "42"),))

@@ -7,7 +7,14 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from time import monotonic
-from typing import TYPE_CHECKING, Literal, Protocol, assert_never
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    Protocol,
+    TypeGuard,
+    assert_never,
+    get_args,
+)
 
 import msgspec
 
@@ -29,8 +36,8 @@ from marimo._core.stream import RoutedEvent
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
 
-Reply = tuple[int, msgspec.Struct | None]
-"""A status and body, for a transport to encode."""
+Reply = msgspec.Struct | None
+"""What a call answers: its result, or the `Problem` that failed it."""
 
 
 class NotebookBridge(Protocol):
@@ -67,6 +74,14 @@ PlainKind = Literal[
     "internal",
 ]
 """The problems that carry no members beyond the standard ones."""
+
+
+_PROBLEMS: tuple[type, ...] = get_args(get_args(protocol.Problem)[0])
+
+
+def is_problem(reply: object) -> TypeGuard[protocol.Problem]:
+    """Whether a reply is the problem that failed its call."""
+    return isinstance(reply, _PROBLEMS)
 
 
 def problem(kind: PlainKind, detail: str | None = None) -> protocol.Problem:
@@ -210,7 +225,7 @@ class Mutations:
                 )
             reply = await asyncio.shield(remembered.task)
             # A retried run answers with the run as it is now.
-            return reply if remembered.run is None else (202, remembered.run)
+            return reply if remembered.run is None else remembered.run
 
         task = asyncio.ensure_future(call())
         mutation = CachedMutation(fingerprint, task)
@@ -277,6 +292,12 @@ def _watch_lifecycle(
         context.settle(mutation)
         unsubscribe()
 
+    def arrived(runtime: protocol.Runtime) -> bool:
+        return operation != "runtime.stop" and runtime.status in (
+            "running",
+            "failed",
+        )
+
     def updated(event: RoutedEvent) -> None:
         nonlocal previous_id
         if mutation.expires_at is not None:
@@ -296,11 +317,7 @@ def _watch_lifecycle(
                 and runtime.id != runtime_id
             ):
                 previous_id = runtime.id
-            if (
-                operation != "runtime.stop"
-                and runtime.id == runtime_id
-                and runtime.status in ("running", "failed")
-            ):
+            if runtime.id == runtime_id and arrived(runtime):
                 settle()
         elif isinstance(event.event, protocol.RuntimeRemovedEvent):
             if event.event.data.id == runtime_id or (
@@ -317,8 +334,8 @@ def _watch_lifecycle(
     def accepted(reply: Reply) -> None:
         nonlocal runtime_id
         match reply:
-            # A 202 changes a runtime, and a 200 found the one already running.
-            case (202, protocol.Runtime(id=accepted_id)):
+            # A runtime still changing is watched until it arrives.
+            case protocol.Runtime(id=accepted_id) if not arrived(reply):
                 runtime_id = accepted_id
                 for event in early:
                     updated(event)

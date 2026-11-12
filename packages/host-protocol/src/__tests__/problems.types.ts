@@ -1,9 +1,9 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { Effect } from "effect";
-import { HttpApiBuilder } from "effect/http-api";
+import type { Tool } from "effect/ai";
 import * as Problems from "../Problems.ts";
-import * as Host from "../Host.ts";
+import type * as Notebook from "../Notebook.ts";
 
 // @ts-expect-error A decision error must carry the questions to answer.
 new Problems.DecisionRequiredProblem({});
@@ -25,13 +25,12 @@ export function checkNarrowing(error: typeof Problems.Problem.Type) {
   }
 }
 
-HttpApiBuilder.handler(Host.Api, "Notebook", "save", () =>
-  Effect.fail(new Problems.DecisionRequiredProblem({ decisions: [] })),
-);
-HttpApiBuilder.handler(Host.Api, "Notebook", "save", () =>
-  // @ts-expect-error Saving does not require a runtime.
-  Effect.fail(new Problems.NoRuntimeProblem()),
-);
+type SaveFailure = Tool.Failure<typeof Notebook.Save>;
+export const decide: SaveFailure = new Problems.DecisionRequiredProblem({
+  decisions: [],
+});
+// @ts-expect-error Saving does not require a runtime.
+export const noRuntime: SaveFailure = new Problems.NoRuntimeProblem();
 
 const notFound = new Problems.NotFoundProblem();
 const notFoundTag: "NotFoundProblem" = notFound._tag;

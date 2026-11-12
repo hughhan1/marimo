@@ -126,7 +126,7 @@ export class PreconditionFailedProblem extends HttpApiError.Problem<Precondition
   {
     index: Integer.check(Schema.isGreaterThanOrEqualTo(0)).annotateKey({
       description:
-        "The position of the first stale entry in the request, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `If-Match`.",
+        "The position of the first stale entry in the call, counted in an edit's `changes` or a run's `cells`. `0` for a save with a stale `expected_etag`.",
     }),
     cell: Schema.NullOr(Cell).annotateKey({
       description:
