@@ -404,6 +404,21 @@ async def test_an_unknown_request_member_is_a_400_problem(
     assert response.json()["type"].endswith(":invalid-request")
 
 
+async def test_a_call_of_any_size_reaches_its_operation(
+    harness: Harness,
+) -> None:
+    # Larger than the MCP SDK's default cap, as a file in an input's value is.
+    response = await finished(
+        harness.app,
+        "PATCH",
+        f"/notebooks/{harness.notebook_id}",
+        headers=key("large"),
+        body=json.dumps({"future": "x" * (5 * 1024 * 1024)}).encode(),
+    )
+    assert response.status == 400
+    assert response.json()["type"].endswith(":invalid-request")
+
+
 async def test_an_empty_update_is_a_400_problem(harness: Harness) -> None:
     response = await finished(
         harness.app,

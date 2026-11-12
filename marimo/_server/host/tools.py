@@ -10,6 +10,7 @@ reply, and a failure is a problem carried as the error's text.
 from __future__ import annotations
 
 import inspect
+import sys
 from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Any
@@ -261,6 +262,9 @@ class HostMCPEndpoint:
             json_response=True,
             stateless=True,
             security_settings=TRANSPORT_SECURITY,
+            # The routes took a body of any size, and an input's value can
+            # hold a file's contents.
+            max_request_body_size=sys.maxsize,
         )
         async with manager.run():
             await manager.handle_request(scope, receive, send)
