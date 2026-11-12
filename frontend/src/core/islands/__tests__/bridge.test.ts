@@ -754,8 +754,8 @@ describe("IslandsPyodideBridge", () => {
 
     it("sends notebook commands to the managed session's host", async () => {
       mockNotebookCall.mockResolvedValue({
-        status: 202,
-        body: {
+        ok: true,
+        data: {
           id: "run-1",
           notebook_id: "n1",
           runtime_id: "r1",
@@ -777,9 +777,9 @@ describe("IslandsPyodideBridge", () => {
         sessionGeneration: 1,
         call: expect.objectContaining({
           operation: "runtime.run",
-          params: { notebook_id: "n1" },
-          headers: { "idempotency-key": "key-1" },
-          body: { cells: [{ id: "c1" }] },
+          notebook_id: "n1",
+          idempotency_key: "key-1",
+          cells: [{ id: "c1" }],
         }),
       });
     });

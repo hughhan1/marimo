@@ -5,7 +5,8 @@
 `/api/mcp` whose arguments are the body's fields, and the result becomes an
 ordinary response: a success is a 200 whose JSON is the structured result, a
 file is a response with the file's type and bytes, and a failure has its
-problem's status and `{"detail": ...}` as its body.
+problem's status and `{"detail": ...}` as its body. A host operation's route
+becomes a call of the host's tools, as `tests._server.host.routes` does it.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from starlette.testclient import TestClient
 
 from marimo._server.api.router import build_routes  # noqa: F401
 from marimo._server.api.tools import TOOLS
+from marimo._server.host import HOST_API_PATH
+from tests._server.host.routes import route_response, tool_request
 from tests.mcp_request import request_headers, tool_payload
 
 _PAIR = re.compile(
@@ -117,7 +120,48 @@ def _response(
 _original_request = TestClient.request
 
 
+def _host_request(
+    self: TestClient, method: str, url: Any, **kwargs: Any
+) -> Any:
+    full = self._merge_url(url)
+    prefix, found, path = full.path.partition(HOST_API_PATH)
+    if not found or kwargs.get("data") is not None:
+        return None
+    body = kwargs.get("content") or b""
+    if kwargs.get("json") is not None:
+        body = json.dumps(kwargs["json"]).encode()
+    headers = dict(kwargs.get("headers") or {})
+    call = tool_request(method, path, headers, body)
+    if call is None:
+        return None
+    outer = _original_request(
+        self,
+        "POST",
+        f"{full.scheme}://{full.netloc.decode()}{prefix}{HOST_API_PATH}/mcp"
+        + (f"?{full.query.decode()}" if full.query else ""),
+        content=call.body,
+        headers={"content-type": "application/json", **call.headers},
+        **{
+            key: value
+            for key, value in kwargs.items()
+            if key not in ("content", "json", "headers")
+        },
+    )
+    status, media_type, content = route_response(
+        call, outer.status_code, outer.content
+    )
+    return httpx.Response(
+        status,
+        headers={} if media_type is None else {"content-type": media_type},
+        content=content,
+        request=outer.request,
+    )
+
+
 def _request(self: TestClient, method: str, url: Any, **kwargs: Any) -> Any:
+    host = _host_request(self, method, url, **kwargs)
+    if host is not None:
+        return host
     full = self._merge_url(url)
     call = _tool_call(str(full))
     if call is None:

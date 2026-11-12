@@ -1,6 +1,6 @@
 # Custom transports
 
-`Client` and `NotebookClient` send HTTP requests and read server-sent events.
+`Client` and `NotebookClient` call the host's MCP tools and read server-sent events.
 To follow events from an existing WebSocket, message channel, or another
 source, pass a `Transport` function to `NotebookEvents` or `CatalogEvents`.
 

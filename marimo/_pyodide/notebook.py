@@ -7,20 +7,20 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 
 from marimo import _loggers
 from marimo._core import backend as be, protocol
-from marimo._core.calls import OperationCall, dispatch
+from marimo._core.calls import BY_OPERATION, OperationCall, assemble, dispatch
 from marimo._core.document import Document
 from marimo._core.errors import Conflict, Invalid, NotFound
 from marimo._core.executions import Executions
 from marimo._core.host import Host
 from marimo._core.ids import mint
 from marimo._core.notebook import Notebook
-from marimo._core.operations import Mutations, problem
+from marimo._core.operations import Mutations, Reply, is_problem, problem
 from marimo._messaging.input import InputReply
 from marimo._messaging.notebook.outputs import scratchpad_snapshot
 from marimo._messaging.notification import (
@@ -58,7 +58,6 @@ from marimo._version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
-    from typing import Any
 
     from marimo._core.stream import Sink
     from marimo._messaging.notification import NotificationMessage
@@ -548,24 +547,36 @@ class PyodideNotebook:
             unsubscribe()
 
     async def call(self, raw: str) -> str:
-        """Serve an operation call and reply with its status and body."""
+        """Serve a notebook operation's call, `{operation, ...arguments}`.
+
+        Replies `{ok: true, data}` with the tool's result, or
+        `{ok: false, problem}` with the problem that failed the call.
+        """
         self.mutations.expire()
-        status: int
-        body: msgspec.Struct | None
+        reply: Reply
         try:
-            call = msgspec.json.decode(raw, type=OperationCall)
-        except msgspec.DecodeError as e:
-            failure = problem("invalid-request", str(e))
-            status, body = failure.status, failure
+            arguments = msgspec.json.decode(raw, type=dict[str, Any])
+            kind = BY_OPERATION.get(str(arguments.pop("operation", "")))
+            if kind is None:
+                raise msgspec.ValidationError("Unknown notebook operation")
+            call: OperationCall = assemble(kind, arguments)
+        except (msgspec.DecodeError, msgspec.ValidationError) as e:
+            reply = problem("invalid-request", str(e))
         else:
-            status, body = await dispatch(
+            reply = await dispatch(
                 self.mutations,
                 self,
                 call,
                 request=None,
                 allow_input=self._allow_input,
             )
-        return msgspec.json.encode({"status": status, "body": body}).decode()
+        if is_problem(reply):
+            return msgspec.json.encode(
+                {"ok": False, "problem": reply}
+            ).decode()
+        return msgspec.json.encode(
+            {"ok": True, "data": {} if reply is None else reply}
+        ).decode()
 
     async def edit(
         self,

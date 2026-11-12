@@ -45,10 +45,10 @@ if TYPE_CHECKING:
     from mcp.server.context import ServerRequestContext
     from starlette.types import Receive, Scope, Send
 
-_APP_ONLY = {"ui": {"visibility": ["app"]}}
-_REF = "#/$defs/{name}"
+APP_ONLY = {"ui": {"visibility": ["app"]}}
+SCHEMA_REF = "#/$defs/{name}"
 _AFTER_REPLY = "marimo.after_reply"
-_SECURITY = TransportSecuritySettings(
+TRANSPORT_SECURITY = TransportSecuritySettings(
     # The app's own middleware and origin policy decide which hosts and
     # origins may call; the SDK would otherwise apply a second rule.
     enable_dns_rebinding_protection=False
@@ -212,7 +212,7 @@ def _with_defs(
     return {**schema, **({"$defs": found} if found else {})}
 
 
-def _inline(
+def inline_schema(
     kind: Any,
     schema_of: dict[Any, Any],
     components: dict[str, Any],
@@ -245,7 +245,7 @@ def contract() -> list[dict[str, Any]]:
         )
     )
     schemas, components = msgspec.json.schema_components(
-        kinds, ref_template=_REF
+        kinds, ref_template=SCHEMA_REF
     )
     schema_of = dict(zip(kinds, schemas, strict=True))
     definitions: list[dict[str, Any]] = []
@@ -253,7 +253,7 @@ def contract() -> list[dict[str, Any]]:
         if found.input is None:
             arguments: dict[str, Any] = {"type": "object", "properties": {}}
         else:
-            arguments = _inline(
+            arguments = inline_schema(
                 found.input,
                 schema_of,
                 components,
@@ -275,7 +275,7 @@ def contract() -> list[dict[str, Any]]:
                 "required": [*found.ids, *arguments.get("required", [])],
                 "additionalProperties": False,
             },
-            "_meta": _APP_ONLY,
+            "_meta": APP_ONLY,
         }
         output = _output_schema(found, schema_of, components)
         if output is not None:
@@ -314,7 +314,7 @@ def _output_schema(
             "properties": {},
             "additionalProperties": False,
         }
-    return _inline(found.output, schema_of, components)
+    return inline_schema(found.output, schema_of, components)
 
 
 def _models() -> list[types.Tool]:
@@ -346,9 +346,9 @@ async def _call(
         if inspect.isawaitable(result):
             result = await result
     except msgspec.ValidationError as error:
-        return _failure(make_problem("invalid-request", str(error)))
+        return tool_failure(make_problem("invalid-request", str(error)))
     except Exception as error:  # noqa: BLE001
-        return _failure(await _problem_for(request, error))
+        return tool_failure(await _problem_for(request, error))
     if isinstance(result, FileResult):
         return await files().reply(
             ctx,
@@ -370,7 +370,7 @@ def _success(found: Tool, result: Any) -> types.CallToolResult:
     )
 
 
-def _failure(failure: protocol.Problem) -> types.CallToolResult:
+def tool_failure(failure: protocol.Problem) -> types.CallToolResult:
     return types.CallToolResult(
         is_error=True,
         content=[
@@ -490,7 +490,7 @@ class MCPEndpoint:
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
         request = Request(scope, receive)
-        if not _origin_allowed(request):
+        if not origin_allowed(request):
             response = JSONResponse(
                 {
                     "jsonrpc": "2.0",
@@ -508,7 +508,7 @@ class MCPEndpoint:
             mcp_server(),
             json_response=True,
             stateless=True,
-            security_settings=_SECURITY,
+            security_settings=TRANSPORT_SECURITY,
         )
         # Made here, since the events endpoint hands tools a copy of the scope.
         tasks = scope.setdefault(_AFTER_REPLY, [])
@@ -526,7 +526,7 @@ class MCPEndpoint:
 mcp_endpoint = MCPEndpoint()
 
 
-def _origin_allowed(request: Request) -> bool:
+def origin_allowed(request: Request) -> bool:
     """Whether a browser at the request's Origin may call this server."""
     policy = getattr(request.app.state, "origin_policy", None)
     if policy is None:

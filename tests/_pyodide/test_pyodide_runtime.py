@@ -36,6 +36,7 @@ from marimo._runtime.kernel_request_handlers import KernelRequestHandlers
 from marimo._session.model import SessionMode
 from marimo._session.notebook import AppFileManager
 from marimo._types.ids import CellId_t
+from tests._pyodide.calls import answered, flat
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -116,7 +117,8 @@ async def call(
     }
     if body is not None:
         message["body"] = body
-    return json.loads(await bridge.notebook.call(json.dumps(message)))
+    reply = json.loads(await bridge.notebook.call(json.dumps(flat(message))))
+    return answered(operation, reply)
 
 
 async def settle() -> None:

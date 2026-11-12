@@ -1,7 +1,8 @@
 # Copyright 2026 Marimo. All rights reserved.
 """ASGI test requests with incremental access to event streams.
 
-Direct ASGI requests let tests read events while a response remains open.
+Direct ASGI requests let tests read events while a response remains open. A
+request to an operation's route is sent as the tool call that replaces it.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from marimo._server.host import HOST_API_PATH
+from tests._server.host.routes import route_response, tool_request
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping
@@ -115,6 +117,10 @@ def request(
 
     `path` is relative to the host API's prefix.
     """
+    headers = dict(headers or {})
+    call = tool_request(method, path, headers, body)
+    if call is not None:
+        method, path, body, headers = "POST", "/mcp", call.body, call.headers
     scope = {
         "type": "http",
         "asgi": {"version": "3.0"},
@@ -128,10 +134,7 @@ def request(
         "headers": [
             (b"host", host.encode()),
             (b"content-type", b"application/json"),
-            *(
-                (k.lower().encode(), v.encode())
-                for k, v in (headers or {}).items()
-            ),
+            *((k.lower().encode(), v.encode()) for k, v in headers.items()),
         ],
         "client": client,
         "server": ("127.0.0.1", PORT),
@@ -155,7 +158,19 @@ def request(
         elif message["type"] == "http.response.body":
             response.feed(message.get("body", b""))
 
-    task = asyncio.get_running_loop().create_task(app(scope, receive, send))
+    async def respond() -> None:
+        await app(scope, receive, send)
+        if call is not None:
+            status, media_type, content = route_response(
+                call, response.status, response.body
+            )
+            response.status, response.body = status, content
+            if media_type is None:
+                response.headers.pop("content-type", None)
+            else:
+                response.headers["content-type"] = media_type
+
+    task = asyncio.get_running_loop().create_task(respond())
 
     def disconnect() -> None:
         receive_queue.put_nowait({"type": "http.disconnect"})

@@ -195,7 +195,7 @@ async def test_unknown_routes_are_problems(harness: Harness) -> None:
 async def test_a_wrong_method_on_a_known_route_is_a_405_problem(
     harness: Harness,
 ) -> None:
-    response = await finished(harness.app, "GET", "/notebooks", headers=AUTH)
+    response = await finished(harness.app, "GET", "/mcp", headers=AUTH)
     assert response.status == 405
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["type"].endswith(":method-not-allowed")
@@ -234,7 +234,8 @@ async def test_every_method_on_every_route_is_a_response_not_a_500(
     await wait_for(response, lambda r: r.status != 0)
     disconnect()
     assert response.status != 500
-    if not 200 <= response.status < 300:
+    # The tool endpoint answers a malformed call in JSON-RPC, as MCP does.
+    if not 200 <= response.status < 300 and path != "/mcp":
         assert response.headers["content-type"] == "application/problem+json"
     if response.status == 405:
         allowed = {m.strip() for m in response.headers["allow"].split(",")}
@@ -343,10 +344,8 @@ async def test_a_call_reads_only_its_own_parts(harness: Harness) -> None:
         harness.app,
         "DELETE",
         f"/notebooks/{nid}/runtime",
-        # A header cannot stand in for a path parameter, and a call without
-        # a body ignores the one it is sent.
+        # A header cannot stand in for an argument.
         headers={**key("stop"), "Notebook-Id": "missing", "Params": "{}"},
-        body=b"not json",
     )
     assert stopped.status == 202, stopped.body
     assert stopped.json()["notebook_id"] == nid
@@ -742,8 +741,8 @@ async def test_runtime_lifecycle_over_http(harness: Harness) -> None:
     assert started.json()["status"] == "starting"
     assert harness.backend().calls == [("start", started.json()["id"])]
 
+    # The runtime it found, still starting.
     again = await finished(app, "PUT", path, headers=key("k2"), body=b"{}")
-    assert again.status == 200
     assert again.json()["id"] == started.json()["id"]
 
     restart = await finished(app, "POST", path + "/restart", headers=key("k3"))
@@ -1233,11 +1232,7 @@ async def test_scratch_runs_over_http(harness: Harness) -> None:
         app, "POST", execute, headers=key("r3"), body=b"{}"
     )
     assert invalid.status == 400
-    malformed = await finished(
-        app, "POST", execute, headers=key("r4"), body=b"{"
-    )
-    assert malformed.status == 400
-    assert malformed.json()["type"].endswith(":invalid-request")
+    assert invalid.json()["type"].endswith(":invalid-request")
     unkeyed = await finished(app, "POST", execute, headers=AUTH, body=body)
     assert unkeyed.status == 400
 
@@ -1282,8 +1277,8 @@ async def test_a_run_hands_its_request_to_the_backend(
     assert accepted.status == 202
     [submitted] = harness.backend().requests
     assert submitted is not None
-    # The editor serves the host routes below its own prefix.
-    assert submitted.url["path"].endswith(path)
+    # The run's request is the call of its tool.
+    assert submitted.url["path"].endswith(f"{HOST_API_PATH}/mcp")
     assert submitted.url["query"] == query
     assert submitted.headers["x-trace"] == "abc"
     if editor_auth:
@@ -1291,7 +1286,7 @@ async def test_a_run_hands_its_request_to_the_backend(
     else:
         assert "authorization" not in submitted.headers
     assert submitted.query_params == parse_qs(query)
-    assert submitted.path_params == {"notebook_id": nid}
+    assert submitted.path_params == {}
     assert submitted.cookies == {"session": "s"}
 
 
@@ -2438,8 +2433,8 @@ def test_editor_authentication_is_limited_to_notebook_events_and_operations(
 @pytest.mark.parametrize(
     ("query", "headers"),
     [
-        # A cross-site form cannot send the server token.
-        ("?access_token=fake-token", {}),
+        # A page built for another server sends another token.
+        ("?access_token=fake-token", {"Marimo-Server-Token": "stale"}),
         ("", {"Marimo-Server-Token": "skew-id-1"}),
     ],
 )
@@ -2467,21 +2462,17 @@ def test_editor_operations_need_credentials_and_the_server_token(
 
 @pytest.mark.parametrize("base_url", ["", "/app"])
 @pytest.mark.parametrize(
-    ("method", "operation", "origin", "status"),
+    ("method", "origin", "status"),
     [
-        ("POST", "/edits", "http://editor.example", 200),
-        ("PUT", "/runtime", "http://editor.example", 200),
-        ("DELETE", "/runtime", "http://editor.example", 200),
-        ("PUT", "/runtime", "http://other.example", 400),
-        ("GET", "/edits", "http://editor.example", 403),
-        ("PATCH", "", "http://editor.example", 403),
+        ("POST", "http://editor.example", 200),
+        ("POST", "http://other.example", 400),
+        ("GET", "http://editor.example", 403),
     ],
 )
 def test_editor_operation_preflights(
     harness: Harness,
     base_url: str,
     method: str,
-    operation: str,
     origin: str,
     status: int,
 ) -> None:
@@ -2496,14 +2487,13 @@ def test_editor_operation_preflights(
         with_client_address(app, ("192.0.2.1", 50000)),
         base_url="http://notebooks.example:1234",
     ) as client:
-        path = f"{base_url}{HOST_API_PATH}/notebooks/{harness.notebook_id}"
         response = client.options(
-            f"{path}{operation}",
+            f"{base_url}{HOST_API_PATH}/mcp",
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": method,
                 "Access-Control-Request-Headers": (
-                    "content-type,idempotency-key,marimo-server-token"
+                    "content-type,mcp-method,mcp-name,marimo-server-token"
                 ),
             },
         )

@@ -105,11 +105,10 @@ def test_calls_match_the_spec() -> None:
         or operation_id in {"notebook.edit", "notebook.save"}
     }
 
+    # A tool's arguments are its call's parts, which the operation's
+    # parameters, headers and body define.
     for kind in CALLS:
-        method, path, item, operation = specified[
-            str(kind.__struct_config__.tag)
-        ]
-        assert (kind.METHOD, kind.PATH) == (method, path)
+        _, _, item, operation = specified[str(kind.__struct_config__.tag)]
 
         parameters = [
             resolve(parameter)
@@ -146,12 +145,11 @@ def test_calls_match_the_spec() -> None:
                 "RequestInfo": RequestInfo,
             },
         )
-        statuses, response = get_args(hints["return"])
-        success = {
-            int(status): resolve(value)
+        success = [
+            resolve(value)
             for status, value in operation["responses"].items()
             if status.startswith("2")
-        }
-        assert set(get_args(statuses)) == set(success)
-        for value in success.values():
-            assert schema_name(value["content"]) == response.__name__
+        ]
+        assert success
+        for value in success:
+            assert schema_name(value["content"]) == hints["return"].__name__

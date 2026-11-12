@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""HTTP routes for notebooks, runtimes, runs, and event streams."""
+"""The host API: its operations as tools, and its event streams."""
 
 from __future__ import annotations
 
@@ -12,15 +12,21 @@ from urllib.parse import quote
 
 import msgspec
 from anyio import create_task_group
-from starlette.exceptions import HTTPException
 from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route, Router, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from marimo import _loggers
 from marimo._core import protocol
+from marimo._core.calls import (
+    CreateNotebookCall,
+    DeleteNotebookCall,
+    OpenNotebookCall,
+    UpdateNotebookCall,
+)
 from marimo._core.errors import (
     Conflict,
+    Invalid,
     NotFound,
 )
 from marimo._core.operations import Reply
@@ -41,13 +47,15 @@ from marimo._server.host import (
 from marimo._server.host.events import serialize_event, serialize_sse_event
 from marimo._server.host.notebook_api import (
     _context,
-    _decode,
     _mutation,
-    editor_notebook_routes,
-    notebook_routes,
     problem,
 )
 from marimo._server.host.session import SessionEventStream
+from marimo._server.host.tools import (
+    HostTool,
+    editor_host_mcp_endpoint,
+    host_mcp_endpoint,
+)
 from marimo._server.sse import SSE_HEADERS
 from marimo._server.tokens import AuthToken
 
@@ -80,12 +88,8 @@ PING_SECONDS = 15.0
 def build_app() -> Router:
     """Build the host API router."""
     routes = [
+        Route("/mcp", host_mcp_endpoint, methods=["POST"]),
         Route("/events", _events, methods=["GET"]),
-        Route("/notebooks", _create_notebook, methods=["POST"]),
-        Route("/notebooks/{notebook_id}", _update_notebook, methods=["PATCH"]),
-        Route(
-            "/notebooks/{notebook_id}", _delete_notebook, methods=["DELETE"]
-        ),
         Route(
             "/notebooks/{notebook_id}/events",
             _notebook_events,
@@ -94,10 +98,6 @@ def build_app() -> Router:
         WebSocketRoute(
             "/notebooks/{notebook_id}/events/ws", _notebook_events_ws
         ),
-        Route(
-            "/notebooks/{notebook_id}/open", _open_notebook, methods=["POST"]
-        ),
-        *notebook_routes(),
     ]
     for route in routes:
         # Starlette implies HEAD for every GET route, but a HEAD here would
@@ -127,8 +127,7 @@ async def _notebook(request: HTTPConnection) -> Notebook:
     )
 
 
-def _record(request: Request) -> protocol.Notebook:
-    notebook_id = request.path_params["notebook_id"]
+def _record(request: Request, notebook_id: str) -> protocol.Notebook:
     host = _context(request).bridge.host
     record = host.notebooks.get(notebook_id)
     if record is None:
@@ -193,13 +192,13 @@ async def _notebook_events(request: Request) -> Response:
 
 
 def editor_routes(base_url: str = "") -> list[BaseRoute]:
-    """Expose the notebook event socket and operations to the editor."""
+    """Expose the host's tools and notebook event socket to the editor."""
     prefix = f"{base_url}{HOST_API_PATH}"
     return [
+        Route(f"{prefix}/mcp", editor_host_mcp_endpoint, methods=["POST"]),
         WebSocketRoute(
             f"{prefix}/notebooks/{{notebook_id}}/events/ws", _editor_events_ws
         ),
-        *editor_notebook_routes(prefix),
     ]
 
 
@@ -486,25 +485,26 @@ def _frame(event: RoutedEvent) -> bytes:
 
 def _inside_project(path: str) -> Path:
     if "\x00" in path:
-        raise HTTPException(400, "path must not contain NUL")
+        raise Invalid("path must not contain NUL")
     relative = Path(path)
     if relative.is_absolute() or ".." in relative.parts:
-        raise HTTPException(400, "path must stay in the project")
+        raise Invalid("path must stay in the project")
     return relative
 
 
 @_mutation("notebook.create")
-async def _create_notebook(request: Request) -> Reply:
-    """Create an empty notebook in the project."""
+async def _create_notebook(
+    request: Request, call: CreateNotebookCall
+) -> Reply:
     context = _context(request)
-    key = request.headers["Idempotency-Key"]
-    body = await _decode(request, protocol.CreateNotebookRequest)
+    key = call.headers.idempotency_key
+    body = call.body
 
     index = context.bridge.index
     if index.root is None or body.project_id != index.project_id:
-        raise HTTPException(404, f"No project {body.project_id}")
+        raise NotFound(f"No project {body.project_id}")
     if body.path is msgspec.UNSET:
-        raise HTTPException(400, "path is required")
+        raise Invalid("path is required")
     relative = _inside_project(body.path)
     file = index.root / relative
     notebook = await context.bridge.create(
@@ -512,24 +512,25 @@ async def _create_notebook(request: Request) -> Reply:
         name=None if body.name is msgspec.UNSET else body.name,
         request_id=key,
     )
-    return 201, notebook
+    return notebook
 
 
 @_mutation("notebook.update")
-async def _update_notebook(request: Request) -> Reply:
-    """Change a notebook's path or display name, preserving its runtime."""
+async def _update_notebook(
+    request: Request, call: UpdateNotebookCall
+) -> Reply:
     context = _context(request)
-    key = request.headers["Idempotency-Key"]
-    record = _record(request)
-    body = await _decode(request, protocol.UpdateNotebookRequest)
+    key = call.headers.idempotency_key
+    record = _record(request, call.params.notebook_id)
+    body = call.body
 
     if body.path is msgspec.UNSET and body.name is msgspec.UNSET:
-        raise HTTPException(400, "path or name is required")
+        raise Invalid("path or name is required")
     index = context.bridge.index
     target = None
     if body.path is not msgspec.UNSET:
         if index.root is None:
-            raise HTTPException(409, "The notebook has no file to move")
+            raise Conflict("The notebook has no file to move")
         relative = _inside_project(body.path)
         target = index.root / relative
     notebook = await context.bridge.update(
@@ -538,25 +539,27 @@ async def _update_notebook(request: Request) -> Reply:
         name=None if body.name is msgspec.UNSET else body.name,
         request_id=key,
     )
-    return 200, notebook
+    return notebook
 
 
 @_mutation("notebook.delete")
-async def _delete_notebook(request: Request) -> Reply:
-    """Delete the notebook and its file if it has no runtime."""
+async def _delete_notebook(
+    request: Request, call: DeleteNotebookCall
+) -> Reply:
     context = _context(request)
-    key = request.headers["Idempotency-Key"]
-    await context.bridge.delete(_record(request).id, request_id=key)
-    return 204, None
+    record = _record(request, call.params.notebook_id)
+    await context.bridge.delete(
+        record.id, request_id=call.headers.idempotency_key
+    )
+    return None
 
 
 @_mutation("notebook.open")
-async def _open_notebook(request: Request) -> Reply:
-    """Open the notebook in the configured browser."""
-    record = _record(request)
+async def _open_notebook(request: Request, call: OpenNotebookCall) -> Reply:
+    record = _record(request, call.params.notebook_id)
     file = _context(request).bridge.index.file_of(record.id)
     if file is None:
-        raise HTTPException(409, "The notebook has no file to open")
+        raise Conflict("The notebook has no file to open")
 
     state = AppStateBase.from_app(request.app)
     authority = f"{format_url_host(state.host, state.port)}:{state.port}"
@@ -569,7 +572,27 @@ async def _open_notebook(request: Request) -> Reply:
     threading.Thread(
         target=_open_quietly, args=(browser, url), daemon=True
     ).start()
-    return 200, protocol.OpenNotebookResponse(url=url)
+    return protocol.OpenNotebookResponse(url=url)
+
+
+CATALOG: dict[str, HostTool] = {
+    "notebook.create": HostTool(
+        CreateNotebookCall, protocol.Notebook, _create_notebook, catalog=True
+    ),
+    "notebook.update": HostTool(
+        UpdateNotebookCall, protocol.Notebook, _update_notebook, catalog=True
+    ),
+    "notebook.delete": HostTool(
+        DeleteNotebookCall, None, _delete_notebook, catalog=True
+    ),
+    "notebook.open": HostTool(
+        OpenNotebookCall,
+        protocol.OpenNotebookResponse,
+        _open_notebook,
+        catalog=True,
+    ),
+}
+"""The catalog's tools, which only the host's token may call."""
 
 
 def _open_quietly(browser: str, url: str) -> None:

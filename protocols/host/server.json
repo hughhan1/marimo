@@ -1,0 +1,5 @@
+{
+  "name": "io.marimo/host",
+  "version": "0.0.0",
+  "description": "The marimo host protocol's operations, as MCP tools"
+}

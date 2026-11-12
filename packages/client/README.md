@@ -19,8 +19,9 @@ const client = new Client("http://127.0.0.1:2718/api/marimo/v1", {
 });
 ```
 
-Requests use HTTP and event streams use server-sent events. Pass `fetch`
-alongside `token` to customize requests.
+Requests call the host's MCP tools at `/mcp` below the URL, and event
+streams use server-sent events. Pass `fetch` alongside `token` to customize
+requests.
 
 ## Find notebooks
 

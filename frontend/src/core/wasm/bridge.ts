@@ -267,7 +267,7 @@ export class PyodideBridge implements RunRequests, EditRequests {
             this.interruptReceipts.delete(key);
           }
         }
-        const key = call.headers["idempotency-key"];
+        const key = call.idempotency_key;
         if (!key || this.interruptReceipts.has(key)) {
           return this.rpc.proxy.request.notebookCall(call);
         }
@@ -280,10 +280,10 @@ export class PyodideBridge implements RunRequests, EditRequests {
         if (call.operation === "runtime.interrupt") {
           this.interruptEveryRun();
         } else if (call.operation === "runtime.cancel") {
-          if (this.isRunning(call.params.run_id)) {
+          if (this.isRunning(call.run_id)) {
             this.raiseInterrupt();
           } else {
-            this.pendingInterrupts.add(call.params.run_id);
+            this.pendingInterrupts.add(call.run_id);
           }
         }
         try {
@@ -291,8 +291,8 @@ export class PyodideBridge implements RunRequests, EditRequests {
           if (
             typeof reply === "object" &&
             reply !== null &&
-            "status" in reply &&
-            reply.status !== 202
+            "ok" in reply &&
+            reply.ok !== true
           ) {
             this.interruptReceipts.delete(key);
           }

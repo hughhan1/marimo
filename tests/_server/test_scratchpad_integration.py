@@ -42,6 +42,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from inline_snapshot import snapshot
 
+from marimo._server.host import HOST_API_PATH
+from tests._server.host.routes import tool_request
 from tests.mcp_request import connect_session, request_headers, tool_payload
 
 if TYPE_CHECKING:
@@ -207,22 +209,35 @@ class _Session:
     ) -> str:
         import urllib.request
 
-        # The kernel's routes are the editor's tools; the scratchpad stream
-        # and the host's edits stay on HTTP.
+        # The kernel's routes are the editor's tools and the host's routes
+        # its tools; the scratchpad stream stays on HTTP.
         sent: dict[str, str] = dict(headers or {})
+        data = json.dumps(body).encode()
+        host = (
+            tool_request("POST", path.removeprefix(HOST_API_PATH), sent, data)
+            if path.startswith(HOST_API_PATH)
+            else None
+        )
         tool = path.startswith("/api/kernel/") and not path.endswith(
             "/api/kernel/execute"
         )
-        if tool:
+        if host is not None:
+            url, data, sent = (
+                f"{self.base}{HOST_API_PATH}/mcp",
+                host.body,
+                host.headers,
+            )
+        elif tool:
             name = re.sub(r"\W+", "_", path.removeprefix("/api/")).strip("_")
-            url, data = f"{self.base}/api/mcp", tool_payload(name, body)
+            url = f"{self.base}/api/mcp"
+            data = json.dumps(tool_payload(name, body)).encode()
             sent = {**sent, **request_headers("tools/call", name)}
         else:
-            url, data = f"{self.base}{path}", body
+            url = f"{self.base}{path}"
         req = urllib.request.Request(
             url,
             method="POST",
-            data=json.dumps(data).encode(),
+            data=data,
             headers={
                 "Content-Type": "application/json",
                 "Marimo-Session-Id": self.session_id,
@@ -231,7 +246,7 @@ class _Session:
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             text: str = resp.read().decode()
-        if tool:
+        if tool or host is not None:
             return json.dumps(json.loads(text)["result"]["structuredContent"])
         return text
 

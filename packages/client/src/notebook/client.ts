@@ -35,10 +35,11 @@ type Scope = "/notebooks/{notebook_id}";
 type NotebookOperationId = OperationsBelow<Scope>;
 
 /**
- * A notebook operation as one message, the parts of its request without a URL.
+ * A notebook operation as one message: its id and its tool's arguments, which
+ * are the ids it acts on, `idempotency_key`, `if_match` and its body's members.
  *
  * `unstable_NotebookCall` is any notebook operation, and
- * `unstable_NotebookCall<"notebook.edit">` is one. Header names are lowercase.
+ * `unstable_NotebookCall<"notebook.edit">` is one.
  *
  * @experimental The shape may change while transports other than HTTP settle.
  */
@@ -204,11 +205,11 @@ export class NotebookClient extends NotebookOperations {
   }
 
   /**
-   * A client whose requests go to `send` as calls rather than over HTTP.
+   * A client whose requests go to `send` as calls rather than to the host's tools.
    *
-   * `send` delivers each call and resolves with the host's reply, a status
-   * and a body. Replies are validated as HTTP responses are. The client has
-   * no URL, so it has no `url` or `events`.
+   * `send` delivers each call and resolves with the host's reply, `{ ok: true,
+   * data }` or `{ ok: false, problem }`. Replies are validated as the tools'
+   * are. The client has no URL, so it has no `url` or `events`.
    *
    * @experimental The shape may change while transports other than HTTP settle.
    */
@@ -218,10 +219,10 @@ export class NotebookClient extends NotebookOperations {
   ): Omit<NotebookClient, "url" | "events"> {
     return new NotebookOperations({
       // SAFETY: `request` builds each message from its operation's table
-      // entry. Its params fill the path's placeholders, its headers are the
-      // entry's headers in lowercase, and its body is parsed by the entry's
-      // schema, which is the shape `unstable_NotebookCall` gives that
-      // operation. The tests check the message for each method.
+      // entry: the path's ids, the entry's headers as arguments, and the
+      // members of the body its schema parses, which is the shape
+      // `unstable_NotebookCall` gives that operation. The tests check the
+      // message for each method.
       send: (message) => send(message as unstable_NotebookCall),
       prefix: "/notebooks/{notebook_id}",
       params: { notebook_id: notebookId },

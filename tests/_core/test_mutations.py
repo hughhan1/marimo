@@ -45,9 +45,8 @@ def serve(bridge):
 
 
 def kind(reply: Reply) -> str:
-    _, body = reply
-    assert body is not None
-    kind: str = msgspec.to_builtins(body)["type"]
+    assert reply is not None
+    kind: str = msgspec.to_builtins(reply)["type"]
     return kind.rsplit(":", 1)[1]
 
 
@@ -55,12 +54,11 @@ async def test_edit_retry_and_atomic_conflict(bridge, serve):
     events = []
     bridge.host.subscribe(events.append, notebook_id=NOTEBOOK)
     call = edit("edit", put("c1", "x = 2", "*"))
-    status, result = await serve(call)
-    assert status == 200
+    result = await serve(call)
     assert isinstance(result, protocol.EditResponse)
     event_count = len(events)
     assert event_count > 0
-    assert await serve(call) == (200, result)
+    assert await serve(call) == result
     assert (bridge.edits, len(events)) == (1, event_count)
 
     conflict = await serve(
@@ -68,10 +66,10 @@ async def test_edit_retry_and_atomic_conflict(bridge, serve):
             "conflict", put("new", "y = 1", None), put("c1", "x = 3", "stale")
         )
     )
-    assert conflict[0] == 412
-    assert isinstance(conflict[1], protocol.PreconditionFailedProblem)
-    assert conflict[1].index == 1
-    assert conflict[1].cell.code == "x = 2"
+    assert isinstance(conflict, protocol.PreconditionFailedProblem)
+    assert conflict.status == 412
+    assert conflict.index == 1
+    assert conflict.cell.code == "x = 2"
     assert len(events) == event_count
     notebook = await bridge.host.notebook(NOTEBOOK)
     assert [cell.id for cell in notebook.document] == ["c1"]
@@ -88,8 +86,7 @@ async def test_cancellation_and_concurrent_retry(bridge, serve):
             await first
         retry = asyncio.create_task(serve(call))
         bridge.release.set()
-        status, result = await asyncio.wait_for(retry, 5)
-        assert status == 200
+        result = await asyncio.wait_for(retry, 5)
         assert isinstance(result, protocol.EditResponse)
         assert bridge.edits == 1
     finally:
@@ -98,7 +95,7 @@ async def test_cancellation_and_concurrent_retry(bridge, serve):
 
 async def test_receipts_include_operation_and_preconditions(bridge, serve):
     saved = await serve(save("save", '"a", W/"weak", "b"'))
-    assert saved[0] == 200
+    assert isinstance(saved, protocol.EditResponse)
     assert await serve(save("save", '"a", W/"weak", "b"')) == saved
     assert kind(await serve(save("save", '"c"'))) == "conflict"
     assert kind(await serve(edit("save"))) == "conflict"
@@ -109,8 +106,10 @@ async def test_rejected_calls_do_not_reserve_keys(serve):
     assert kind(await serve(edit("edit", put("c1", "x = 2", "stale")))) == (
         "precondition-failed"
     )
-    status, _ = await serve(edit("edit", put("c1", "x = 2", "*")))
-    assert status == 200
+    assert isinstance(
+        await serve(edit("edit", put("c1", "x = 2", "*"))),
+        protocol.EditResponse,
+    )
 
 
 async def test_calls_check_capabilities_and_keys(bridge, serve):

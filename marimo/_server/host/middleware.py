@@ -3,7 +3,7 @@
 
 Host bearer requests must come from loopback and address a loopback name
 on the server's port. The bearer token comes from the host discovery record.
-The notebook event socket and operations also accept the editor's
+The host's tools and the notebook event socket also accept the editor's
 authentication.
 """
 

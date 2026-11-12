@@ -119,12 +119,11 @@ export function createEditorBackend(
 
 /** Follow the notebook on the server, through its `session` event. */
 function server(options: EditorBackendOptions): NotebookBackend {
+  // One set of options, so every notebook shares one client of the host's tools.
+  const init = { fetch: withHeaders(options.headers) };
   return {
     transport: sessionEvents(afterStartup(options), subscribeSession),
-    notebook: (id) =>
-      new NotebookClient(options.notebookUrl(id), {
-        fetch: withHeaders(options.headers),
-      }),
+    notebook: (id) => new NotebookClient(options.notebookUrl(id), init),
     checkHealth: options.checkHealth,
   };
 }

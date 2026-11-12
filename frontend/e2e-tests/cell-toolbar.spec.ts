@@ -1,14 +1,19 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 import { getAppUrl, resetFile } from "../playwright.config";
 import { pressShortcut } from "./helper";
 import { waitForMarimoApp } from "./test-utils";
 
 const appUrl = getAppUrl("cells.py");
 
-// The host run endpoint, whatever notebook id and query string the URL carries.
-const isRunRequest = (url: string) => new URL(url).pathname.endsWith("/runtime/runs");
+/** A call of the host's `runtime.run` tool. */
+function isRunRequest(request: Request): boolean {
+  return (
+    new URL(request.url()).pathname.endsWith("/api/marimo/v1/mcp") &&
+    (request.postData() ?? "").includes('"name":"runtime.run"')
+  );
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto(appUrl);
@@ -33,11 +38,11 @@ for (const key of ["Enter", "Space"]) {
 
     const runs: string[] = [];
     page.on("request", (request) => {
-      if (isRunRequest(request.url())) {
+      if (isRunRequest(request)) {
         runs.push(request.postData() ?? "");
       }
     });
-    const response = page.waitForResponse((res) => isRunRequest(res.url()));
+    const response = page.waitForResponse((res) => isRunRequest(res.request()));
     await page.keyboard.press(key);
     expect((await response).ok()).toBe(true);
     await expect(runButton).toBeEnabled();
@@ -51,7 +56,7 @@ test("modified run shortcuts still work from a toolbar button", async ({ page })
   await cell.hover();
   await expect(runButton).toBeEnabled();
   await cell.getByTestId("cell-actions-button").focus();
-  const response = page.waitForResponse((res) => isRunRequest(res.url()));
+  const response = page.waitForResponse((res) => isRunRequest(res.request()));
   await pressShortcut(page, "cell.run");
   expect((await response).ok()).toBe(true);
   await expect(page.getByPlaceholder("Search actions...")).not.toBeVisible();

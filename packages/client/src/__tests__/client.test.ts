@@ -5,16 +5,14 @@ import { z } from "zod";
 import { Client, NotebookClient } from "../index.ts";
 import type * as Protocol from "../protocol.ts";
 import type { ProblemOf } from "../request.ts";
-import { fixtureEvents } from "./fixtures.ts";
+import { fixtureEvents, host } from "./fixtures.ts";
 
 const record = fixtureEvents("events.sse").find(
   (event) => event.event === "notebook",
 )!.data.notebook;
 
 function connect(response: () => Response) {
-  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-    response(),
-  );
+  const { fetch, requests } = host(response);
   const client = new Client(
     "http://localhost/prefix/api/marimo/v1/?session_id=s1",
     {
@@ -22,7 +20,7 @@ function connect(response: () => Response) {
       fetch,
     },
   );
-  const sent = (index = 0) => new Request(...fetch.mock.calls[index]);
+  const sent = (index = 0) => requests[index];
   return { client, fetch, sent };
 }
 

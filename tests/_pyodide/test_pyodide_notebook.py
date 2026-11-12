@@ -38,6 +38,7 @@ from marimo._runtime.layout.layout import LayoutConfig
 from marimo._session.model import SessionMode
 from marimo._session.notebook import AppFileManager
 from marimo._types.ids import CellId_t, WidgetModelId
+from tests._pyodide.calls import answered, flat
 
 
 @pytest.fixture
@@ -88,7 +89,8 @@ def ops(notifications):
 
 
 async def send(bridge, call):
-    return json.loads(await bridge.notebook.call(json.dumps(call)))
+    reply = json.loads(await bridge.notebook.call(json.dumps(flat(call))))
+    return answered(call["operation"], reply)
 
 
 def edit(events, code="x = 2", request_id="edit-1"):
@@ -155,10 +157,7 @@ async def test_snapshot_edit_and_retry(bridge):
         msgspec.json.decode(json.dumps(request), type=EditCall),
         request=None,
     )
-    assert msgspec.json.decode(msgspec.json.encode(direct)) == [
-        response["status"],
-        response["body"],
-    ]
+    assert msgspec.json.decode(msgspec.json.encode(direct)) == response["body"]
     assert len(events) == count
     conflict = await send(bridge, edit(events, "x = 3"))
     assert conflict["body"]["type"].endswith(":conflict")
@@ -261,7 +260,8 @@ async def test_invalid_calls(bridge):
         reply = await send(bridge, invalid)
         assert reply["status"] == 400
         assert reply["body"]["type"].endswith(":invalid-request")
-    assert json.loads(await bridge.notebook.call("{"))["status"] == 400
+    malformed = json.loads(await bridge.notebook.call("{"))
+    assert malformed["problem"]["status"] == 400
     other = {**request, "params": {"notebook_id": "elsewhere"}}
     assert (await send(bridge, other))["status"] == 404
 

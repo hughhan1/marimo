@@ -1,6 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import * as z from "zod";
+import { type Apps, createApps } from "#holon-sh";
 import { type OperationId, operations } from "./operations.ts";
 import { parseProblem, type Problem, type UnknownProblem } from "./problem.ts";
 
@@ -81,10 +82,11 @@ export type OperationsBelow<Prefix extends string> = {
 }[RequestOperationId];
 
 /**
- * Where a client's requests go.
+ * Where a client's requests go: the host's tools at `/mcp` below the host
+ * API's URL.
  *
- * `url` stands for `prefix`, so each operation's path below `prefix` resolves
- * below `url` and keeps its query string.
+ * `url` stands for `prefix`, so the values of `prefix`'s placeholders, such
+ * as the notebook's id, are read from `url`.
  */
 export interface Target<Prefix extends string> {
   readonly url: URL;
@@ -93,10 +95,11 @@ export interface Target<Prefix extends string> {
 }
 
 /**
- * Where a client's requests go as calls rather than HTTP requests.
+ * Where a client's requests go as calls handed to `send` rather than to the
+ * host's tools, such as a host running in the page.
  *
  * `params` holds the values a URL would carry for `prefix`, such as the
- * notebook's id, so each call names every path parameter.
+ * notebook's id, so each call names every one of its operation's ids.
  */
 export interface CallTarget<Prefix extends string> {
   readonly send: (call: CallMessage) => Promise<unknown>;
@@ -104,12 +107,13 @@ export interface CallTarget<Prefix extends string> {
   readonly params: Readonly<Record<string, string>>;
 }
 
-/** A call as `request` builds it, before its type is narrowed to its operation. */
+/**
+ * A call as `request` builds it, before its type is narrowed to its
+ * operation: the operation's id and its tool's arguments, flat.
+ */
 export interface CallMessage {
   readonly operation: RequestOperationId;
-  readonly params: Readonly<Record<string, string>>;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: unknown;
+  readonly [argument: string]: unknown;
 }
 
 /** What a request reads from each entry of the operations table. */
@@ -143,33 +147,36 @@ type PathParams<Path extends string> =
     ? Name | PathParams<Rest>
     : never;
 
-/** An operation's headers by lowercase name, with the required ones required. */
+/** A header's name as a tool argument: `If-Match` is `if_match`. */
+type Argument<Name extends string> =
+  Lowercase<Name> extends `${infer Head}-${infer Tail}`
+    ? `${Head}_${Argument<Tail>}`
+    : Lowercase<Name>;
+
+/** An operation's headers as arguments, with the required ones required. */
 type CallHeaders<Headers> = {
   readonly [
     Name in keyof Headers as Headers[Name] extends true
-      ? Lowercase<Name & string>
+      ? Argument<Name & string>
       : never
   ]: string;
 } & {
   readonly [
     Name in keyof Headers as Headers[Name] extends true
       ? never
-      : Lowercase<Name & string>
+      : Argument<Name & string>
   ]?: string;
 };
 
-/** An operation as one message, the parts of its request without a URL. */
+/**
+ * An operation as one message: its id and its tool's arguments, which are
+ * the ids it acts on, its headers and its body's fields, flattened.
+ */
 export type OperationCall<Id extends RequestOperationId> = {
-  [K in Id]: {
-    readonly operation: K;
-    readonly params: {
-      readonly [Name in PathParams<Entry<K>["path"]>]: string;
-    };
-    readonly headers: CallHeaders<Entry<K>["headers"]>;
-    readonly body: Entry<K>["body"] extends z.ZodType
-      ? z.output<Entry<K>["body"]>
-      : undefined;
-  };
+  [K in Id]: { readonly operation: K } & {
+    readonly [Name in PathParams<Entry<K>["path"]>]: string;
+  } & CallHeaders<Entry<K>["headers"]> &
+    (Entry<K>["body"] extends z.ZodType ? z.output<Entry<K>["body"]> : unknown);
 }[Id];
 
 /** What a request sends besides its operation. */
@@ -259,7 +266,11 @@ interface Answer {
   json(): Promise<unknown>;
 }
 
-const Reply = z.object({ status: z.number().int(), body: z.unknown() });
+/** What a call handed to `send` resolves with: the tool's reply, or its problem. */
+const Reply = z.union([
+  z.object({ ok: z.literal(true), data: z.unknown() }),
+  z.object({ ok: z.literal(false), problem: z.unknown() }),
+]);
 
 /**
  * Send one request and decode the host's answer.
@@ -288,31 +299,24 @@ export async function request<
   }
   const payload =
     operation.body === null ? undefined : operation.body.parse(body);
+  const args: Record<string, unknown> = {
+    ...("send" in target ? target.params : prefixParams(target)),
+    ...params,
+    ...Object.fromEntries(
+      Object.entries(sent).map(([name, value]) => [argument(name), value]),
+    ),
+    // SAFETY: every request body the protocol defines is an object.
+    ...(payload as object | undefined),
+  };
   const answer =
     "send" in target
       ? await call(
           target,
-          {
-            operation: id,
-            params: { ...target.params, ...params },
-            headers: Object.fromEntries(
-              Object.entries(sent).map(([name, value]) => [
-                name.toLowerCase(),
-                value,
-              ]),
-            ),
-            body: payload,
-          },
+          operation,
+          { operation: id, ...args },
           options.signal,
         )
-      : await fetchAnswer(
-          target,
-          operation,
-          params,
-          sent,
-          payload,
-          options.signal,
-        );
+      : await toolAnswer(target, operation, id, args, options.signal);
   const status = answer.status;
   const schema = operation.responses[status];
   if (schema === null) {
@@ -348,42 +352,122 @@ export async function request<
   throw new Error(`Unexpected ${status} response to ${id}`);
 }
 
-async function fetchAnswer<Prefix extends string>(
+/** A header's name as its tool argument: `If-Match` is `if_match`. */
+function argument(header: string): string {
+  return header.toLowerCase().replaceAll("-", "_");
+}
+
+/** The values of the prefix's placeholders, from the URL that stands for it. */
+function prefixParams<Prefix extends string>(
+  target: Target<Prefix>,
+): Record<string, string> {
+  const template = target.prefix.split("/").slice(1);
+  const segments = target.url.pathname.replace(/\/$/, "").split("/");
+  const tail = segments.slice(segments.length - template.length);
+  const values: Record<string, string> = {};
+  template.forEach((segment, index) => {
+    const name = /^\{(\w+)\}$/.exec(segment)?.[1];
+    if (name !== undefined) {
+      values[name] = decodeURIComponent(tail[index]);
+    }
+  });
+  return values;
+}
+
+/** The host API's URL, which the target's URL is below by its prefix. */
+function hostUrl<Prefix extends string>(target: Target<Prefix>): URL {
+  const depth = target.prefix.split("/").length - 1;
+  const segments = target.url.pathname.replace(/\/$/, "").split("/");
+  const url = new URL(target.url);
+  url.pathname = segments.slice(0, segments.length - depth).join("/");
+  return url;
+}
+
+/** The success status the protocol gives an operation's reply. */
+function successStatus(operation: Operation): number {
+  return Number(
+    Object.keys(operation.responses).find((status) => status.startsWith("2")),
+  );
+}
+
+const clients = new WeakMap<ClientOptions, Map<string, Apps["host"]>>();
+
+/**
+ * The host's tools at `/mcp` below the host API's URL.
+ *
+ * Clients that share their options share one tool client per host.
+ */
+function tools<Prefix extends string>(target: Target<Prefix>): Apps["host"] {
+  const endpoint = below(hostUrl(target), "/mcp");
+  let byEndpoint = clients.get(target.client);
+  if (byEndpoint === undefined) {
+    byEndpoint = new Map();
+    clients.set(target.client, byEndpoint);
+  }
+  let client = byEndpoint.get(endpoint.href);
+  if (client === undefined) {
+    const { token, fetch } = target.client;
+    client = createApps({
+      host: {
+        endpoint,
+        authProvider: { token: async () => token },
+        fetch,
+      },
+    }).host;
+    byEndpoint.set(endpoint.href, client);
+  }
+  return client;
+}
+
+/**
+ * Call an operation's tool.
+ *
+ * Its reply is the data of the operation's success, and a failure carries
+ * the problem the protocol describes as its text.
+ */
+async function toolAnswer<Prefix extends string>(
   target: Target<Prefix>,
   operation: Operation,
-  params: Readonly<Record<string, string>>,
-  headers: Readonly<Record<string, string>>,
-  payload: unknown,
+  id: RequestOperationId,
+  args: Record<string, unknown>,
   signal: AbortSignal | undefined,
 ): Promise<Answer> {
-  const sent = new Headers(headers);
-  sent.set("Accept", "application/json, application/problem+json");
-  if (target.client.token !== undefined) {
-    sent.set("Authorization", `Bearer ${target.client.token}`);
+  const result = await tools(target).callTool(
+    // SAFETY: `args` are the operation's arguments, which the host checks.
+    { name: id, arguments: args as never },
+    { signal },
+  );
+  if (result.resultType !== "complete") {
+    throw new Error(`${id} asked a question no host operation asks`);
   }
-  if (payload !== undefined) {
-    sent.set("Content-Type", "application/json");
+  if (result.isError) {
+    const [block] = result.content;
+    let problem: unknown;
+    try {
+      problem = block?.type === "text" ? JSON.parse(block.text) : undefined;
+    } catch {
+      problem = undefined;
+    }
+    if (typeof problem !== "object" || problem === null) {
+      throw new Error(`${id} failed without a problem`);
+    }
+    return {
+      status: z.object({ status: z.number().int() }).parse(problem).status,
+      problem: true,
+      json: async () => problem,
+    };
   }
-  const fetch = target.client.fetch ?? globalThis.fetch;
-  const response = await fetch(resolve(target, operation.path, params), {
-    method: operation.method,
-    headers: sent,
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-    signal,
-  });
   return {
-    status: response.status,
-    problem: isType(
-      response.headers.get("Content-Type"),
-      "application/problem+json",
-    ),
-    json: () => response.json(),
+    status: successStatus(operation),
+    problem: false,
+    json: async () => result.structuredContent,
   };
 }
 
 /** Deliver a call, and stop waiting on abort. A call already sent may still apply. */
 async function call<Prefix extends string>(
   target: CallTarget<Prefix>,
+  operation: Operation,
   message: CallMessage,
   signal: AbortSignal | undefined,
 ): Promise<Answer> {
@@ -400,9 +484,17 @@ async function call<Prefix extends string>(
             .finally(() => signal.removeEventListener("abort", abort));
         }),
   );
+  if (reply.ok) {
+    return {
+      status: successStatus(operation),
+      problem: false,
+      json: async () => reply.data,
+    };
+  }
+  const { problem } = reply;
   return {
-    status: reply.status,
+    status: z.object({ status: z.number().int() }).parse(problem).status,
     problem: true,
-    json: async () => reply.body,
+    json: async () => problem,
   };
 }
