@@ -78,6 +78,13 @@ afterEach(() => {
 });
 
 describe("streamSlots", () => {
+  it("lets the most recently seen tabs hold a stream, however many are visible", async () => {
+    const visible = Array.from({ length: MAX_STREAMS + 1 }, () => tab(true));
+    await settle();
+    const holding = await Promise.all(visible.map(holds));
+    expect(holding).toEqual([false, true, true, true, true]);
+  });
+
   it("lets visible tabs and the most recently seen hidden ones hold a stream", async () => {
     const hidden = Array.from({ length: MAX_STREAMS + 1 }, () => tab(false));
     const visible = tab(true);

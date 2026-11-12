@@ -7,9 +7,8 @@
  * them between its tabs, and a tab following its session holds one for as
  * long as it follows it. So with six tabs open, no request gets a connection.
  * The tabs of one origin agree through a `BroadcastChannel` that only the
- * visible ones and the most recently seen up to `MAX_STREAMS` hold a stream.
- * A hidden tab beyond them lets its stream go, and follows its session again
- * once it may.
+ * `MAX_STREAMS` most recently seen hold a stream, visible ones first. The
+ * others let their streams go, and follow their sessions again once they may.
  */
 export const MAX_STREAMS = 4;
 
@@ -19,7 +18,7 @@ const EXPIRES_MS = 3 * HEARTBEAT_MS;
 
 interface Tab {
   readonly visible: boolean;
-  /** When the tab was last visible. */
+  /** When the tab was last shown or focused. */
   readonly seen: number;
   /** When this tab last heard of it. */
   readonly heard: number;
@@ -71,13 +70,17 @@ export function streamSlots({
       listener();
     }
   };
-  const allowed = () => {
-    if (visible()) {
-      return true;
+  /** Whether another tab comes first: visible ones, then the most recently seen. */
+  const before = (other: string, tab: Tab) => {
+    if (tab.visible !== visible()) {
+      return tab.visible;
     }
+    return tab.seen === seen ? other > id : tab.seen > seen;
+  };
+  const allowed = () => {
     const cutoff = now() - EXPIRES_MS;
-    const ahead = [...tabs.values()].filter(
-      (tab) => tab.heard >= cutoff && (tab.visible || tab.seen > seen),
+    const ahead = [...tabs].filter(
+      ([other, tab]) => tab.heard >= cutoff && before(other, tab),
     );
     return ahead.length < MAX_STREAMS;
   };
@@ -99,13 +102,15 @@ export function streamSlots({
     }
     notify();
   });
-  document.addEventListener("visibilitychange", () => {
+  const looked = () => {
     if (visible()) {
       seen = now();
     }
     announce();
     notify();
-  });
+  };
+  document.addEventListener("visibilitychange", looked);
+  globalThis.addEventListener?.("focus", looked);
   globalThis.addEventListener?.("pagehide", () => post({ kind: "gone", id }));
   setInterval(() => {
     announce();
@@ -146,11 +151,18 @@ export function streamSlots({
   };
 }
 
-/** Whether this page reached its server over HTTP/1.1, where tabs share a few connections. */
+/**
+ * Whether this page's tabs may share a few connections to its server: unless
+ * it was loaded over HTTP/2 or 3, which multiplex. A page loaded from the
+ * cache names no protocol.
+ */
 export function sharesConnections(): boolean {
   const entries = globalThis.performance?.getEntriesByType?.("navigation");
   const [navigation] = (entries ?? []) as PerformanceNavigationTiming[];
-  return navigation?.nextHopProtocol === "http/1.1";
+  return (
+    navigation !== undefined &&
+    !["h2", "h3"].includes(navigation.nextHopProtocol)
+  );
 }
 
 /** Slots that never ask a tab to let its stream go. */
