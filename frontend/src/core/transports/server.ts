@@ -4,6 +4,12 @@ import { type NotebookTransport, StreamStopped } from "@marimo-team/client";
 import type { EventArguments, EventData } from "#holon-ui";
 import { jsonParseWithSpecialChar } from "@/utils/json/json-parser";
 import { classifyCloseEvent } from "./connection-state";
+import {
+  type StreamSlots,
+  sharesConnections,
+  streamSlots,
+  unlimited,
+} from "./stream-slots";
 
 // The draft's Forbidden: the caller may not follow the session.
 const FORBIDDEN = -32024;
@@ -50,6 +56,14 @@ export type SubscribeSession = (
   options: { signal: AbortSignal },
 ) => Promise<AsyncIterable<{ data: EventData["marimo"]["session"] }>>;
 
+let shared: StreamSlots | undefined;
+
+/** This page's slots: limited where the browser shares HTTP/1.1 connections. */
+function pageSlots(): StreamSlots {
+  shared ??= sharesConnections() ? streamSlots() : unlimited;
+  return shared;
+}
+
 /**
  * Follow a marimo session through its `session` MCP event.
  *
@@ -62,10 +76,13 @@ export type SubscribeSession = (
 export function sessionEvents(
   args: () => Promise<SessionArguments>,
   subscribe: SubscribeSession,
+  slots: StreamSlots = pageSlots(),
 ): NotebookTransport {
   return async ({ signal }, { open, message }) => {
+    let held: AbortSignal | undefined;
     try {
-      const events = await subscribe(await args(), { signal });
+      held = await slots.hold(signal);
+      const events = await subscribe(await args(), { signal: held });
       open();
       for await (const { data } of events) {
         message(jsonParseWithSpecialChar(data.frame));
@@ -74,7 +91,9 @@ export function sessionEvents(
       if (error instanceof StreamStopped) {
         throw error;
       }
-      const stopped = signal.aborted ? undefined : stopOnFailure(error);
+      // A stream another tab needs follows the session again once it may.
+      const stopped =
+        signal.aborted || held?.aborted ? undefined : stopOnFailure(error);
       if (stopped !== undefined) {
         throw stopped;
       }
