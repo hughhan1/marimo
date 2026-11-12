@@ -75,8 +75,6 @@ class Tool:
     """The type whose fields are the arguments, or None for a tool with none."""
     output: Any = None
     """The reply's type, or None for an empty reply."""
-    ids: tuple[str, ...] = ()
-    """String arguments besides the input's fields, such as a record's id."""
     description: str = ""
 
 
@@ -88,13 +86,12 @@ def tool(
     *,
     input: Any = None,  # noqa: A002
     output: Any = None,
-    ids: tuple[str, ...] = (),
     description: str | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Serve an editor handler as a tool.
 
     The handler takes `request`, the endpoint's request, and `body`, the
-    decoded `input`, by keyword, plus each id in `ids` as a string. It returns
+    decoded `input`, by keyword. It returns
     an `output` instance or a `FileResult`.
     """
 
@@ -104,7 +101,6 @@ def tool(
             handler,
             input,
             output,
-            ids,
             description or _doc(handler) or _doc(input),
         )
         return handler
@@ -151,7 +147,7 @@ def _arguments(
 ) -> dict[str, Any]:
     """The keyword arguments an editor handler takes for a call."""
     given = dict(arguments)
-    known = set(found.ids)
+    known: set[str] = set()
     if found.input is not None:
         known.update(
             member.encode_name
@@ -164,12 +160,6 @@ def _arguments(
                 f"Object contains unknown field `{key}`"
             )
     keywords: dict[str, Any] = {}
-    for key in found.ids:
-        if key not in given:
-            raise msgspec.ValidationError(
-                f"Object missing required field `{key}`"
-            )
-        keywords[key] = msgspec.convert(given.pop(key), str)
     if found.input is not None:
         body = msgspec.convert(given, found.input)
         filled = _server_filled(found.input)
@@ -262,18 +252,14 @@ def contract() -> list[dict[str, Any]]:
             )
             arguments.pop("title", None)
             arguments.pop("description", None)
-        properties = {
-            **{key: {"type": "string"} for key in found.ids},
-            **arguments.get("properties", {}),
-        }
         definition: dict[str, Any] = {
             "name": name,
             "description": found.description,
             "inputSchema": {
                 **arguments,
                 "type": "object",
-                "properties": properties,
-                "required": [*found.ids, *arguments.get("required", [])],
+                "properties": arguments.get("properties", {}),
+                "required": arguments.get("required", []),
                 "additionalProperties": False,
             },
             "_meta": _APP_ONLY,

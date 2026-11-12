@@ -145,10 +145,17 @@ async def file_details(
     return file_system.get_details(body.path, max_bytes=body.max_bytes)
 
 
-@tool("files_download", ids=("path",), output=FileResult)
+class FileDownloadRequest(msgspec.Struct):
+    path: str
+
+
+@tool("files_download", input=FileDownloadRequest, output=FileResult)
 @requires("edit")
-def download_file(*, request: Request, path: str) -> FileResult:
+def download_file(
+    *, request: Request, body: FileDownloadRequest
+) -> FileResult:
     """Download a file. The reply lists where to fetch its bytes."""
+    path = body.path
     app_state = AppState(request)
     server_config = app_state.config_manager.get_config().server
     # A downloads-disabled policy cannot be satisfied by re-authenticating,
