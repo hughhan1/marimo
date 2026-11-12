@@ -1,8 +1,10 @@
 click>=8.0,<9; sys_platform != 'emscripten'
 docutils>=0.16.0
+holon-sh>=0.0.1.dev10; sys_platform != 'emscripten'
 itsdangerous>=2.0.0
 jedi>=0.18.0,<0.21.0
 markdown>=3.6,<4
+mcp>=2.3.0,<3; sys_platform != 'emscripten'
 msgspec>=0.22.0
 narwhals>=2.0.0
 packaging

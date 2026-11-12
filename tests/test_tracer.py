@@ -471,10 +471,14 @@ import importlib.abc
 import os
 import sys
 
+# mcp requires OpenTelemetry's API; the otel extra adds its SDK and exporters.
 class BlockOpenTelemetry(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
         del path, target
-        if fullname == "opentelemetry" or fullname.startswith("opentelemetry."):
+        if fullname.split(".")[:2] in (
+            ["opentelemetry", "sdk"],
+            ["opentelemetry", "exporter"],
+        ):
             raise ModuleNotFoundError(name=fullname)
         return None
 
