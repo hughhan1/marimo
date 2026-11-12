@@ -36,7 +36,6 @@ export {
   type NotebookTransport,
   StreamStopped,
 } from "./transport/frame.ts";
-export { sse, type SseOptions, type StreamUrl } from "./transport/sse.ts";
 
 export {
   createCatalogReducer,

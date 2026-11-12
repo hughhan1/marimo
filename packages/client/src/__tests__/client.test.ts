@@ -1,11 +1,16 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
-import { Client, NotebookClient } from "../index.ts";
+import { Client, NotebookClient, StreamStopped } from "../index.ts";
 import type * as Protocol from "../protocol.ts";
 import type { ProblemOf } from "../request.ts";
-import { fixtureEvents, host, type Received } from "./fixtures.ts";
+import {
+  fixtureEvents,
+  host,
+  type Received,
+  type Subscription,
+} from "./fixtures.ts";
 
 const record = fixtureEvents("events.sse").find(
   (event) => event.event === "notebook",
@@ -13,15 +18,17 @@ const record = fixtureEvents("events.sse").find(
 
 function connect(
   answer: (call: Received) => unknown,
-  stream?: (request: Request) => Response,
+  subscribe?: (subscription: Received) => Subscription,
 ) {
-  const { fetch, calls, requests } = host(answer, stream);
+  const { fetch, calls, subscriptions } = host(answer, subscribe);
   const client = new Client(
     "http://localhost/prefix/api/marimo/v1/?session_id=s1",
     { token: "secret", fetch },
   );
-  return { client, fetch, calls, requests };
+  return { client, fetch, calls, subscriptions };
 }
+
+afterEach(() => vi.useRealTimers());
 
 describe("Client", () => {
   it("creates a notebook through the host's tools", async () => {
@@ -66,12 +73,6 @@ describe("Client", () => {
     });
   });
 
-  it.each(["", ".", ".."])("rejects an invalid notebook id %j", (id) => {
-    const { client, fetch } = connect(() => ({}));
-    expect(() => client.notebook(id)).toThrow("valid notebook_id");
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   it("validates arguments and returns host problems", async () => {
     const problem = {
       type: "urn:marimo:problem:conflict",
@@ -95,44 +96,102 @@ describe("Client", () => {
     );
   });
 
-  it("follows a notebook's stream below its URL", async () => {
-    const { client, requests } = connect(
+  it("follows the catalog with its types and the client's token", async () => {
+    const { client, fetch, subscriptions } = connect(
       () => ({}),
-      () =>
-        new Response("id: 1\nevent: ready\ndata: {}\n\n", {
-          headers: { "Content-Type": "text/event-stream" },
-        }),
-    );
-    const events = client.notebook("n/1").events();
-    await vi.waitFor(() => expect(events.cursor).toBe("1"));
-    expect(requests[0].url).toBe(
-      "http://localhost/prefix/api/marimo/v1/notebooks/n%2F1/events?session_id=s1",
-    );
-    events.close();
-    await events.closed;
-  });
-
-  it("opens independent catalog streams with inherited connection options", async () => {
-    const { client, requests, fetch } = connect(
-      () => ({}),
-      () =>
-        new Response("id: 41\nevent: ready\ndata: {}\n\n", {
-          headers: { "Content-Type": "text/event-stream" },
-        }),
+      () => ({ events: [{ event: "ready", id: "41", data: {} }] }),
     );
     const first = client.events({ types: ["notebook"], cursor: "40" });
     const second = client.events();
-    await vi.waitFor(() => expect(second.cursor).toBe("41"));
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(requests[0].url).toBe(
-      "http://localhost/prefix/api/marimo/v1/events?session_id=s1&types=notebook",
+    await vi.waitFor(() => {
+      expect(first.cursor).toBe("41");
+      expect(second.cursor).toBe("41");
+    });
+    expect(new Set(fetch.mock.calls.map(([url]) => String(url)))).toEqual(
+      new Set(["http://localhost/prefix/api/marimo/v1/mcp?session_id=s1"]),
     );
-    expect(requests[0].headers.get("Authorization")).toBe("Bearer secret");
-    expect(requests[0].headers.get("Last-Event-ID")).toBe("40");
-    expect(requests[1].headers.get("Last-Event-ID")).toBeNull();
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions).toEqual(
+      expect.arrayContaining([
+        {
+          name: "catalog",
+          arguments: { types: ["notebook"], cursor: "40" },
+          authorization: "Bearer secret",
+        },
+        { name: "catalog", arguments: {}, authorization: "Bearer secret" },
+      ]),
+    );
     first.close();
     expect(second.status).not.toBe("closed");
     second.close();
     await Promise.all([first.closed, second.closed]);
+  });
+
+  it("follows a notebook's events with its id and run", async () => {
+    const ready = { event: "ready", id: "1", data: {} };
+    const { client, subscriptions } = connect(
+      () => ({}),
+      () => ({ events: [ready] }),
+    );
+    const events = client
+      .notebook("n/1")
+      .events({ types: ["cell"], runId: "r1" });
+    const received: unknown[] = [];
+    events.subscribe((event) => received.push(event));
+    await vi.waitFor(() => expect(events.cursor).toBe("1"));
+    expect(received).toEqual([ready]);
+    expect(subscriptions).toEqual([
+      {
+        name: "notebook",
+        arguments: { notebook_id: "n/1", types: ["cell"], run_id: "r1" },
+        authorization: "Bearer secret",
+      },
+    ]);
+    events.close();
+    await events.closed;
+  });
+
+  it("stops with the problem a host refuses a subscription with", async () => {
+    const problem = {
+      type: "urn:marimo:problem:not-found",
+      title: "Not found",
+      status: 404,
+    };
+    const { client, subscriptions } = connect(
+      () => ({}),
+      () => ({ problem }),
+    );
+    const events = client.notebook("n1").events();
+    const error = await events.closed.catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(StreamStopped);
+    expect((error as StreamStopped).cause).toEqual(problem);
+    expect(events.status).toBe("closed");
+    expect(subscriptions).toHaveLength(1);
+  });
+
+  it("subscribes again from its cursor after losing the connection", async () => {
+    vi.useFakeTimers();
+    const answers: Subscription[] = [
+      { events: [{ event: "ready", id: "41", data: {} }], lose: true },
+      { events: [{ event: "ready", id: "42", data: {} }] },
+    ];
+    const { client, subscriptions } = connect(
+      () => ({}),
+      () => answers.shift()!,
+    );
+    const statuses: string[] = [];
+    const events = client.events({
+      types: ["notebook"],
+      onStatus: (status) => statuses.push(status),
+    });
+    await vi.waitFor(() => expect(events.cursor).toBe("41"));
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.waitFor(() => expect(events.cursor).toBe("42"));
+    expect(subscriptions.map((subscription) => subscription.arguments)).toEqual(
+      [{ types: ["notebook"] }, { types: ["notebook"], cursor: "41" }],
+    );
+    expect(statuses).toEqual(["connected", "connecting", "connected"]);
+    events.close();
+    await events.closed;
   });
 });

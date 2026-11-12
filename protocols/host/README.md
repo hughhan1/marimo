@@ -3,13 +3,14 @@
 The host protocol lets clients discover hosts, find notebooks, edit documents,
 and follow execution through MCP tools and event streams.
 
-A host serves each operation as an MCP tool of the same name at `/mcp` below
-the host API's URL, and its event streams over HTTP. A tool's arguments are
-one object, its result is the reply, and a failure carries the problem as its
-text. The definitions list each tool in the OpenAPI document's `x-tools`.
+A host serves MCP at `/mcp` below the host API's URL: each operation as a tool
+of the same name, and its two event streams as the events `catalog` and
+`notebook`. A tool's arguments are one object, its result is the reply, and a
+failure carries the problem as its text. The definitions list the tools in the
+OpenAPI document's `x-tools` and the events in its `x-events`.
 
 - [Specification](spec.md) — the model and behavior a host implements.
-- [OpenAPI](#get-the-openapi-document) — the tools, streams and wire schemas, printed on demand.
+- [OpenAPI](#get-the-openapi-document) — the tools, events and wire schemas, printed on demand.
 - [TypeScript client](../../packages/client/README.md) — connect to a host.
 - [Effect contracts](../../packages/host-protocol/README.md) — author the definitions.
 - [Examples](fixtures/README.md), [conformance tests](conformance/README.md),

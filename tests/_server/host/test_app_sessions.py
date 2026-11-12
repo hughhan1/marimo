@@ -7,7 +7,7 @@ from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.main import create_starlette_app
 from marimo._session.model import SessionMode
-from tests._server.host.drive import AUTH, TOKEN, call, finished
+from tests._server.host.drive import TOKEN, call, refused
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
@@ -22,8 +22,7 @@ async def test_app_mode_never_exposes_the_catalog_or_mutations() -> None:
     app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=1234)
     await bridge.open()
     try:
-        events = await finished(app, "GET", "/events", headers=AUTH)
-        assert events.status == 404
+        assert (await refused(app, "catalog"))["status"] == 404
         edited = await call(
             app,
             "notebook.edit",

@@ -14,17 +14,20 @@ import {
   type MutationOptions,
   type ResultOf,
 } from "./request.ts";
+import { subscribe } from "./transport/mcp.ts";
 
-/** A client for a host's API: its tools at `/mcp` and its streams. */
+/** A client for a host's API: its tools and events at `/mcp`. */
 export class Client {
   readonly #url: URL;
+  readonly #endpoint: URL;
   readonly #options: ClientOptions;
   readonly #send: CallTool;
 
   public constructor(url: string | URL, init: ClientOptions = {}) {
     this.#url = new URL(url);
+    this.#endpoint = below(this.#url, "/mcp");
     this.#options = init;
-    this.#send = mcp(below(this.#url, "/mcp"), init);
+    this.#send = mcp(this.#endpoint, init);
   }
 
   /** The host API's base URL. Each read returns a copy. */
@@ -34,12 +37,13 @@ export class Client {
 
   /** Follow the catalog with this client's options and an independent cursor. */
   public events<const K extends CatalogKind = CatalogKind>(
-    options: Omit<CatalogEventsOptions<K>, keyof ClientOptions> = {},
+    options: CatalogEventsOptions<K> = {},
   ): CatalogEvents<K> {
-    return new CatalogEvents<K>(below(this.#url, "/events"), {
-      ...this.#options,
-      ...options,
-    });
+    const args = options.types === undefined ? {} : { types: options.types };
+    return new CatalogEvents<K>(
+      subscribe(this.#endpoint, this.#options, "catalog", args),
+      options,
+    );
   }
 
   /**
@@ -51,15 +55,9 @@ export class Client {
     notebook: Protocol.NotebookId | Pick<Protocol.NotebookOutput, "id">,
   ): NotebookClient {
     const id = typeof notebook === "string" ? notebook : notebook.id;
-    // An empty or dot segment would name a different stream, and
-    // percent-encoding does not stop URLs from resolving dot segments.
-    if (id === "" || id === "." || id === "..") {
-      throw new Error("A notebook client needs a valid notebook_id");
-    }
-    return new NotebookClient(id, this.#send, {
-      url: below(this.#url, `/notebooks/${encodeURIComponent(id)}`),
-      options: this.#options,
-    });
+    return new NotebookClient(id, this.#send, (args) =>
+      subscribe(this.#endpoint, this.#options, "notebook", args),
+    );
   }
 
   /** Create a notebook. Its record also arrives on the catalog stream. */

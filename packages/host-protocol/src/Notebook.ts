@@ -11,7 +11,7 @@ import {
 import * as S from "./Schemas.ts";
 import * as Problems from "./Problems.ts";
 import * as P from "./api/Parameters.ts";
-import { sseEvents } from "./internal/http.ts";
+import type { Subscription } from "./internal/tools.ts";
 import { NotebookEvent } from "./Events.ts";
 
 export const Event = NotebookEvent;
@@ -146,41 +146,30 @@ export const Update = Tool.make("notebook.update", {
   failure: Schema.Union([...Problems.Mutation.members]),
 }).annotate(Tool.Title, "Rename or move a notebook");
 
-const makeEvents = <E extends Schema.Constraint>(events: E) =>
-  HttpApiEndpoint.get("events", "/notebooks/:notebook_id/events", {
-    params: P.notebook,
-    query: Schema.Struct({
-      types: Schema.optionalKey(P.Types),
-      runId: Schema.optionalKey(P.RunFilter),
-    }).pipe(Schema.encodeKeys({ types: "types", runId: "run_id" })),
-    headers: Schema.Struct({
-      cursor: Schema.optionalKey(P.LastEventId),
-      attachmentIdentity: Schema.optionalKey(P.AttachmentIdentity),
-      attachmentKind: Schema.optionalKey(P.AttachmentKind),
-      attachmentName: Schema.optionalKey(P.AttachmentName),
-    }).pipe(
-      Schema.encodeKeys({
-        cursor: "last-event-id",
-        attachmentIdentity: "marimo-attachment-identity",
-        attachmentKind: "marimo-attachment-kind",
-        attachmentName: "marimo-attachment-name",
-      }),
-    ),
-    success: [
-      HttpApiSchema.StreamSse({ events: sseEvents(events) })
-        .pipe(HttpApiSchema.status(200))
-        .annotateKey({
-          description: "The notebook, then changes, as server-sent events.",
-        }),
-    ],
-    error: [...Problems.Common.members],
-  })
-    .annotate(OpenApi.Identifier, "notebook.events")
-    .annotate(OpenApi.Summary, "Follow one notebook as a stream")
-    .annotate(
-      OpenApi.Description,
-      "Sends the notebook, its cells and document, its runtime, its\nattachments, its runs, their executions, and their items, then\nevery change as it happens. The\nstream follows the same rules as `/events`: a snapshot that ends\nin `ready`, ids as positions, `Last-Event-ID` to resume, `reset`\nwhen the host cannot, a `: ping` comment every fifteen seconds,\nand `types` to limit the kinds sent. The optional `run_id` query\nnarrows the stream to one run. A cursor belongs to the stream it\ncame from.\n\nOpening this stream attaches the client to the notebook. An\nattachment appears on both streams while the connection is open\nand is removed when it closes. Every opening, including a reconnect,\ncreates a separate attachment. The optional\n`Marimo-Attachment-Identity` header supplies its `identity` so\nconsumers can group connections from the same client. A shared\nidentity does not merge attachments or extend their lifetimes.\nThe snapshot includes every run that is not yet completed, with\nits executions and items, plus\nany completed results the host retains. Result retention is\nindependent of replay history. Removed objects are absent from\nsnapshots; a resumable stream carries their removal events.\n\nThe stream may also carry `custom` events: namespaced JSON payloads\nthat describe occurrences rather than object state. These have\ncursors and timestamps and appear only in live delivery and replay.\nA reset cannot recover custom events whose history\nhas expired. `types=custom` selects them. They do not belong to a\nrun and are excluded by `run_id`.\n\nThe opening phase is one consistent cut of the notebook, taken\nunder the lock that changes to the document take, so reading to\n`ready` and closing is a snapshot, and `types=cell,document` is a\nsnapshot of the document alone. Cells arrive before the document\nthat orders them, in the opening phase and after every change, so\neach cell named in `order` is already available to the client.\nThe effects of one change to the document arrive\ntogether, with no other event between them.\n",
-    );
+export const EventsRequest = Schema.Struct({
+  notebook_id: P.NotebookId,
+  types: Schema.optionalKey(P.Types),
+  run_id: Schema.optionalKey(P.RunFilter),
+  cursor: Schema.optionalKey(P.Cursor),
+  attachment_identity: Schema.optionalKey(P.AttachmentIdentity),
+  attachment_kind: Schema.optionalKey(P.AttachmentKind),
+  attachment_name: Schema.optionalKey(P.AttachmentName),
+}).annotate({
+  description:
+    "The notebook a subscription follows, which of its events, where it resumes, and the attachment it makes.",
+  identifier: "NotebookEventsRequest",
+});
+
+/** The notebook's events, for the stream's `NotebookEvent` union. */
+export const subscription = <E extends Schema.Top>(
+  events: E,
+): Subscription => ({
+  name: "notebook",
+  description:
+    "Sends the notebook, its cells and document, its runtime, its\nattachments, its runs, their executions, and their items, then\nevery change as it happens. It follows the same rules as the `catalog`\nevent: a snapshot that ends in `ready`, ids as positions, `cursor` to\nresume, `reset` when the host cannot, and `types` to limit the kinds\nsent. `run_id` narrows it to one run. A cursor belongs to the event it\ncame from.\n\nSubscribing attaches the client to the notebook. An attachment\nappears on both events while the subscription lasts and is removed\nwhen it ends. Every subscription, including one that resumes,\ncreates a separate attachment. `attachment_identity` supplies its\n`identity` so consumers can group the subscriptions of one client. A\nshared identity does not merge attachments or extend their lifetimes.\nThe snapshot includes every run that is not yet completed, with\nits executions and items, plus\nany completed results the host retains. Result retention is\nindependent of replay history. Removed objects are absent from\nsnapshots; a resumed subscription carries their removal events.\n\nIt may also carry `custom` events: namespaced JSON payloads\nthat describe occurrences rather than object state. These have\ncursors and timestamps and appear only in live delivery and replay.\nA reset cannot recover custom events whose history\nhas expired. `types` naming `custom` selects them. They do not belong\nto a run and are excluded by `run_id`.\n\nThe opening phase is one consistent cut of the notebook, taken\nunder the lock that changes to the document take, so reading to\n`ready` and ending is a snapshot, and `types` of `cell` and\n`document` is a snapshot of the document alone. Cells arrive before\nthe document that orders them, in the opening phase and after every\nchange, so each cell named in `order` is already available to the\nclient. The effects of one change to the document arrive together,\nwith no other event between them.\n",
+  arguments: EventsRequest,
+  payload: events,
+});
 
 /** The notebook's tools. */
 export const Tools = Toolkit.make(
@@ -198,9 +187,3 @@ export const Tools = Toolkit.make(
   Save,
   Update,
 );
-
-export const group = <E extends Schema.Constraint>(events: E) =>
-  HttpApiGroup.make("Notebook").add(makeEvents(events));
-
-export const Events = makeEvents(Event);
-export const Group = group(Event);

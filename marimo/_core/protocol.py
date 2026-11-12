@@ -15,7 +15,7 @@ from msgspec import UNSET, Meta, Struct, UnsetType
 Identity: TypeAlias = Annotated[
     str,
     Meta(
-        description="The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
+        description="The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
         max_length=128,
         min_length=1,
         pattern="^[!-~]+$",
@@ -26,7 +26,7 @@ Identity: TypeAlias = Annotated[
 Name: TypeAlias = Annotated[
     str,
     Meta(
-        description="A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty.",
+        description="A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty.",
         max_length=256,
     ),
 ]
@@ -45,6 +45,27 @@ else:
             ),
         ],
     )
+
+
+class CatalogEventsRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class CellConfig(Struct, frozen=True):
@@ -839,7 +860,7 @@ class Attachment(Struct, frozen=True):
         Annotated[
             Identity,
             Meta(
-                description="The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n"
+                description="The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n"
             ),
         ]
         | None
@@ -847,7 +868,7 @@ class Attachment(Struct, frozen=True):
     kind: Annotated[
         str,
         Meta(
-            description="What kind of thing is attached, supplied by `Marimo-Attachment-Kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when the header is omitted. Clients accept kinds they do not recognize.",
+            description="What kind of thing is attached, supplied as `attachment_kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when it is omitted. Clients accept kinds they do not recognize.",
             pattern="^[a-z0-9-]+$",
         ),
     ]
@@ -855,7 +876,7 @@ class Attachment(Struct, frozen=True):
         Annotated[
             Name,
             Meta(
-                description="A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty."
+                description="A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty."
             ),
         ]
         | None
@@ -1423,6 +1444,67 @@ class Notebook(Struct, frozen=True):
         ]
         | None
     )
+
+
+class NotebookEventsRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    attachment_identity: (
+        Annotated[
+            str,
+            Meta(
+                description="An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`invalid-request`.\n",
+                max_length=128,
+                min_length=1,
+                pattern="^[!-~]+$",
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    attachment_kind: (
+        Annotated[
+            str,
+            Meta(
+                description="What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `invalid-request`.\n",
+                pattern="^[a-z0-9-]+$",
+            ),
+        ]
+        | UnsetType
+    ) = "client"
+    attachment_name: (
+        Annotated[
+            str,
+            Meta(
+                description="A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `invalid-request`.\n",
+                max_length=256,
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    run_id: (
+        Annotated[
+            RunId,
+            Meta(description="Narrows the notebook's events to one run."),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class NotebookMessage(Struct, frozen=True):
@@ -2250,6 +2332,22 @@ class AnalysisMessage(Struct, frozen=True):
     ) = UNSET
 
 
+CatalogStreamEvent: TypeAlias = Annotated[
+    HostEvent
+    | ProjectEvent
+    | NotebookEvent
+    | RuntimeEvent
+    | AttachmentEvent
+    | ProjectRemovedEvent
+    | NotebookRemovedEvent
+    | RuntimeRemovedEvent
+    | AttachmentRemovedEvent
+    | ResetEvent
+    | ReadyEvent,
+    Meta(description="One event of the `catalog` event."),
+]
+
+
 class ExecutionEvent(Struct, frozen=True, tag_field="event", tag="execution"):
     data: ExecutionMessage
     id: (
@@ -2309,4 +2407,33 @@ Event: TypeAlias = Annotated[
     Meta(
         description="A record, removal, or control message from a host stream. The data is decoded JSON. Snapshot records and reset events omit the cursor, and ready and live events carry it. Unknown event names belong to later versions or host extensions."
     ),
+]
+
+
+NotebookStreamEvent: TypeAlias = Annotated[
+    NotebookEvent
+    | DocumentEvent
+    | CellEvent
+    | RuntimeEvent
+    | AttachmentEvent
+    | RunEvent
+    | ExecutionEvent
+    | ConsoleEvent
+    | DisplayEvent
+    | InputEvent
+    | VariableEvent
+    | AnalysisEvent
+    | CustomEvent
+    | NotebookRemovedEvent
+    | CellRemovedEvent
+    | RuntimeRemovedEvent
+    | AttachmentRemovedEvent
+    | RunRemovedEvent
+    | ExecutionRemovedEvent
+    | ConsoleRemovedEvent
+    | DisplayRemovedEvent
+    | VariableRemovedEvent
+    | ResetEvent
+    | ReadyEvent,
+    Meta(description="One event of the `notebook` event."),
 ]

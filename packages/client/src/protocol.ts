@@ -522,18 +522,18 @@ export const Attachment = zod
         zod.null(),
       ])
       .describe(
-        "The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
+        "The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
       ),
     kind: zod
       .string()
       .regex(attachmentKindRegExp)
       .describe(
-        "What kind of thing is attached, supplied by `Marimo-Attachment-Kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when the header is omitted. Clients accept kinds they do not recognize.",
+        "What kind of thing is attached, supplied as `attachment_kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when it is omitted. Clients accept kinds they do not recognize.",
       ),
     name: zod
       .union([zod.string().max(attachmentNameOneMax), zod.null()])
       .describe(
-        "A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty.",
+        "A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty.",
       ),
     since: Timestamp.describe("When it attached."),
   })
@@ -2251,3 +2251,140 @@ export type UpdateNotebookRequest = zod.input<typeof UpdateNotebookRequest>;
 export type UpdateNotebookRequestOutput = zod.output<
   typeof UpdateNotebookRequest
 >;
+
+export const CatalogEventsRequest = zod
+  .strictObject({
+    types: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries.",
+      ),
+    cursor: zod
+      .string()
+      .optional()
+      .describe(
+        "The `id` of the last event the client received, to resume after it.",
+      ),
+  })
+  .describe(
+    "Which of the catalog's events a subscription follows, and where it resumes.",
+  );
+
+export type CatalogEventsRequest = zod.input<typeof CatalogEventsRequest>;
+export type CatalogEventsRequestOutput = zod.output<
+  typeof CatalogEventsRequest
+>;
+
+export const CatalogStreamEvent = zod
+  .union([
+    HostEvent,
+    ProjectEvent,
+    NotebookEvent,
+    RuntimeEvent,
+    AttachmentEvent,
+    ProjectRemovedEvent,
+    NotebookRemovedEvent,
+    RuntimeRemovedEvent,
+    AttachmentRemovedEvent,
+    ResetEvent,
+    ReadyEvent,
+  ])
+  .describe("One event of the `catalog` event.");
+
+export type CatalogStreamEvent = zod.input<typeof CatalogStreamEvent>;
+export type CatalogStreamEventOutput = zod.output<typeof CatalogStreamEvent>;
+
+export const notebookEventsRequestAttachmentIdentityMax = 128;
+
+export const notebookEventsRequestAttachmentIdentityRegExp = new RegExp(
+  "^[!-~]+$",
+);
+export const notebookEventsRequestAttachmentKindDefault = `client`;
+export const notebookEventsRequestAttachmentKindRegExp = new RegExp(
+  "^[a-z0-9-]+$",
+);
+export const notebookEventsRequestAttachmentNameMax = 256;
+
+export const NotebookEventsRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    types: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries.",
+      ),
+    run_id: RunId.optional().describe(
+      "Narrows the notebook's events to one run.",
+    ),
+    cursor: zod
+      .string()
+      .optional()
+      .describe(
+        "The `id` of the last event the client received, to resume after it.",
+      ),
+    attachment_identity: zod
+      .string()
+      .min(1)
+      .max(notebookEventsRequestAttachmentIdentityMax)
+      .regex(notebookEventsRequestAttachmentIdentityRegExp)
+      .optional()
+      .describe(
+        "An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`invalid-request`.\n",
+      ),
+    attachment_kind: zod
+      .string()
+      .regex(notebookEventsRequestAttachmentKindRegExp)
+      .default(notebookEventsRequestAttachmentKindDefault)
+      .describe(
+        "What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `invalid-request`.\n",
+      ),
+    attachment_name: zod
+      .string()
+      .max(notebookEventsRequestAttachmentNameMax)
+      .optional()
+      .describe(
+        "A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `invalid-request`.\n",
+      ),
+  })
+  .describe(
+    "The notebook a subscription follows, which of its events, where it resumes, and the attachment it makes.",
+  );
+
+export type NotebookEventsRequest = zod.input<typeof NotebookEventsRequest>;
+export type NotebookEventsRequestOutput = zod.output<
+  typeof NotebookEventsRequest
+>;
+
+export const NotebookStreamEvent = zod
+  .union([
+    NotebookEvent,
+    DocumentEvent,
+    CellEvent,
+    RuntimeEvent,
+    AttachmentEvent,
+    RunEvent,
+    ExecutionEvent,
+    ConsoleEvent,
+    DisplayEvent,
+    InputEvent,
+    VariableEvent,
+    AnalysisEvent,
+    CustomEvent,
+    NotebookRemovedEvent,
+    CellRemovedEvent,
+    RuntimeRemovedEvent,
+    AttachmentRemovedEvent,
+    RunRemovedEvent,
+    ExecutionRemovedEvent,
+    ConsoleRemovedEvent,
+    DisplayRemovedEvent,
+    VariableRemovedEvent,
+    ResetEvent,
+    ReadyEvent,
+  ])
+  .describe("One event of the `notebook` event.");
+
+export type NotebookStreamEvent = zod.input<typeof NotebookStreamEvent>;
+export type NotebookStreamEventOutput = zod.output<typeof NotebookStreamEvent>;

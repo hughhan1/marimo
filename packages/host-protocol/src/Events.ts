@@ -177,8 +177,16 @@ export function derive<const Objects extends ReadonlyArray<ObjectKind>>(
   const kinds = (stream: StreamName) =>
     carriedBy(objects, stream).map((object) => object.kind);
   return {
-    CatalogEvent: events(carriedBy(objects, "catalog")),
-    NotebookEvent: events(carriedBy(objects, "notebook"), [CustomEvent]),
+    CatalogEvent: events(carriedBy(objects, "catalog")).annotate({
+      description: "One event of the `catalog` event.",
+      identifier: "CatalogStreamEvent",
+    }),
+    NotebookEvent: events(carriedBy(objects, "notebook"), [
+      CustomEvent,
+    ]).annotate({
+      description: "One event of the `notebook` event.",
+      identifier: "NotebookStreamEvent",
+    }),
     Event: events(objects, [CustomEvent]).annotate({
       description:
         "A record, removal, or control message from a host stream. The data is decoded JSON. Snapshot records and reset events omit the cursor, and ready and live events carry it. Unknown event names belong to later versions or host extensions.",

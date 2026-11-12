@@ -54,15 +54,15 @@ export const Attachment = Schema.Struct({
   notebook_id: NotebookId,
   identity: Schema.NullOr(AttachmentIdentity).annotateKey({
     description:
-      "The opaque client identity supplied by `Marimo-Attachment-Identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
+      "The opaque client identity supplied as `attachment_identity`.\nNull when none was supplied. Consumers can group attachments\nwith the same identity within a host. It does not identify an\nindividual connection or change its lifetime.\n",
   }),
   kind: AttachmentKind.annotateKey({
     description:
-      "What kind of thing is attached, supplied by `Marimo-Attachment-Kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when the header is omitted. Clients accept kinds they do not recognize.",
+      "What kind of thing is attached, supplied as `attachment_kind`, such as `browser`, `editor`, or `agent`. Defaults to `client` when it is omitted. Clients accept kinds they do not recognize.",
   }),
   name: Schema.NullOr(AttachmentName).annotateKey({
     description:
-      "A label to show people, supplied by `Marimo-Attachment-Name`, such as the browser or editor's name. Null when the header is omitted or empty.",
+      "A label to show people, supplied as `attachment_name`, such as the browser or editor's name. Null when it is omitted or empty.",
   }),
   since: Timestamp.annotateKey({
     description: "When it attached.",

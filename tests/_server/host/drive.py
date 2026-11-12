@@ -1,8 +1,8 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""ASGI test requests with incremental access to event streams.
+"""ASGI test requests to the host's tools and events at its `/mcp`.
 
-Direct ASGI requests let tests read events while a response remains open, and
-call the host's tools at its `/mcp`.
+Direct ASGI requests let tests read a subscription's events while its
+response remains open.
 """
 
 from __future__ import annotations
@@ -15,13 +15,19 @@ import msgspec
 
 from marimo._core.protocol_tools import TOOLS
 from marimo._server.host import HOST_API_PATH
-from tests.mcp_request import Called, called, request_headers, tool_payload
+from tests.mcp_request import (
+    Called,
+    called,
+    request_headers,
+    stream_headers,
+    stream_payload,
+    tool_payload,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping
 
     from starlette.applications import Starlette
-    from starlette.testclient import WebSocketTestSession
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from marimo._core.host import Host
@@ -56,9 +62,7 @@ def position(host: Host, cursor: str) -> int:
     return found
 
 
-def socket_snapshot(
-    websocket: WebSocketTestSession | SessionEvents,
-) -> list[dict[str, Any]]:
+def socket_snapshot(websocket: SessionEvents) -> list[dict[str, Any]]:
     """Read the opening snapshot or replay, including its ready boundary."""
     events = []
     while True:
@@ -71,40 +75,45 @@ def socket_snapshot(
 
 
 class Response:
+    """A response, and the protocol's events if it carries a subscription."""
+
     def __init__(self) -> None:
         self.status = 0
         self.headers: dict[str, str] = {}
         self.records: list[dict[str, Any]] = []
+        """The events received, each `{event, id?, data}`."""
+        self.ended: dict[str, Any] | None = None
+        """The error the host ended the subscription with."""
         self.body = b""
         self.changed = asyncio.Event()
         self._buffer = ""
 
     def feed(self, chunk: bytes) -> None:
         self.body += chunk
-        self._buffer += chunk.decode()
+        self._buffer = (self._buffer + chunk.decode()).replace("\r\n", "\n")
         while "\n\n" in self._buffer:
             raw, self._buffer = self._buffer.split("\n\n", 1)
-            self.records.append(parse(raw))
+            message = _message(raw)
+            if message.get("method") == "notifications/events/event":
+                self.records.append(message["params"]["data"])
+            elif message.get("method") == "notifications/events/terminated":
+                self.ended = message["params"]["error"]
         self.changed.set()
 
     def json(self) -> Any:
         return json.loads(self.body)
 
     def names(self) -> list[str]:
-        return [r["event"] for r in self.records if "event" in r]
+        return [r["event"] for r in self.records]
 
 
-def parse(raw: str) -> dict[str, Any]:
-    record: dict[str, Any] = {}
-    for line in raw.split("\n"):
-        if line.startswith(":"):
-            record["comment"] = line[1:].strip()
-        elif ":" in line:
-            field, _, value = line.partition(":")
-            record[field] = value.strip()
-    if "data" in record:
-        record["data"] = json.loads(record["data"])
-    return record
+def _message(record: str) -> dict[str, Any]:
+    """The JSON-RPC message a server-sent record carries, if any."""
+    for line in record.split("\n"):
+        if line.startswith("data:"):
+            message: dict[str, Any] = json.loads(line.removeprefix("data:"))
+            return message
+    return {}
 
 
 def request(
@@ -215,6 +224,51 @@ async def call(
     if result.ok and (kind := TOOLS[name].result) is not None:
         msgspec.convert(result.data, kind)
     return result
+
+
+def subscribe(
+    app: Starlette,
+    name: str,
+    /,
+    *,
+    headers: dict[str, str] = AUTH,
+    host: str = AUTHORITY,
+    client: tuple[str, int] = LOOPBACK,
+    **arguments: Any,
+) -> tuple[Response, asyncio.Task[None], Callable[[], None]]:
+    """Subscribe to the host's event `name`, as a client does.
+
+    Returns what `request` does; the response's records are the events.
+    """
+    return request(
+        app,
+        "POST",
+        "/mcp",
+        headers={**stream_headers(name), **headers},
+        body=json.dumps(stream_payload(name, arguments)).encode(),
+        host=host,
+        client=client,
+    )
+
+
+async def refused(app: Starlette, name: str, /, **kwargs: Any) -> Any:
+    """What refuses a subscription before it starts.
+
+    The host's refusal is its problem, which the transport's JSON-RPC error
+    carries as data. A subscription refused before the transport, such as
+    one without the host's token, fails with the response's own problem,
+    and one the transport refuses with its error alone.
+    """
+    response, task, _ = subscribe(app, name, **kwargs)
+    await asyncio.wait_for(task, 5)
+    error = called(response.body).problem
+    problem = (
+        (error.get("data") or {}).get("problem") if "code" in error else None
+    )
+    if problem is None:
+        return error
+    assert (error["code"], error["message"]) == (-32001, problem["title"])
+    return problem
 
 
 async def wait_for(

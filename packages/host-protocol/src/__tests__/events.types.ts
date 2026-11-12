@@ -1,42 +1,10 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import type { Effect, Stream } from "effect";
-import type { HttpApiClient } from "effect/http-api";
 import { expectTypeOf } from "vitest";
 import type * as Host from "../Host.ts";
 import type * as Notebook from "../Notebook.ts";
 import * as S from "../Schemas.ts";
 import * as Analysis from "../experimental/Analysis.ts";
-
-type StableClient = HttpApiClient.ForApi<typeof Host.Api>;
-type AnalysisClient = HttpApiClient.ForApi<typeof Analysis.Api>;
-
-export function checkEventClients(
-  stable: StableClient,
-  experimental: AnalysisClient,
-) {
-  const notebookId = S.NotebookId.make("n");
-  const events = stable.Notebook.events({
-    params: { notebookId },
-    query: {},
-    headers: {},
-  });
-  const extended = experimental.Notebook.events({
-    params: { notebookId },
-    query: {},
-    headers: {},
-  });
-  const catalog = experimental.Host.events({ query: {}, headers: {} });
-  expectTypeOf<
-    Stream.Success<Effect.Success<typeof events>>
-  >().toEqualTypeOf<Notebook.Event>();
-  expectTypeOf<
-    Stream.Success<Effect.Success<typeof extended>>
-  >().toEqualTypeOf<Analysis.NotebookEvent>();
-  expectTypeOf<
-    Stream.Success<Effect.Success<typeof catalog>>
-  >().toEqualTypeOf<Host.Event>();
-}
 
 export function checkEventNarrowing(
   event: Notebook.Event,

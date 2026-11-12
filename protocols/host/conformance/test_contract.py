@@ -5,19 +5,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import httpx
 import pytest
 from contract import (
+    EVENTS,
+    REFUSED,
     ROOT,
     SCHEMAS,
     SPEC,
-    Frame,
+    Event,
     Host,
-    Watch,
+    Refused,
     document_state,
+    examples,
     failed,
-    frames,
+    payloads,
+    schema_name,
     validate,
 )
 from jsonschema import Draft202012Validator, ValidationError
@@ -39,9 +44,44 @@ MODELS = {
 }
 
 
-async def lines(text):
-    for line in text.splitlines():
-        yield line
+def answer(*messages: Any, content_type: str = "text/event-stream"):
+    """A host that answers with JSON-RPC `messages`, framed as SSE."""
+    if content_type == "application/json":
+        [message] = messages
+        content = json.dumps(message)
+    else:
+        content = "".join(
+            f"event: message\ndata: {json.dumps(message)}\n\n"
+            for message in messages
+        )
+    return lambda _request: httpx.Response(
+        200, headers={"Content-Type": content_type}, content=content
+    )
+
+
+def notification(method: str, **params: Any):
+    return {
+        "jsonrpc": "2.0",
+        "method": f"notifications/events/{method}",
+        "params": params,
+    }
+
+
+def stream(*events: Any):
+    """A host whose subscription carries the protocol `events`."""
+    return answer(
+        notification("active", cursor="0", truncated=False),
+        *(notification("event", name="notebook", data=e) for e in events),
+    )
+
+
+async def snapshot(host, timeout=1):
+    async with httpx.AsyncClient(
+        base_url="http://127.0.0.1/", transport=httpx.MockTransport(host)
+    ) as client:
+        return await Host(client, timeout).snapshot(
+            "notebook", notebook_id="n1"
+        )
 
 
 def test_schemas_are_valid():
@@ -58,6 +98,14 @@ def test_tools_name_their_arguments_results_and_problems():
         if "outputSchema" in tool:
             assert tool["outputSchema"]["$ref"].rsplit("/", 1)[1] in SCHEMAS
         assert {ref["$ref"] for ref in tool["problems"]} <= problems
+
+
+def test_events_name_their_arguments_and_payloads():
+    assert set(EVENTS) == {"catalog", "notebook"}
+    for event in SPEC["x-events"]:
+        arguments = SCHEMAS[schema_name(event["inputSchema"])]
+        assert arguments["additionalProperties"] is False, event["name"]
+        assert {"ready", "reset"} <= payloads(event).keys(), event["name"]
 
 
 @pytest.mark.parametrize(
@@ -133,20 +181,25 @@ def test_precondition_problem_has_a_fixed_status_and_nullable_cell():
 @pytest.mark.parametrize(
     "path", sorted(FIXTURES.glob("*.sse")), ids=lambda p: p.name
 )
-async def test_stream_examples(path):
-    found = [frame async for frame in frames(lines(path.read_text()))]
+def test_stream_examples(path):
+    found = examples(path)
     assert found
-    for frame in found:
-        if frame.comment is None:
-            frame.message()
+    for event in found:
+        validate("Event", event)
 
 
-async def test_sse_preserves_multiline_data_comments_and_explicit_ids():
-    stream = ": ping\r\nid: 7\r\nevent: future\r\ndata: one\r\ndata:  two\r\n\r\nevent: ready\ndata: {}\n\n"
-    assert [frame async for frame in frames(lines(stream))] == [
-        Frame(comment="ping"),
-        Frame(event="future", data="one\n two", id="7"),
-        Frame(event="ready", data="{}"),
+async def test_a_subscription_reads_events_to_ready():
+    events = [
+        {
+            "event": "cell",
+            "data": json.loads((FIXTURES / "cell.json").read_text()),
+        },
+        {"event": "future", "data": {"anything": True}},
+        {"event": "ready", "id": "7", "data": {}},
+    ]
+    events[0]["data"] = {"cell": events[0]["data"]}
+    assert await snapshot(stream(*events)) == [
+        Event(**event) for event in events
     ]
 
 
@@ -160,19 +213,47 @@ async def test_sse_preserves_multiline_data_comments_and_explicit_ids():
         ("host.removed", False),
     ],
 )
-async def test_only_declared_removal_events_require_a_removed_message(
-    event, known
-):
-    stream = f"event: {event}\ndata: {{}}\n\nevent: ready\ndata: {{}}\n\n"
-    watch = Watch(frames(lines(stream)), timeout=1)
+async def test_only_declared_events_are_checked(event, known):
+    host = stream(
+        {"event": event, "data": {}}, {"event": "ready", "id": "1", "data": {}}
+    )
     if known:
         with pytest.raises(ValidationError, match="'id' is a required"):
-            await watch.ready()
+            await snapshot(host)
     else:
-        assert [frame.event for frame in await watch.ready()] == [
-            event,
-            "ready",
-        ]
+        assert [e.event for e in await snapshot(host)] == [event, "ready"]
+
+
+@pytest.mark.parametrize("valid", [True, False])
+async def test_a_refusal_is_a_problem(valid):
+    value = json.loads((FIXTURES / "problems" / "not-found.json").read_text())
+    if not valid:
+        del value["type"]
+    error = {
+        "code": REFUSED,
+        "message": value["title"],
+        "data": {"problem": value},
+    }
+    host = answer(
+        {"jsonrpc": "2.0", "id": 1, "error": error},
+        content_type="application/json",
+    )
+    if valid:
+        assert failed(await snapshot(host), "not-found") == value
+    else:
+        with pytest.raises(ValidationError):
+            await snapshot(host)
+
+
+async def test_a_terminated_subscription_fails():
+    host = answer(
+        notification("active", cursor="0", truncated=False),
+        notification(
+            "terminated", error={"code": -32024, "message": "Forbidden"}
+        ),
+    )
+    with pytest.raises(Refused, match="Forbidden"):
+        await snapshot(host)
 
 
 def test_required_nullable_fields_and_future_fields():
@@ -199,38 +280,31 @@ def test_cell_source_is_required_but_nullable_only_in_records():
     validate("CellInput", {"id": cell["id"], "code": ""})
 
 
-async def test_document_checker_accepts_withheld_source():
-    snapshot = []
-    async for frame in frames(
-        lines((FIXTURES / "notebook-events.sse").read_text())
-    ):
-        if frame.event == "ready":
-            break
-        snapshot.append(frame)
+def notebook_snapshot():
+    found = [
+        Event(**event) for event in examples(FIXTURES / "notebook-events.sse")
+    ]
+    return found[: [event.event for event in found].index("ready")]
+
+
+def test_document_checker_accepts_withheld_source():
+    snapshot = notebook_snapshot()
     document, cells = document_state(snapshot)
-    for frame in snapshot:
-        if frame.event == "cell":
-            message = frame.message()
-            message["cell"]["code"] = None
-            frame.data = json.dumps(message)
+    for event in snapshot:
+        if event.event == "cell":
+            event.data["cell"]["code"] = None
     assert document_state(snapshot) == (
         document,
         {key: {**cell, "code": None} for key, cell in cells.items()},
     )
 
 
-async def test_document_checker_rejects_cells_after_the_document():
-    snapshot = []
-    async for frame in frames(
-        lines((FIXTURES / "notebook-events.sse").read_text())
-    ):
-        if frame.event == "ready":
-            break
-        snapshot.append(frame)
+def test_document_checker_rejects_cells_after_the_document():
+    snapshot = notebook_snapshot()
     document_state(snapshot)
     with pytest.raises(AssertionError, match="cell arrived after"):
         document_state(
-            sorted(snapshot, key=lambda frame: frame.event != "document")
+            sorted(snapshot, key=lambda event: event.event != "document")
         )
 
 
@@ -238,24 +312,26 @@ async def test_stalled_response_headers_have_a_deadline():
     async def stalled(_request):
         await asyncio.Event().wait()
 
-    async with httpx.AsyncClient(
-        base_url="http://127.0.0.1/", transport=httpx.MockTransport(stalled)
-    ) as client:
-        host = Host(client, timeout=0.01)
-        with pytest.raises(TimeoutError):
-            async with host.watch():
-                pytest.fail("stalled headers should time out")
+    with pytest.raises(TimeoutError):
+        await snapshot(stalled, timeout=0.01)
 
 
-async def test_pings_do_not_extend_a_wait_for_ready():
-    async def pings():
+async def test_heartbeats_do_not_extend_a_wait_for_ready():
+    async def heartbeats():
         while True:
             await asyncio.sleep(0)
-            yield Frame(comment="ping")
+            yield b'data: {"method": "notifications/events/heartbeat", '
+            yield b'"params": {}}\n\n'
 
-    watch = Watch(pings(), timeout=0.01)
+    def host(_request):
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=heartbeats(),
+        )
+
     with pytest.raises(TimeoutError):
-        await watch.ready()
+        await snapshot(host, timeout=0.01)
 
 
 def test_code_fingerprints_are_opaque():

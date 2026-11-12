@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -30,9 +30,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=float,
         default=10.0,
         help="Seconds to wait for host responses and events (default: %(default)s)",
-    )
-    parser.addoption(
-        "--slow", action="store_true", help="Include idle ping checks"
     )
     parser.addoption(
         "--require-operation",
@@ -104,7 +101,7 @@ async def host(
 
 @pytest.fixture
 async def catalog(host: Host) -> list:
-    return await host.snapshot()
+    return await host.snapshot("catalog")
 
 
 @pytest.fixture
@@ -159,12 +156,13 @@ async def scratch(
             if isinstance(stopped, Failure):
                 failed(stopped, "no-runtime")
             else:
-                events = f"/notebooks/{quote(notebook['id'], safe='')}/events"
-                async with host.watch(events) as watch:
-                    snapshot = await watch.ready()
+                async with host.subscribe(
+                    "notebook", notebook_id=notebook["id"]
+                ) as events:
+                    snapshot = await events.ready()
                     if objects(snapshot, "runtime"):
-                        await watch.until(
-                            lambda f: f.event == "runtime.removed"
+                        await events.until(
+                            lambda e: e.event == "runtime.removed"
                         )
         deleted = await host.call(
             "notebook.delete", notebook_id=notebook["id"]

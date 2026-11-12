@@ -68,11 +68,6 @@ class SessionFrame(BaseModel):
     frame: str
 
 
-class _Subscribed(SessionEventStream):
-    async def _wait_for_disconnect(self) -> None:
-        await asyncio.Future()
-
-
 def _connection(arguments: SessionArguments) -> Request:
     request = request_var.get()
     query = {
@@ -111,14 +106,11 @@ def events() -> Events:
         if isinstance(params, ConnectionRejection):
             terminate(subscription_id, INVALID_PARAMS, params.reason)
             return
-        stream = _Subscribed(
+        stream = SessionEventStream(
             connection,
-            notebook=None,
             bridge=(await ensure_host(connection.app)).bridge,
             manager=app_state.session_manager,
             params=params,
-            types=None,
-            cursor=None,
         )
         running[subscription_id] = asyncio.create_task(
             deliver(stream, subscription_id)
@@ -142,7 +134,9 @@ def events() -> Events:
     def send(text: str, subscription_id: str) -> None:
         session.emit(SessionFrame(frame=text), subscription_id=subscription_id)
 
-    async def deliver(stream: _Subscribed, subscription_id: str) -> None:
+    async def deliver(
+        stream: SessionEventStream, subscription_id: str
+    ) -> None:
         reset = serialize_event(RoutedEvent(protocol.ResetEvent(data={})))
         async with aclosing(stream.stream()) as frames:
             async for frame in frames:

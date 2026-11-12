@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Host API authorization, event streams, and commands."""
+"""Host API authorization, events, and commands."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ import msgspec
 import pytest
 from starlette.routing import Route
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 from marimo._core import backend as be, protocol
 from marimo._core.host import Host
@@ -23,7 +22,7 @@ from marimo._core.protocol import ProjectMessage
 from marimo._core.run_log import RetentionPolicy
 from marimo._core.stream import RoutedEvent, event_name
 from marimo._messaging.notification import CompletedRunNotification
-from marimo._server.host import HOST_API_PATH, api as api_module
+from marimo._server.host import HOST_API_PATH, api as api_module, streams
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.host.events import MarimoEvent, MarimoMessage
@@ -42,8 +41,9 @@ from tests._server.host.drive import (
     call,
     finished,
     position,
+    refused,
     request,
-    socket_snapshot,
+    subscribe,
     until_ready,
     wait_for,
     with_client_address,
@@ -53,7 +53,7 @@ from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
 )
-from tests.mcp_request import Called
+from tests.mcp_request import Called, stream_headers, stream_payload
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -156,31 +156,19 @@ async def test_the_token_the_address_and_the_name_are_all_checked(
     harness: Harness,
 ) -> None:
     app = harness.app
-    assert (await finished(app, "GET", "/events")).status == 401
-    assert (
-        await finished(
-            app, "GET", "/events", headers={"Authorization": "Bearer nope"}
-        )
-    ).status == 401
-    assert (
-        await finished(
-            app, "GET", "/events", headers=AUTH, client=("10.0.0.5", 1)
-        )
-    ).status == 403
-    assert (
-        await finished(
-            app, "GET", "/events", headers=AUTH, host="evil.example:1234"
-        )
-    ).status == 403
-    assert (
-        await finished(
-            app, "GET", "/events", headers=AUTH, host="127.0.0.1:9999"
-        )
-    ).status == 403
+
+    async def status(**kwargs: Any) -> int:
+        return int((await refused(app, "catalog", **kwargs))["status"])
+
+    assert await status(headers={}) == 401
+    assert await status(headers={"Authorization": "Bearer nope"}) == 401
+    assert await status(client=("10.0.0.5", 1)) == 403
+    assert await status(host="evil.example:1234") == 403
+    assert await status(host="127.0.0.1:9999") == 403
     app.state.host_context = None
-    refused = await finished(app, "GET", "/events", headers=AUTH)
-    assert refused.status == 404
-    assert refused.json()["type"].endswith(":not-found")
+    problem = await refused(app, "catalog")
+    assert problem["status"] == 404
+    assert problem["type"].endswith(":not-found")
 
 
 async def test_unknown_routes_are_problems(harness: Harness) -> None:
@@ -214,7 +202,7 @@ _METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 _UNKNOWN = [
     "/nothing",
     "/notebooks/nb-x/nothing",
-    "/events/",
+    "/events",
     "/mcp/",
 ]
 _SWEEP = [
@@ -309,12 +297,7 @@ async def test_malformed_bearers_are_401_problems(
 async def test_a_cursor_the_host_did_not_issue_resets_the_stream(
     harness: Harness, cursor: str
 ) -> None:
-    response, _, disconnect = request(
-        harness.app,
-        "GET",
-        "/events",
-        headers={**AUTH, "Last-Event-ID": cursor},
-    )
+    response, _, disconnect = subscribe(harness.app, "catalog", cursor=cursor)
     await wait_for(response, until_ready)
     assert response.names() == [
         "reset",
@@ -326,12 +309,22 @@ async def test_a_cursor_the_host_did_not_issue_resets_the_stream(
     disconnect()
 
 
-async def test_an_empty_cursor_is_a_400_problem(harness: Harness) -> None:
-    response = await finished(
-        harness.app, "GET", "/events", headers={**AUTH, "Last-Event-ID": ""}
-    )
-    assert response.status == 400
-    assert response.json()["type"].endswith(":invalid-request")
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("catalog", {"cursor": ""}),
+        ("notebook", {"cursor": ""}),
+        ("notebook", {"run_id": ""}),
+    ],
+)
+async def test_an_empty_cursor_or_run_is_a_400_problem(
+    harness: Harness, name: str, arguments: dict[str, Any]
+) -> None:
+    if name == "notebook":
+        arguments = {**arguments, "notebook_id": harness.notebook_id}
+    problem = await refused(harness.app, name, **arguments)
+    assert problem["status"] == 400
+    assert problem["type"].endswith(":invalid-request")
 
 
 async def test_a_nul_byte_in_a_path_is_a_400_problem(harness: Harness) -> None:
@@ -346,25 +339,36 @@ async def test_a_nul_byte_in_a_path_is_a_400_problem(harness: Harness) -> None:
 
 
 async def test_a_401_names_the_bearer_scheme(harness: Harness) -> None:
-    response = await finished(harness.app, "GET", "/events")
+    response = await finished(harness.app, "POST", "/mcp")
     assert response.status == 401
     assert response.headers["www-authenticate"] == "Bearer"
 
 
-@pytest.mark.parametrize("path", ["/events", "/notebooks/{id}/events"])
-@pytest.mark.parametrize("types", ["bogus", "notebook,bogus", "Notebook"])
+@pytest.mark.parametrize("name", ["catalog", "notebook"])
+@pytest.mark.parametrize(
+    "types", [["bogus"], ["notebook", "bogus"], ["Notebook"]]
+)
 async def test_an_unknown_type_filter_is_a_400_problem(
-    harness: Harness, path: str, types: str
+    harness: Harness, name: str, types: list[str]
 ) -> None:
-    response = await finished(
-        harness.app,
-        "GET",
-        path.replace("{id}", harness.notebook_id),
-        headers=AUTH,
-        query=f"types={types}",
+    arguments = (
+        {"notebook_id": harness.notebook_id} if name == "notebook" else {}
     )
-    assert response.status == 400
-    assert "bogus" in response.json()["detail"] or types == "Notebook"
+    notebook = await harness.host.notebook(harness.notebook_id)
+    problem = await refused(harness.app, name, types=types, **arguments)
+    assert problem["status"] == 400
+    assert "bogus" in problem["detail"] or types == ["Notebook"]
+    assert notebook._attachments == {}
+
+
+async def test_an_unknown_argument_is_refused_before_subscribing(
+    harness: Harness,
+) -> None:
+    error = await refused(
+        harness.app, "notebook", notebook_id=harness.notebook_id, future=True
+    )
+    assert error["code"] == -32602
+    assert harness.host.peek_notebook(harness.notebook_id) is None
 
 
 async def test_an_unknown_request_member_is_a_400_problem(
@@ -405,75 +409,34 @@ async def test_an_empty_update_is_a_400_problem(harness: Harness) -> None:
     assert updated.problem["type"].endswith(":invalid-request")
 
 
-async def test_head_on_a_stream_is_a_405_and_attaches_nothing(
-    harness: Harness,
-) -> None:
-    notebook = await harness.host.notebook(harness.notebook_id)
-    before = len(notebook._attachments)
-    response = await finished(
-        harness.app, "HEAD", f"/notebooks/{notebook.id}/events", headers=AUTH
-    )
-    assert response.status == 405
-    assert response.headers["allow"] == "GET"
-    assert len(notebook._attachments) == before
-
-
-async def test_a_failure_inside_a_stream_does_not_restart_the_response(
+async def test_a_failure_while_delivering_ends_the_subscription(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def broken(_event: object) -> bytes:
-        raise RuntimeError("frame failed")
-
-    monkeypatch.setattr(api_module, "_frame", broken)
+    notebook = await harness.host.notebook(harness.notebook_id)
     listeners = len(harness.host._stream._listeners)
-    response, task, _ = request(harness.app, "GET", "/events", headers=AUTH)
-    # Older Starlette raises the body's error inside an ExceptionGroup.
-    with pytest.raises(Exception) as caught:
-        await asyncio.wait_for(task, 5)
-    assert "frame failed" in repr(caught.value)
-    assert response.status == 200
-    assert response.body == b""
-    assert len(harness.host._stream._listeners) == listeners
-
-
-async def test_sse_heartbeats_do_not_end_the_subscription(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(api_module, "PING_SECONDS", 0.01)
-    notebook = await harness.host.notebook(harness.notebook_id)
-    response, task, disconnect = request(
-        harness.app,
-        "GET",
-        f"/notebooks/{notebook.id}/events",
-        headers=AUTH,
-        query="types=custom",
+    response, task, _ = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id, types=["custom"]
     )
-    try:
-        await wait_for(
-            response,
-            lambda r: (
-                sum(record.get("comment") == "ping" for record in r.records)
-                >= 2
-            ),
-        )
-        notebook.emit("test.after-heartbeat", {"value": 42})
-        await wait_for(response, lambda r: "custom" in r.names())
-        assert [
-            record["data"]["custom"]
-            for record in response.records
-            if record.get("event") == "custom"
-        ] == [{"type": "test.after-heartbeat", "data": {"value": 42}}]
-    finally:
-        disconnect()
-        await asyncio.wait_for(task, 5)
+    await wait_for(response, until_ready)
+
+    def broken(_event: object) -> str:
+        raise RuntimeError("a secret detail")
+
+    monkeypatch.setattr(streams, "serialize_event", broken)
+    notebook.emit("test.unsent", {})
+    await asyncio.wait_for(task, 5)
+    problem = response.ended["data"]["problem"]
+    assert problem["type"].endswith(":internal")
+    assert "secret" not in str(response.ended)
+    assert response.names() == ["ready"]
+    assert notebook._attachments == {}
+    assert len(harness.host._stream._listeners) == listeners
 
 
 async def test_the_catalog_stream_sends_a_snapshot_then_changes(
     harness: Harness,
 ) -> None:
-    response, _, disconnect = request(
-        harness.app, "GET", "/events", headers=AUTH
-    )
+    response, _, disconnect = subscribe(harness.app, "catalog")
     await wait_for(response, until_ready)
     assert response.names() == ["host", "project", "notebook", "ready"]
     assert "id" not in response.records[0]
@@ -492,9 +455,7 @@ async def test_the_catalog_stream_sends_a_snapshot_then_changes(
 async def test_catalog_refresh_delivers_updates_on_the_event_loop(
     harness: Harness,
 ) -> None:
-    first, first_task, disconnect_first = request(
-        harness.app, "GET", "/events", headers=AUTH
-    )
+    first, first_task, disconnect_first = subscribe(harness.app, "catalog")
     await wait_for(first, until_ready)
     threads: list[int] = []
     unsubscribe = harness.host.subscribe(
@@ -511,9 +472,7 @@ async def test_catalog_refresh_delivers_updates_on_the_event_loop(
         ],
         directory=str(harness.root),
     )
-    second, second_task, disconnect_second = request(
-        harness.app, "GET", "/events", headers=AUTH
-    )
+    second, second_task, disconnect_second = subscribe(harness.app, "catalog")
     try:
         await wait_for(second, until_ready)
         await wait_for(
@@ -533,8 +492,8 @@ async def test_catalog_refresh_delivers_updates_on_the_event_loop(
 
 
 async def test_types_and_cursors_apply_to_the_stream(harness: Harness) -> None:
-    first, _, disconnect = request(
-        harness.app, "GET", "/events", headers=AUTH, query="types=notebook"
+    first, _, disconnect = subscribe(
+        harness.app, "catalog", types=["notebook"]
     )
     await wait_for(first, until_ready)
     assert first.names() == ["notebook", "ready"]
@@ -542,12 +501,7 @@ async def test_types_and_cursors_apply_to_the_stream(harness: Harness) -> None:
     disconnect()
 
     (await harness.host.notebook(harness.notebook_id)).start()
-    resumed, _, disconnect = request(
-        harness.app,
-        "GET",
-        "/events",
-        headers={**AUTH, "Last-Event-ID": cursor},
-    )
+    resumed, _, disconnect = subscribe(harness.app, "catalog", cursor=cursor)
     await wait_for(resumed, until_ready)
     assert resumed.names() == ["runtime", "ready"]
     disconnect()
@@ -556,8 +510,8 @@ async def test_types_and_cursors_apply_to_the_stream(harness: Harness) -> None:
 async def test_a_notebook_stream_attaches_the_client(harness: Harness) -> None:
     notebook = await harness.host.notebook(harness.notebook_id)
     await analyzed(notebook)
-    response, task, disconnect = request(
-        harness.app, "GET", f"/notebooks/{notebook.id}/events", headers=AUTH
+    response, task, disconnect = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id
     )
     await wait_for(response, until_ready)
     # An empty notebook loads with marimo's one default cell.
@@ -576,6 +530,8 @@ async def test_a_notebook_stream_attaches_the_client(harness: Harness) -> None:
 
     disconnect()
     await asyncio.wait_for(task, 5)
+    # Subscribing starts no runtime.
+    assert harness.backend().calls == []
     assert [
         event_name(e.event)
         for e in harness.host.events(notebook_id=notebook.id)
@@ -587,30 +543,28 @@ async def test_a_notebook_stream_attaches_the_client(harness: Harness) -> None:
         "ready",
     ]
 
-    missing = await finished(
-        harness.app, "GET", "/notebooks/nope/events", headers=AUTH
-    )
-    assert missing.status == 404
+    missing = await refused(harness.app, "notebook", notebook_id="nope")
+    assert missing["status"] == 404
+    assert missing["type"].endswith(":not-found")
 
 
 IDENTIFIED = {
-    **AUTH,
-    api_module.ATTACHMENT_IDENTITY: "k1",
-    api_module.ATTACHMENT_KIND: "agent",
-    api_module.ATTACHMENT_NAME: "Codex",
+    "attachment_identity": "k1",
+    "attachment_kind": "agent",
+    "attachment_name": "Codex",
 }
 
 
 async def attachment_of(
-    harness: Harness, headers: dict[str, str]
+    harness: Harness, **arguments: Any
 ) -> protocol.Attachment:
-    """Open a notebook stream with `headers` and return its attachment."""
-    response, task, disconnect = request(
+    """Subscribe to the notebook with `arguments` and return its attachment."""
+    response, task, disconnect = subscribe(
         harness.app,
-        "GET",
-        f"/notebooks/{harness.notebook_id}/events",
-        headers=headers,
-        query="types=attachment",
+        "notebook",
+        notebook_id=harness.notebook_id,
+        types=["attachment"],
+        **arguments,
     )
     await wait_for(response, until_ready)
     assert response.names() == ["attachment", "ready"]
@@ -622,26 +576,29 @@ async def attachment_of(
     return message.attachment
 
 
-async def test_attachment_headers_name_the_client(harness: Harness) -> None:
-    attachment = await attachment_of(harness, IDENTIFIED)
+async def test_attachment_arguments_name_the_client(harness: Harness) -> None:
+    attachment = await attachment_of(harness, **IDENTIFIED)
     assert attachment.identity == "k1"
     assert attachment.kind == "agent"
     assert attachment.name == "Codex"
 
 
 async def test_an_empty_attachment_name_is_null(harness: Harness) -> None:
-    attachment = await attachment_of(
-        harness, {**AUTH, api_module.ATTACHMENT_NAME: ""}
-    )
+    attachment = await attachment_of(harness, attachment_name="")
     assert attachment.name is None
+    assert attachment.kind == "client"
 
 
 async def test_a_reconnect_with_one_identity_attaches_fresh(
     harness: Harness,
 ) -> None:
-    path = f"/notebooks/{harness.notebook_id}/events"
-    first, first_task, disconnect_first = request(
-        harness.app, "GET", path, headers=IDENTIFIED, query="types=attachment"
+    arguments = {
+        "notebook_id": harness.notebook_id,
+        "types": ["attachment"],
+        **IDENTIFIED,
+    }
+    first, first_task, disconnect_first = subscribe(
+        harness.app, "notebook", **arguments
     )
     await wait_for(first, until_ready)
     cursor = first.records[-1]["id"]
@@ -652,12 +609,8 @@ async def test_a_reconnect_with_one_identity_attaches_fresh(
         event_name(e.event) for e in harness.host.events()
     ]
 
-    second, second_task, disconnect_second = request(
-        harness.app,
-        "GET",
-        path,
-        headers={**IDENTIFIED, "Last-Event-ID": cursor},
-        query="types=attachment",
+    second, second_task, disconnect_second = subscribe(
+        harness.app, "notebook", cursor=cursor, **arguments
     )
     await wait_for(second, until_ready)
     assert second.names() == ["attachment.removed", "attachment", "ready"]
@@ -670,16 +623,15 @@ async def test_a_reconnect_with_one_identity_attaches_fresh(
     await asyncio.wait_for(second_task, 5)
 
 
-async def test_custom_events_use_their_own_sse_kind(
+async def test_custom_events_have_their_own_kind(
     harness: Harness,
 ) -> None:
     notebook = await harness.host.notebook(harness.notebook_id)
-    path = f"/notebooks/{notebook.id}/events"
-    custom, custom_task, disconnect_custom = request(
-        harness.app, "GET", path, headers=AUTH, query="types=custom"
+    custom, custom_task, disconnect_custom = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id, types=["custom"]
     )
-    attachments, attach_task, disconnect_attach = request(
-        harness.app, "GET", path, headers=AUTH, query="types=attachment"
+    attachments, attach_task, disconnect_attach = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id, types=["attachment"]
     )
     await wait_for(custom, until_ready)
     await wait_for(attachments, until_ready)
@@ -699,26 +651,27 @@ async def test_custom_events_use_their_own_sse_kind(
 
 
 @pytest.mark.parametrize(
-    ("header", "value"),
+    ("argument", "value"),
     [
-        (api_module.ATTACHMENT_IDENTITY, ""),
-        (api_module.ATTACHMENT_KIND, "Agent"),
-        (api_module.ATTACHMENT_NAME, "n" * 257),
+        ("attachment_identity", ""),
+        ("attachment_kind", "Agent"),
+        ("attachment_name", "n" * 257),
     ],
 )
-async def test_invalid_attachment_headers_are_rejected(
-    harness: Harness, header: str, value: str
+async def test_invalid_attachment_arguments_are_rejected(
+    harness: Harness, argument: str, value: str
 ) -> None:
-    response = await finished(
+    notebook = await harness.host.notebook(harness.notebook_id)
+    problem = await refused(
         harness.app,
-        "GET",
-        f"/notebooks/{harness.notebook_id}/events",
-        headers={**AUTH, header: value},
+        "notebook",
+        notebook_id=harness.notebook_id,
+        **{argument: value},
     )
-    assert response.status == 400
-    body = response.json()
-    assert body["type"].endswith(":invalid-request")
-    assert body["detail"] == f"{header} is invalid"
+    assert problem["status"] == 400
+    assert problem["type"].endswith(":invalid-request")
+    assert f"$.{argument}" in problem["detail"]
+    assert notebook._attachments == {}
 
 
 async def test_an_unexpected_failure_is_an_internal_problem(
@@ -988,7 +941,7 @@ async def test_noop_and_rejected_lifecycle_requests_release_their_listeners(
     assert context.mutations.remembered("existing") is None
 
 
-async def test_run_filter_over_http(harness: Harness) -> None:
+async def test_run_filter(harness: Harness) -> None:
     nid = await harness.running()
     notebook = await harness.host.notebook(nid)
     first = notebook.run("1", request_id="first", request=None)
@@ -1003,12 +956,12 @@ async def test_run_filter_over_http(harness: Harness) -> None:
     )
     notebook.observe(be.Done(first.id, "succeeded"))
     notebook.run("2", request_id="second", request=None)
-    response, task, disconnect = request(
+    response, task, disconnect = subscribe(
         harness.app,
-        "GET",
-        f"/notebooks/{nid}/events",
-        headers=AUTH,
-        query=f"run_id={first.id}&types=run",
+        "notebook",
+        notebook_id=nid,
+        run_id=first.id,
+        types=["run"],
     )
     try:
         await wait_for(response, until_ready)
@@ -1017,14 +970,6 @@ async def test_run_filter_over_http(harness: Harness) -> None:
     finally:
         disconnect()
         await asyncio.wait_for(task, 5)
-    invalid = await finished(
-        harness.app,
-        "GET",
-        f"/notebooks/{nid}/events",
-        headers=AUTH,
-        query="run_id=",
-    )
-    assert invalid.status == 400
 
 
 async def test_interrupting_an_unstarted_run_after_shutdown(
@@ -1623,11 +1568,8 @@ async def test_the_notebook_stream_carries_cells_then_the_document(
     (harness.root / "forecasts.py").write_text(NOTEBOOK)
     if preanalyzed:
         await analyzed(await harness.host.notebook(harness.notebook_id))
-    response, _, disconnect = request(
-        harness.app,
-        "GET",
-        f"/notebooks/{harness.notebook_id}/events",
-        headers=AUTH,
+    response, _, disconnect = subscribe(
+        harness.app, "notebook", notebook_id=harness.notebook_id
     )
     await wait_for(
         response, lambda r: until_ready(r) and "analysis" in r.names()
@@ -1666,14 +1608,13 @@ async def test_the_notebook_stream_carries_cells_then_the_document(
         second["id"]: {"defs": ["y"], "refs": ["x"], "errors": []},
     }
 
-    # A filtered stream is a snapshot of the document alone, and a second
-    # connection reuses the loaded document.
-    response, _, disconnect = request(
+    # A filtered subscription is a snapshot of the document alone, and a
+    # second one reuses the loaded document.
+    response, _, disconnect = subscribe(
         harness.app,
-        "GET",
-        f"/notebooks/{harness.notebook_id}/events",
-        headers=AUTH,
-        query="types=cell,document",
+        "notebook",
+        notebook_id=harness.notebook_id,
+        types=["cell", "document"],
     )
     await wait_for(response, until_ready)
     disconnect()
@@ -1688,13 +1629,8 @@ async def test_an_unreadable_notebook_stays_in_the_catalog_and_can_retry(
     file.write_text("print('not a notebook')\n")
     notebook_id = harness.notebook_id
 
-    response = await finished(
-        harness.app,
-        "GET",
-        f"/notebooks/{notebook_id}/events",
-        headers=AUTH,
-    )
-    assert response.status == 409
+    problem = await refused(harness.app, "notebook", notebook_id=notebook_id)
+    assert problem["status"] == 409
     assert harness.host.peek_notebook(notebook_id) is None
     assert notebook_id in harness.host.notebooks
     assert harness.backends == {}
@@ -1746,13 +1682,10 @@ async def save(harness: Harness, key: str, **arguments: Any) -> Called:
 
 
 async def opened(harness: Harness) -> tuple[Response, Callable[[], None]]:
-    """Open the notebook's stream past `ready`, returning it and its closer."""
+    """Subscribe to the notebook past `ready`, returning it and its closer."""
     (harness.root / "forecasts.py").write_text(NOTEBOOK)
-    response, _, disconnect = request(
-        harness.app,
-        "GET",
-        f"/notebooks/{harness.notebook_id}/events",
-        headers=AUTH,
+    response, _, disconnect = subscribe(
+        harness.app, "notebook", notebook_id=harness.notebook_id
     )
     await wait_for(response, until_ready)
     return response, disconnect
@@ -1790,7 +1723,7 @@ async def test_an_edit_reaches_the_stream_as_one_unit(
     assert response["document"]["etag"] != document["etag"]
 
     await wait_for(stream, lambda r: r.names().count("analysis") >= 2)
-    after = [r for r in stream.records[seen:] if "event" in r]
+    after = stream.records[seen:]
     assert [r["event"] for r in after] == ["cell", "document", "analysis"]
     assert all(r["data"]["request_id"] == "edit-1" for r in after)
     assert (
@@ -2014,17 +1947,14 @@ async def test_a_file_changed_outside_marimo_needs_a_decision(
         assert (await save(harness, f"save-{n}")).ok
 
 
-@pytest.mark.parametrize("query", ["", "types=marimo"])
-async def test_marimo_notifications_use_their_own_sse_kind(
-    harness: Harness, query: str
+@pytest.mark.parametrize("types", [None, ["marimo"]])
+async def test_marimo_notifications_have_their_own_kind(
+    harness: Harness, types: list[str] | None
 ) -> None:
     notebook = await harness.host.notebook(harness.notebook_id)
-    response, task, disconnect = request(
-        harness.app,
-        "GET",
-        f"/notebooks/{notebook.id}/events",
-        headers=AUTH,
-        query=query,
+    filtered = {} if types is None else {"types": types}
+    response, task, disconnect = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id, **filtered
     )
     try:
         await wait_for(response, until_ready)
@@ -2053,157 +1983,84 @@ async def test_marimo_notifications_use_their_own_sse_kind(
 
 
 @pytest.mark.parametrize(
-    "query", ["", "?types=marimo", "?types=marimo&run_id=r1"]
-)
-def test_websocket_delivers_live_events(harness: Harness, query: str) -> None:
-    with TestClient(
-        with_client_address(harness.app), base_url=f"http://{AUTHORITY}"
-    ) as client:
-        assert client.portal is not None
-        notebook = client.portal.call(
-            harness.host.notebook, harness.notebook_id
-        )
-        client.portal.call(analyzed, notebook)
-        payload = MarimoMessage(CompletedRunNotification(run_id="r1"))
-        event = RoutedEvent(
-            MarimoEvent(payload), notebook_id=notebook.id, run_id="r1"
-        )
-        client.portal.call(notebook.sink.append, event)
-        path = f"{HOST_API_PATH}/notebooks/{notebook.id}/events/ws{query}"
-        with client.websocket_connect(
-            f"ws://{AUTHORITY}{path}", headers=dict(AUTH)
-        ) as websocket:
-            initial = socket_snapshot(websocket)
-            assert all("id" not in event for event in initial[:-1])
-            client.portal.call(
-                notebook.sink.append,
-                RoutedEvent(
-                    MarimoEvent(payload), notebook_id="nb_other", run_id="r1"
-                ),
-            )
-            if "run_id" in query:
-                client.portal.call(
-                    notebook.sink.append,
-                    RoutedEvent(
-                        MarimoEvent(payload),
-                        notebook_id=notebook.id,
-                        run_id="r2",
-                    ),
-                )
-            first = client.portal.call(notebook.sink.append, event)
-            client.portal.call(
-                notebook.emit, "test.message", {"text": "hello"}
-            )
-            second = client.portal.call(notebook.sink.append, event)
-            expected = {
-                "event": "marimo",
-                "data": {
-                    "marimo": {
-                        "op": "completed-run",
-                        "run_id": "r1",
-                        "outcome": "succeeded",
-                        "error": None,
-                    }
-                },
-            }
-            assert websocket.receive_json() == {
-                "id": first.event.id,
-                **expected,
-            }
-            if not query:
-                custom = websocket.receive_json()
-                assert custom["event"] == "custom"
-                assert custom["data"]["custom"] == {
-                    "type": "test.message",
-                    "data": {"text": "hello"},
-                }
-            assert websocket.receive_json() == {
-                "id": second.event.id,
-                **expected,
-            }
-
-
-@pytest.mark.parametrize("send_message", [False, True])
-def test_websocket_disconnect_detaches_the_client(
-    harness: Harness,
-    send_message: bool,
-) -> None:
-    with TestClient(
-        with_client_address(harness.app), base_url=f"http://{AUTHORITY}"
-    ) as client:
-        assert client.portal is not None
-        notebook = client.portal.call(
-            harness.host.notebook, harness.notebook_id
-        )
-        client.portal.call(analyzed, notebook)
-        removed = asyncio.Event()
-        events: list[RoutedEvent] = []
-
-        def observe(event: RoutedEvent) -> None:
-            if event.notebook_id == notebook.id and isinstance(
-                event.event,
-                (protocol.AttachmentEvent, protocol.AttachmentRemovedEvent),
-            ):
-                events.append(event)
-                if isinstance(event.event, protocol.AttachmentRemovedEvent):
-                    removed.set()
-
-        unsubscribe = client.portal.call(harness.host.subscribe, observe)
-        try:
-            path = f"{HOST_API_PATH}/notebooks/{notebook.id}/events/ws"
-            with client.websocket_connect(
-                f"ws://{AUTHORITY}{path}", headers=dict(AUTH)
-            ) as websocket:
-                socket_snapshot(websocket)
-                if send_message:
-                    websocket.send_json({"command": "run"})
-                    with pytest.raises(WebSocketDisconnect) as exc:
-                        websocket.receive_json()
-                    assert exc.value.code == 1003
-                else:
-                    websocket.close()
-                client.portal.call(asyncio.wait_for, removed.wait(), 5)
-            assert [event_name(event.event) for event in events] == [
-                "attachment",
-                "attachment.removed",
-            ]
-            assert isinstance(events[0].event, protocol.AttachmentEvent)
-            assert isinstance(events[1].event, protocol.AttachmentRemovedEvent)
-            assert (
-                events[1].event.data.id == events[0].event.data.attachment.id
-            )
-            assert harness.backend().calls == []
-        finally:
-            client.portal.call(unsubscribe)
-
-
-@pytest.mark.parametrize(
-    ("headers", "address", "authority"),
+    ("filters", "expected"),
     [
-        ({}, LOOPBACK, AUTHORITY),
-        ({"Authorization": "Bearer wrong"}, LOOPBACK, AUTHORITY),
-        (AUTH, ("192.0.2.1", 50000), AUTHORITY),
-        (AUTH, LOOPBACK, "example.com:1234"),
+        (
+            {},
+            [
+                ("marimo", "r2"),
+                ("marimo", "r1"),
+                ("custom", None),
+                ("marimo", "r1"),
+            ],
+        ),
+        (
+            {"types": ["marimo"]},
+            [("marimo", "r2"), ("marimo", "r1"), ("marimo", "r1")],
+        ),
+        (
+            {"types": ["marimo"], "run_id": "r1"},
+            [("marimo", "r1"), ("marimo", "r1")],
+        ),
     ],
 )
-def test_websocket_rejects_invalid_authentication(
+async def test_live_events_follow_the_notebook_and_the_filters(
     harness: Harness,
-    headers: dict[str, str],
-    address: tuple[str, int],
-    authority: str,
+    filters: dict[str, Any],
+    expected: list[tuple[str, str | None]],
 ) -> None:
-    client = TestClient(
-        with_client_address(harness.app, address),
-        base_url=f"http://{authority}",
+    notebook = await harness.host.notebook(harness.notebook_id)
+    await analyzed(notebook)
+
+    def completed(notebook_id: str, run_id: str) -> RoutedEvent:
+        payload = MarimoMessage(CompletedRunNotification(run_id=run_id))
+        return notebook.sink.append(
+            RoutedEvent(
+                MarimoEvent(payload), notebook_id=notebook_id, run_id=run_id
+            )
+        )
+
+    response, task, disconnect = subscribe(
+        harness.app, "notebook", notebook_id=notebook.id, **filters
     )
-    path = f"{HOST_API_PATH}/notebooks/{harness.notebook_id}/events/ws"
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(
-            f"ws://{authority}{path}", headers=dict(headers)
-        ):
-            pytest.fail("Unauthenticated socket was accepted")
-    assert exc.value.code == 1008
-    assert harness.backends == {}
+    try:
+        await wait_for(response, until_ready)
+        seen = len(response.records)
+        completed("nb_other", "r1")
+        completed(notebook.id, "r2")
+        completed(notebook.id, "r1")
+        notebook.emit("test.message", {"text": "hello"})
+        last = completed(notebook.id, "r1")
+        await wait_for(
+            response, lambda r: r.records[-1].get("id") == last.event.id
+        )
+        live = response.records[seen:]
+        assert [
+            (r["event"], r["data"].get("marimo", {}).get("run_id"))
+            for r in live
+        ] == expected
+        assert live[-1] == {
+            "id": last.event.id,
+            "event": "marimo",
+            "data": {
+                "marimo": {
+                    "op": "completed-run",
+                    "run_id": "r1",
+                    "outcome": "succeeded",
+                    "error": None,
+                }
+            },
+        }
+        assert [
+            r["data"]["custom"] for r in live if r["event"] == "custom"
+        ] == (
+            []
+            if filters
+            else [{"type": "test.message", "data": {"text": "hello"}}]
+        )
+    finally:
+        disconnect()
+        await asyncio.wait_for(task, 5)
 
 
 @pytest.mark.parametrize("base_url", ["", "/app"])
@@ -2215,7 +2072,7 @@ def test_websocket_rejects_invalid_authentication(
         ("notebooks.example:1234", ("192.0.2.1", 50000), 403),
     ],
 )
-def test_editor_authentication_is_limited_to_notebook_events_and_tools(
+def test_editor_authentication_is_limited_to_the_editor_tools(
     harness: Harness,
     base_url: str,
     credential: str,
@@ -2248,30 +2105,6 @@ def test_editor_authentication_is_limited_to_notebook_events_and_tools(
             harness.host.notebook, harness.notebook_id
         )
         host = f"{base_url}{HOST_API_PATH}"
-        separator = "&" if query else "?"
-        with client.websocket_connect(
-            f"ws://{authority}{host}/notebooks/{notebook.id}/events/ws"
-            f"{query}{separator}types=marimo"
-        ) as websocket:
-            socket_snapshot(websocket)
-            payload = MarimoMessage(CompletedRunNotification(run_id="r1"))
-            published = client.portal.call(
-                notebook.sink.append,
-                RoutedEvent(MarimoEvent(payload), notebook_id=notebook.id),
-            )
-            assert websocket.receive_json() == {
-                "id": published.event.id,
-                "event": "marimo",
-                "data": {
-                    "marimo": {
-                        "op": "completed-run",
-                        "run_id": "r1",
-                        "outcome": "succeeded",
-                        "error": None,
-                    }
-                },
-            }
-        assert harness.backend().calls == []
 
         def editor_call(name: str, **arguments: Any) -> Called:
             return call_tool(
@@ -2302,9 +2135,12 @@ def test_editor_authentication_is_limited_to_notebook_events_and_tools(
             "notebook.update", notebook_id=notebook.id, path="other.py"
         )
         assert moved.problem["message"] == "Unknown tool notebook.update"
-        assert (
-            client.get(f"{host}/events{query}").status_code == rejected_status
+        subscribed = client.post(
+            f"{host}/mcp{query}",
+            json=stream_payload("catalog", {}),
+            headers=stream_headers("catalog"),
         )
+        assert subscribed.status_code == rejected_status
         host_call = call_tool(
             client,
             "notebook.update",
@@ -2314,12 +2150,6 @@ def test_editor_authentication_is_limited_to_notebook_events_and_tools(
             path="other.py",
         )
         assert host_call.problem["status"] == rejected_status
-        with pytest.raises(WebSocketDisconnect) as exc:
-            with client.websocket_connect(
-                f"ws://{authority}{host}/events/ws{query}"
-            ):
-                pytest.fail("Editor credentials authorized another socket")
-        assert exc.value.code == 1008
 
 
 @pytest.mark.parametrize(
@@ -2400,22 +2230,7 @@ def test_editor_tool_preflights(
     assert harness.backends == {}
 
 
-@pytest.mark.parametrize("token", ["wrong", TOKEN])
-def test_event_socket_query_requires_the_editor_token(
-    harness: Harness, token: str
-) -> None:
-    client = TestClient(with_client_address(harness.app))
-    path = f"{HOST_API_PATH}/notebooks/{harness.notebook_id}/events/ws"
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(
-            f"ws://{AUTHORITY}{path}?access_token={token}"
-        ):
-            pytest.fail("Invalid editor token was accepted")
-    assert exc.value.code == 1008
-    assert harness.backends == {}
-
-
-def test_event_socket_respects_disabled_editor_authentication(
+async def test_the_host_needs_its_token_without_editor_authentication(
     harness: Harness,
 ) -> None:
     app = create_starlette_app(base_url="", enable_auth=False)
@@ -2424,81 +2239,8 @@ def test_event_socket_respects_disabled_editor_authentication(
     ).apply(app.state)
     app.state.enable_auth = False
     app.state.host_context = harness.app.state.host_context
-    with TestClient(
-        with_client_address(app), base_url=f"http://{AUTHORITY}"
-    ) as client:
-        path = f"{HOST_API_PATH}/notebooks/{harness.notebook_id}"
-        with client.websocket_connect(f"ws://{AUTHORITY}{path}/events/ws"):
-            pass
-        assert client.get(f"{HOST_API_PATH}/events").status_code == 401
-        assert harness.backend().calls == []
-
-
-@pytest.mark.parametrize(
-    ("query", "headers", "reason"),
-    [
-        ("?types=bogus", AUTH, "Invalid event types"),
-        ("?run_id=", AUTH, "run_id must not be empty"),
-        ("?cursor=", AUTH, "Invalid event cursor"),
-        ("?cursor=1", {**AUTH, "Last-Event-ID": "2"}, "Invalid event cursor"),
-        (
-            "",
-            {**AUTH, "Marimo-Attachment-Identity": ""},
-            "Marimo-Attachment-Identity is invalid",
-        ),
-    ],
-)
-def test_websocket_rejects_invalid_subscriptions(
-    harness: Harness, query: str, headers: dict[str, str], reason: str
-) -> None:
-    client = TestClient(
-        with_client_address(harness.app), base_url=f"http://{AUTHORITY}"
-    )
-    path = f"{HOST_API_PATH}/notebooks/{harness.notebook_id}/events/ws{query}"
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(
-            f"ws://{AUTHORITY}{path}", headers=dict(headers)
-        ):
-            pytest.fail("Invalid subscription was accepted")
-    assert (exc.value.code, exc.value.reason) == (1008, reason)
-
-
-@pytest.mark.parametrize("path", ["/notebooks/missing/events/ws", "/missing"])
-def test_websocket_rejects_unknown_notebooks_and_routes(
-    harness: Harness, path: str
-) -> None:
-    client = TestClient(
-        with_client_address(harness.app), base_url=f"http://{AUTHORITY}"
-    )
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(
-            f"ws://{AUTHORITY}{HOST_API_PATH}{path}", headers=dict(AUTH)
-        ):
-            pytest.fail("Unknown resource was accepted")
-    assert exc.value.code == 1008
-
-
-def test_websocket_snapshot_failure_releases_subscription(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def broken(*_args: Any, **_kwargs: Any) -> list[RoutedEvent]:
-        raise RuntimeError("snapshot failed")
-
-    with TestClient(with_client_address(harness.app)) as client:
-        assert client.portal is not None
-        notebook = client.portal.call(
-            harness.host.notebook, harness.notebook_id
-        )
-        client.portal.call(analyzed, notebook)
-        listeners = len(harness.host._stream._listeners)
-        monkeypatch.setattr(harness.host, "events", broken)
-        url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook.id}/events/ws"
-        with pytest.raises(WebSocketDisconnect) as caught:
-            with client.websocket_connect(url, headers=dict(AUTH)):
-                pytest.fail("Snapshot failure accepted a connection")
-        assert caught.value.code == 1008
-        assert notebook._attachments == {}
-        assert len(harness.host._stream._listeners) == listeners
+    assert (await refused(app, "catalog", headers={}))["status"] == 401
+    assert harness.backends == {}
 
 
 async def test_cell_runs(harness: Harness) -> None:

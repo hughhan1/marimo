@@ -2,7 +2,7 @@
 # AUTO-GENERATED FILE — DO NOT EDIT.
 # Generated from packages/host-protocol.
 # Regenerate with `make host-protocol-codegen`.
-"""The host protocol's tools, by name."""
+"""The host protocol's tools and events, by name."""
 
 from __future__ import annotations
 
@@ -16,6 +16,12 @@ class Tool(NamedTuple):
     description: str
     arguments: type[Any]
     result: type[Any] | None
+
+
+class Event(NamedTuple):
+    description: str
+    arguments: type[Any]
+    payload: Any
 
 
 TOOLS: dict[str, Tool] = {
@@ -102,5 +108,19 @@ TOOLS: dict[str, Tool] = {
         "Ends the runtime for everyone attached to the notebook. A runtime\nthat is still starting is cancelled; a running kernel is shut\ndown. Active and queued runs and their unfinished executions complete\nwith outcome `interrupted`. Retained results stay\nand are no longer live. The notebook and its attachments stay,\nbut Python state is lost. The client follows the\nruntime on a stream until `runtime.removed`. If the notebook has\nno runtime, the host answers `no-runtime`.\n",
         protocol.NotebookRequest,
         protocol.Runtime,
+    ),
+}
+
+
+EVENTS: dict[str, Event] = {
+    "catalog": Event(
+        "Sends everything the host has, then every change as it happens.\nThe catalog is the host object, its projects, notebooks, runtimes,\nand attachments.\n\nA subscription starts with one event per object the host knows\nabout, parents before children, followed by a `ready` event.\nSnapshot events have no `id`; `ready` and live events have one. The\nmost recent `id` a client has seen is its position. When a\nsubscription ends, the client subscribes again with that position as\n`cursor`. If the host still has the events after that point, it\nsends them with their original ids and timestamps, even before the\nnew `ready`, and then `ready`. If it does not, or the cursor\npredates a loss of host state, it sends `reset`, and the client\ndiscards what it holds and receives the full state again. A client\nalso discards an incomplete snapshot before subscribing again\nwithout a cursor. On `reset` it clears its cursor until the next\n`ready`.\n\n`types` limits the event to some kinds of object without changing\nids or positions. It also filters the host object; `ready` and\n`reset` are always sent. Keep the same filter when resuming a\ncursor.\n",
+        protocol.CatalogEventsRequest,
+        protocol.CatalogStreamEvent,
+    ),
+    "notebook": Event(
+        "Sends the notebook, its cells and document, its runtime, its\nattachments, its runs, their executions, and their items, then\nevery change as it happens. It follows the same rules as the `catalog`\nevent: a snapshot that ends in `ready`, ids as positions, `cursor` to\nresume, `reset` when the host cannot, and `types` to limit the kinds\nsent. `run_id` narrows it to one run. A cursor belongs to the event it\ncame from.\n\nSubscribing attaches the client to the notebook. An attachment\nappears on both events while the subscription lasts and is removed\nwhen it ends. Every subscription, including one that resumes,\ncreates a separate attachment. `attachment_identity` supplies its\n`identity` so consumers can group the subscriptions of one client. A\nshared identity does not merge attachments or extend their lifetimes.\nThe snapshot includes every run that is not yet completed, with\nits executions and items, plus\nany completed results the host retains. Result retention is\nindependent of replay history. Removed objects are absent from\nsnapshots; a resumed subscription carries their removal events.\n\nIt may also carry `custom` events: namespaced JSON payloads\nthat describe occurrences rather than object state. These have\ncursors and timestamps and appear only in live delivery and replay.\nA reset cannot recover custom events whose history\nhas expired. `types` naming `custom` selects them. They do not belong\nto a run and are excluded by `run_id`.\n\nThe opening phase is one consistent cut of the notebook, taken\nunder the lock that changes to the document take, so reading to\n`ready` and ending is a snapshot, and `types` of `cell` and\n`document` is a snapshot of the document alone. Cells arrive before\nthe document that orders them, in the opening phase and after every\nchange, so each cell named in `order` is already available to the\nclient. The effects of one change to the document arrive together,\nwith no other event between them.\n",
+        protocol.NotebookEventsRequest,
+        protocol.NotebookStreamEvent,
     ),
 }

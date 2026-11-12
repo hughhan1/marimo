@@ -24,6 +24,7 @@ from marimo._server.api.deps import AppState
 from marimo._server.api.tools import MCPEndpoint, schemas, tool_server
 from marimo._server.host.auth import bearer_matches
 from marimo._server.host.notebook_api import _context
+from marimo._server.host.streams import host_events
 from marimo._types.ids import ConsumerId
 
 if TYPE_CHECKING:
@@ -140,9 +141,11 @@ def _connection_may_call(request: Request, name: str) -> bool:
 
 @cache
 def mcp_server() -> Server[Any]:
-    """The MCP server of every host tool, for the host record's token."""
-    return tool_server(lambda: definitions(catalog=True), call)
+    """The MCP server of every host tool and event, for the host record's token."""
+    server = tool_server(lambda: definitions(catalog=True), call)
+    host_events().serve(server)
+    return server
 
 
-host_mcp_endpoint = MCPEndpoint(mcp_server)
-"""Serves the host's tools to the host record's token."""
+host_mcp_endpoint = MCPEndpoint(mcp_server, host_events)
+"""Serves the host's tools and events to the host record's token."""

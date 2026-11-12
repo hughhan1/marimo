@@ -114,11 +114,6 @@ export function idempotencyKey(): string {
     .join("-");
 }
 
-/** Whether a `Content-Type` names `type`, ignoring case and parameters. */
-export function isType(contentType: string | null, type: string): boolean {
-  return contentType?.split(";", 1)[0].trim().toLowerCase() === type;
-}
-
 /**
  * A URL below `url`, keeping its query string.
  *
@@ -132,30 +127,35 @@ export function below(url: URL, suffix: string): URL {
 
 const identity = { name: "@marimo-team/client", version: "0.1.0" };
 
+/** An MCP client of a host's tools and events at `endpoint`. */
+export function host(
+  endpoint: URL,
+  { token, fetch }: ClientOptions = {},
+): RuntimeClient {
+  return createApps(
+    identity,
+    { host: null },
+    {
+      host: {
+        endpoint,
+        ...(token === undefined
+          ? {}
+          : { authProvider: { token: async () => token } }),
+        fetch,
+      },
+    },
+  ).host;
+}
+
 /**
  * A host's tools at an MCP `endpoint`, such as `/mcp` below the host API.
  *
  * A failure carries the problem as its text.
  */
-export function mcp(
-  endpoint: URL,
-  { token, fetch }: ClientOptions = {},
-): CallTool {
+export function mcp(endpoint: URL, options: ClientOptions = {}): CallTool {
   let client: RuntimeClient | undefined;
   return async ({ operation, ...args }, signal) => {
-    client ??= createApps(
-      identity,
-      { host: null },
-      {
-        host: {
-          endpoint,
-          ...(token === undefined
-            ? {}
-            : { authProvider: { token: async () => token } }),
-          fetch,
-        },
-      },
-    ).host;
+    client ??= host(endpoint, options);
     const result = await client.callTool(
       { name: operation, arguments: args },
       { signal },

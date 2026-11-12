@@ -47,11 +47,21 @@ function refName(ref: string | undefined): string {
   return name;
 }
 
-/** Describe each tool as data for the client to call. */
+/** An event as the spec's `x-events` lists it. */
+interface Event {
+  name: string;
+  inputSchema: Reference;
+  payloadSchema: Reference;
+}
+
+/** Describe each tool and event as data for the client to call and follow. */
 function toolsModule(spec: OpenApiDocument): string {
-  const tools = (spec as { "x-tools"?: Tool[] })["x-tools"];
-  if (tools === undefined) {
-    throw new Error("Host protocol lists no tools");
+  const { "x-tools": tools, "x-events": events } = spec as {
+    "x-tools"?: Tool[];
+    "x-events"?: Event[];
+  };
+  if (tools === undefined || events === undefined) {
+    throw new Error("Host protocol lists no tools or events");
   }
   const entries = tools.map((tool) =>
     [
@@ -75,6 +85,19 @@ ${entries.join("\n")}
 
 /** A tool's name, such as \`notebook.edit\`. */
 export type ToolName = keyof typeof tools;
+
+/** The host's events by name: each one's arguments and the events it carries. */
+export const events = {
+${events
+  .map(
+    (event) =>
+      `${JSON.stringify(event.name)}: { arguments: Protocol.${refName(event.inputSchema.$ref)}, payload: Protocol.${refName(event.payloadSchema.$ref)} },`,
+  )
+  .join("\n")}
+} as const;
+
+/** An event's name, such as \`notebook\`. */
+export type EventName = keyof typeof events;
 `;
 }
 

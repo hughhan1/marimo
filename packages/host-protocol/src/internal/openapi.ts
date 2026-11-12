@@ -42,11 +42,11 @@ function references(value: unknown, found = new Set<string>()) {
   return found;
 }
 
-/** The names of the component schemas that tools' arguments are made of. */
-function argumentSchemas(tools: unknown, schemas: Node) {
+/** The names of the component schemas that tools' and events' arguments are made of. */
+function argumentSchemas(listed: ReadonlyArray<unknown>, schemas: Node) {
   const found = new Set<string>();
-  for (const tool of Array.isArray(tools) ? tools : []) {
-    references(isNode(tool) ? tool.inputSchema : undefined, found);
+  for (const entry of listed) {
+    references(isNode(entry) ? entry.inputSchema : undefined, found);
   }
   // A set visits the members added while it is iterated.
   for (const name of found) {
@@ -126,14 +126,17 @@ function adjustNode(value: Node, closed: boolean): Node {
 /**
  * Adjust the document Effect generates for consumers in other languages.
  *
- * Tools' arguments stay closed and other objects are open, descriptions sit
+ * Arguments stay closed and other objects are open, descriptions sit
  * beside the schema they describe, and each problem requires its `status` and
  * `title`.
  */
 export function forGenerators(spec: Record<string, unknown>) {
   const components = isNode(spec.components) ? spec.components : {};
   const schemas = isNode(components.schemas) ? components.schemas : {};
-  const closed = argumentSchemas(spec["x-tools"], schemas);
+  const listed = [spec["x-tools"], spec["x-events"]].flatMap((entries) =>
+    Array.isArray(entries) ? entries : [],
+  );
+  const closed = argumentSchemas(listed, schemas);
   return {
     ...adjustNode(spec, false),
     components: {

@@ -130,9 +130,11 @@ def fresh_mcp_events() -> None:
     """
     from marimo._server.api.events import events
     from marimo._server.api.tools import mcp_server
+    from marimo._server.host.streams import host_events
+    from marimo._server.host.tools import mcp_server as host_mcp_server
 
-    events.cache_clear()
-    mcp_server.cache_clear()
+    for cached in (events, mcp_server, host_events, host_mcp_server):
+        cached.cache_clear()
 
 
 @pytest.fixture

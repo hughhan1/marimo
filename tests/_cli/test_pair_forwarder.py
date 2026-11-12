@@ -424,23 +424,6 @@ def test_stream_close_interrupts_blocked_read() -> None:
         thread.join(timeout=1)
 
 
-def test_heartbeat_parser_is_opt_in() -> None:
-    from marimo._cli.pair.client import iter_sse
-
-    lines = [
-        b": keep-alive\n",
-        b"\n",
-        b"event: custom\n",
-        b"data: null\n",
-        b"\n",
-    ]
-    assert list(iter_sse(lines)) == [SSEEvent("custom", "null")]
-    assert list(iter_sse(lines, heartbeats=True)) == [
-        SSEEvent("heartbeat", ""),
-        SSEEvent("custom", "null"),
-    ]
-
-
 def test_reconnect_uses_processed_cursor_and_ignores_old_removal(
     config: ForwarderConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:

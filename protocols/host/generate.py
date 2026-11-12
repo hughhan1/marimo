@@ -169,7 +169,7 @@ def event_adapters(
 
 
 def tools(document: dict[str, Any], *, relative_import: bool = False) -> str:
-    """Each tool's title, description, argument type and result type."""
+    """Each tool's and each event's description and types."""
     prefix = "#/components/schemas/"
     module = "." if relative_import else "marimo._core"
     lines = [
@@ -177,7 +177,7 @@ def tools(document: dict[str, Any], *, relative_import: bool = False) -> str:
         "# AUTO-GENERATED FILE — DO NOT EDIT.",
         "# Generated from packages/host-protocol.",
         f"# Regenerate with `{COMMAND}`.",
-        '"""The host protocol\'s tools, by name."""',
+        '"""The host protocol\'s tools and events, by name."""',
         "",
         "from __future__ import annotations",
         "",
@@ -191,6 +191,12 @@ def tools(document: dict[str, Any], *, relative_import: bool = False) -> str:
         "    description: str",
         "    arguments: type[Any]",
         "    result: type[Any] | None",
+        "",
+        "",
+        "class Event(NamedTuple):",
+        "    description: str",
+        "    arguments: type[Any]",
+        "    payload: Any",
         "",
         "",
         "TOOLS: dict[str, Tool] = {",
@@ -208,6 +214,17 @@ def tools(document: dict[str, Any], *, relative_import: bool = False) -> str:
             f"        {tool['description']!r},",
             f"        protocol.{arguments},",
             f"        {result},",
+            "    ),",
+        ]
+    lines += ["}", "", "", "EVENTS: dict[str, Event] = {"]
+    for event in sorted(document["x-events"], key=lambda event: event["name"]):
+        arguments = event["inputSchema"]["$ref"].removeprefix(prefix)
+        payload = event["payloadSchema"]["$ref"].removeprefix(prefix)
+        lines += [
+            f'    "{event["name"]}": Event(',
+            f"        {event['description']!r},",
+            f"        protocol.{arguments},",
+            f"        protocol.{payload},",
             "    ),",
         ]
     lines += ["}", ""]

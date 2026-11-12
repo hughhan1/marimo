@@ -6,8 +6,8 @@ The marimo host protocol defines communication between a **host**, a program
 that serves notebooks, and a **client**, a program that works with those
 notebooks. Clients may provide a user interface or operate headlessly.
 
-A host exposes the **host API**: its operations as
-[MCP](https://modelcontextprotocol.io) tools, and its event streams over HTTP.
+A host exposes the **host API** over [MCP](https://modelcontextprotocol.io):
+its operations as tools, and its event streams as events.
 Clients use this API to read notebook state, follow changes, and call the
 operations the host supports.
 
@@ -19,9 +19,9 @@ another application.
 ## Reading this specification
 
 This document describes the notebook model and the behavior expected of hosts
-and clients. [OpenAPI](README.md#get-the-openapi-document) defines the streams,
-the message formats, and each tool in its `x-tools`, and is the source for
-generated types. The
+and clients. [OpenAPI](README.md#get-the-openapi-document) defines the message
+formats, each tool in its `x-tools`, and each event in its `x-events`, and is
+the source for generated types. The
 [examples](fixtures/) show complete messages.
 
 Capitalized MUST, MUST NOT, SHOULD, and MAY follow
@@ -116,13 +116,12 @@ clients can share a notebook while only some are permitted to edit or save it.
 An **attachment** represents a client's connection to a notebook. It belongs to
 the notebook and remains connected across runtime restarts. Each opening of a
 notebook's event stream MUST create a separate attachment, removed when that
-connection closes, including when reconnecting with `Last-Event-ID`.
+subscription ends, including a subscription that resumes from a cursor.
 
-When opening a stream, clients MAY supply `Marimo-Attachment-Identity`,
-`Marimo-Attachment-Kind`, and `Marimo-Attachment-Name`. Hosts expose these as
-`identity`, `kind`, and `name` on the attachment, as defined in the OpenAPI
-schema. A shared identity lets clients group attachments across streams and
-reconnects. Each attachment keeps its own id and connection lifetime.
+When subscribing, clients MAY supply `attachment_identity`, `attachment_kind`,
+and `attachment_name`. Hosts expose these as `identity`, `kind`, and `name` on
+the attachment, as defined in the OpenAPI schema. A shared identity lets
+clients group attachments across subscriptions. Each attachment keeps its own id and connection lifetime.
 
 Stopping a runtime ends its active and queued work, completing those runs as
 `interrupted`, and loses its Python state, while the document and retained
@@ -305,11 +304,15 @@ supplied through configuration or [local discovery](#local-discovery). Version
 1 serves the API over HTTP on loopback addresses. Hosts MUST authenticate
 requests using the token and accept only loopback connections.
 
-Each operation is an MCP tool of the same name, served over Streamable HTTP at
-`/mcp` below the base URL. A tool's arguments are one object: the ids of what
-it acts on, such as `notebook_id`, its `idempotency_key`, and the rest of the
-call. Its result is the reply. A failure is a problem, carried as the text of
-an error result.
+The host serves MCP over Streamable HTTP at `/mcp` below the base URL. Each
+operation is a tool of the same name. A tool's arguments are one object: the
+ids of what it acts on, such as `notebook_id`, its `idempotency_key`, and the
+rest of the call. Its result is the reply. A failure is a problem, carried as
+the text of an error result. The two event streams are events of the
+[MCP Events](https://github.com/modelcontextprotocol/experimental-ext-triggers-events)
+draft, `catalog` and `notebook`, whose occurrences carry the stream's events
+in order. A subscription the host refuses ends with the problem in its
+error's `data`.
 
 ## Following state
 
@@ -343,16 +346,17 @@ document.
 
 Each **cursor** marks a position in the stream. Clients treat cursors as
 opaque. A client sends back the last cursor it received and does not compare
-or construct cursors. After disconnecting, a client can reconnect with its last
-cursor to request the events it missed. If the host no longer has those events,
+or construct cursors. After a subscription ends, a client can subscribe again
+with its last cursor to request the events it missed. If the host no longer has those events,
 or the cursor predates a loss of host state, it requests a reset. Clients MUST
 then discard their previous view and rebuild it from a fresh snapshot.
 
 Event history can expire while results remain stored. Those results still
 appear in a fresh snapshot, even when their original events are unavailable.
 
-This version carries event streams over server-sent events (SSE). Other
-transports, such as WebSocket, could carry the same events while preserving
+A stream's cursors are the protocol's own, sent as the `cursor` argument,
+not the MCP Events draft's. Each subscription is one connection of the
+stream, and other transports could carry the same events while preserving
 their ordering, snapshot, and replay guarantees.
 
 ### Custom events
@@ -373,7 +377,8 @@ appear in snapshots. Once their replay history expires, a
 reset cannot recover them. Features that need recoverable state MUST
 represent that state separately rather than relying on custom events alone.
 
-`types=custom` selects custom events, regardless of their namespaced type.
+`types` naming `custom` selects custom events, regardless of their namespaced
+type.
 Custom events do not belong to a run and are excluded when `run_id` is set.
 They do not appear on the catalog stream.
 

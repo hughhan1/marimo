@@ -7,34 +7,13 @@ import {
   CatalogEvents,
   type CatalogEvent,
   type CatalogEventsOptions,
-  type Transport,
 } from "../index.ts";
-import { fixtureEvents } from "./fixtures.ts";
+import { fixtureEvents, scripted } from "./fixtures.ts";
 
 const snapshot = fixtureEvents("events.sse");
 const ready = snapshot.findIndex((event) => event.event === "ready");
 const record = snapshot.find((event) => event.event === "notebook")!.data
   .notebook;
-
-/** A transport whose last connection stays open until closed by the caller. */
-function scripted(...connections: (readonly unknown[])[]) {
-  const attempts: (string | null)[] = [];
-  const transport: Transport = async (
-    { cursor, signal },
-    { open, message },
-  ) => {
-    attempts.push(cursor);
-    open();
-    const events = connections.shift();
-    events?.forEach(message);
-    if (connections.length === 0 && !signal.aborted) {
-      await new Promise<void>((resolve) =>
-        signal.addEventListener("abort", () => resolve(), { once: true }),
-      );
-    }
-  };
-  return { transport, attempts };
-}
 
 afterEach(() => vi.useRealTimers());
 

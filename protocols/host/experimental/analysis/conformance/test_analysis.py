@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Analysis's experimental contract and its compatibility with stable streams."""
+"""Analysis's experimental contract and its compatibility with stable events."""
 
 import json
 from collections.abc import AsyncIterator
@@ -7,27 +7,24 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from contract import Frame, Watch, frames
+from contract import EVENTS, Event, Subscription, examples, payloads
 from generate import openapi
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 SPEC = openapi(experimental=True)
+NOTEBOOK = next(e for e in SPEC["x-events"] if e["name"] == "notebook")
 
 
-def validate(name: str, value: Any) -> None:
+def conform(schema: dict[str, Any], value: Any) -> None:
     Draft202012Validator(
-        {
-            "$ref": f"#/components/schemas/{name}",
-            "components": SPEC["components"],
-        },
+        {**schema, "components": SPEC["components"]},
         format_checker=FormatChecker(),
     ).validate(value)
 
 
-async def lines(text: str) -> AsyncIterator[str]:
-    for line in text.splitlines():
-        yield line
+def validate(name: str, value: Any) -> None:
+    conform({"$ref": f"#/components/schemas/{name}"}, value)
 
 
 @pytest.mark.parametrize(
@@ -49,27 +46,19 @@ def test_invalid_analysis_messages_are_rejected(message: Any) -> None:
         validate("AnalysisMessage", message)
 
 
-async def test_analysis_follows_document_and_matches_revision() -> None:
+def test_the_notebook_event_carries_analysis() -> None:
+    assert "analysis" in payloads(NOTEBOOK, SPEC["components"]["schemas"])
+
+
+def test_analysis_follows_document_and_matches_revision() -> None:
     document = None
     found = []
-    async for frame in frames(
-        lines((FIXTURES / "notebook-events.sse").read_text())
-    ):
-        if frame.comment is not None:
-            continue
-        message = json.loads(frame.data)
-        validate(
-            "Event",
-            {
-                "event": frame.event,
-                "data": message,
-                **({"id": frame.id} if frame.id is not None else {}),
-            },
-        )
-        if frame.event == "document":
-            document = message["document"]
-        elif frame.event == "analysis":
-            analysis = message["analysis"]
+    for event in examples(FIXTURES / "notebook-events.sse"):
+        conform(NOTEBOOK["payloadSchema"], event)
+        if event["event"] == "document":
+            document = event["data"]["document"]
+        elif event["event"] == "analysis":
+            analysis = event["data"]["analysis"]
             assert document is not None
             assert analysis["document_etag"] == document["etag"]
             assert analysis["notebook_id"] == document["notebook_id"]
@@ -80,10 +69,18 @@ async def test_analysis_follows_document_and_matches_revision() -> None:
 
 async def test_stable_probe_ignores_experimental_payloads() -> None:
     # A stable consumer must not validate a contract it has not selected.
-    stream = (
-        "id: 1\nevent: analysis\ndata: {}\n\nid: 1\nevent: ready\ndata: {}\n\n"
-    )
-    assert await Watch(frames(lines(stream)), timeout=1).ready() == [
-        Frame(event="analysis", data="{}", id="1"),
-        Frame(event="ready", data="{}", id="1"),
+    events = [
+        {"event": "analysis", "id": "1", "data": {}},
+        {"event": "ready", "id": "1", "data": {}},
     ]
+
+    async def messages() -> AsyncIterator[Any]:
+        yield {"method": "notifications/events/active", "params": {}}
+        for event in events:
+            yield {
+                "method": "notifications/events/event",
+                "params": {"data": event},
+            }
+
+    subscription = Subscription(messages(), 1, payloads(EVENTS["notebook"]))
+    assert await subscription.ready() == [Event(**event) for event in events]

@@ -1,10 +1,12 @@
 # Host protocol definitions
 
 [`Host`](src/Host.ts) defines the [host protocol](../../protocols/host/spec.md)
-with Effect: each operation is a `Tool` in `Host.Tools`, and the event streams
-are an `HttpApi`. The same definitions give typed tool handlers and the
+with Effect: each operation is a `Tool` in `Host.Tools`, and each event
+stream names its arguments and the events it carries. The same definitions
+give typed tool handlers and the
 [OpenAPI document](../../protocols/host/README.md#get-the-openapi-document)
-whose `x-tools` and schemas the Python and TypeScript generators read.
+whose `x-tools`, `x-events` and schemas the Python and TypeScript generators
+read.
 
 Start with [`Objects.ts`](src/Objects.ts), the table of objects a host
 publishes. The events come from that table, and an
@@ -25,9 +27,8 @@ const tools = Host.Tools.toLayer({
 ```
 
 Serve the tools over MCP at `/mcp` below the API's URL, for example with
-`McpServer` from `effect/ai`, and the streams with `HttpApiBuilder`. A host
-also provides a layer for `Host.HostToken`, which admits requests that carry
-the host record's token.
+`McpServer` from `effect/ai`, beside the `catalog` and `notebook` events of
+the MCP Events draft. Admit only requests that carry the host record's token.
 
 For a client, use [`@marimo-team/client`](../client/README.md).
 

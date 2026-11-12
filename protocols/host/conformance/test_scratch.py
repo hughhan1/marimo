@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 from conftest import scratch
-from contract import Frame, Host
+from contract import Event, Host
 
 
 @asynccontextmanager
@@ -34,7 +34,7 @@ async def scratch_probe(*, root="/tmp", **overrides: Any):
         "updated_at": None,
     }
     catalog = [
-        Frame(event=kind, data=json.dumps({kind: value}))
+        Event(kind, {kind: value})
         for kind, value in (
             ("host", {"operations": ["notebook.create", "notebook.delete"]}),
             ("project", project),

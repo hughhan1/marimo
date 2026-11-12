@@ -1,6 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-/** The arguments tools share, and the parameters of the event streams. */
+/** The arguments the tools and events share. */
 
 import { Schema } from "effect";
 import * as S from "../model/Ids.ts";
@@ -9,19 +9,19 @@ import * as Runtime from "../model/Runtime.ts";
 
 export const AttachmentIdentity = Runtime.AttachmentIdentity.annotateKey({
   description:
-    "An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. Invalid values receive\na 400 `invalid-request` response.\n",
+    "An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`invalid-request`.\n",
 });
 
 export const AttachmentKind = Runtime.AttachmentKind.annotate({
   default: "client",
 }).annotateKey({
   description:
-    "What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; invalid values\nreceive a 400 `invalid-request` response.\n",
+    "What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `invalid-request`.\n",
 });
 
 export const AttachmentName = Runtime.AttachmentName.annotateKey({
   description:
-    "A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; longer values\nreceive a 400 `invalid-request` response.\n",
+    "A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `invalid-request`.\n",
 });
 
 export const IdempotencyKey = Schema.String.annotateKey({
@@ -42,25 +42,20 @@ export const InputId = S.ItemId.annotateKey({
 });
 
 export const RunFilter = S.RunId.annotateKey({
-  description: "Narrows the notebook stream to one run.",
+  description: "Narrows the notebook's events to one run.",
 });
 
-export const Types = Schema.String.annotateKey({
+export const Types = Schema.Array(Schema.String).annotateKey({
   description:
-    "Which kinds to send, as a comma-separated list of kind names such as `runtime,project`. Omit it to receive every kind the stream carries.",
+    "Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries.",
 });
 
-export const LastEventId = Schema.String.annotateKey({
+export const Cursor = Schema.String.annotateKey({
   description:
-    "The `id` of the last event the client received, when reconnecting.",
+    "The `id` of the last event the client received, to resume after it.",
 });
 
 export const ExpectedEtag = Etag.annotateKey({
   description:
     "The document etag the client last read, as a precondition. The host answers `precondition-failed` when the document's etag differs.",
 });
-
-/** The notebook a stream follows. */
-export const notebook = Schema.Struct({ notebookId: NotebookId }).pipe(
-  Schema.encodeKeys({ notebookId: "notebook_id" }),
-);

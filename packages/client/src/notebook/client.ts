@@ -4,7 +4,6 @@ import type * as Protocol from "../protocol.ts";
 import type { NotebookKind } from "../kinds.ts";
 import {
   type ArgumentsOf,
-  below,
   type CallTool,
   type ClientOptions,
   call,
@@ -12,6 +11,7 @@ import {
   type ResultOf,
 } from "../request.ts";
 import type { ToolName } from "../tools.ts";
+import type { NotebookTransport } from "../transport/frame.ts";
 import { NotebookEvents, type NotebookEventsOptions } from "./events.ts";
 
 /** How a `NotebookClient` reaches and authenticates with its host. */
@@ -29,11 +29,8 @@ interface SaveOptions extends DecisionOptions {
   readonly expectedEtag?: string;
 }
 
-/** Where a notebook's stream is served, when its client has one. */
-interface Stream {
-  readonly url: URL;
-  readonly options: ClientOptions;
-}
+/** Makes the transport of a notebook subscription with `args`. */
+type Follow = (args: Readonly<Record<string, unknown>>) => NotebookTransport;
 
 /**
  * A client for one notebook.
@@ -46,12 +43,12 @@ interface Stream {
 export class NotebookClient {
   readonly #id: string;
   readonly #send: CallTool;
-  readonly #stream: Stream | undefined;
+  readonly #follow: Follow | undefined;
 
-  public constructor(notebookId: string, send: CallTool, stream?: Stream) {
+  public constructor(notebookId: string, send: CallTool, follow?: Follow) {
     this.#id = notebookId;
     this.#send = send;
-    this.#stream = stream;
+    this.#follow = follow;
   }
 
   /** Rename or move the notebook. */
@@ -175,22 +172,25 @@ export class NotebookClient {
   }
 
   /**
-   * Follow the notebook's stream.
+   * Follow the notebook's events.
    *
-   * The stream is served below the notebook's URL over server-sent events,
-   * and shares its client's options. Only a client made by `Client.notebook`
-   * has one.
+   * Only a client made by `Client.notebook` follows them, as the host's
+   * `notebook` event with its client's options.
    */
   public events<const K extends string = NotebookKind>(
-    options: Omit<NotebookEventsOptions<K>, keyof ClientOptions> = {},
+    options: NotebookEventsOptions<K> = {},
   ): NotebookEvents<K> {
-    if (this.#stream === undefined) {
+    if (this.#follow === undefined) {
       throw new Error("This notebook client has no stream to follow");
     }
-    return new NotebookEvents<K>(below(this.#stream.url, "/events"), {
-      ...this.#stream.options,
-      ...options,
-    });
+    return new NotebookEvents<K>(
+      this.#follow({
+        notebook_id: this.#id,
+        ...(options.types === undefined ? {} : { types: options.types }),
+        ...(options.runId === undefined ? {} : { run_id: options.runId }),
+      }),
+      options,
+    );
   }
 
   #call<Name extends ToolName>(

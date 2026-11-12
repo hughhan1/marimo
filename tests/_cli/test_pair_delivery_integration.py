@@ -17,7 +17,7 @@ from click.testing import CliRunner
 
 from marimo._cli.cli import main as cli_main
 from marimo._cli.pair import commands
-from marimo._cli.pair.client import iter_sse, open_events, resolve_host
+from marimo._cli.pair.client import iter_events, open_events, resolve_host
 from marimo._cli.pair.connection import ConnectionStore, connection_identity
 from marimo._cli.pair.delivery import DeliveryTarget, ProcessHandle
 from marimo._cli.pair.forwarder import ForwarderConfig
@@ -223,13 +223,18 @@ def test_subprocess_reconnect_replays_messages_and_server_detach(
         host = resolve_host(server.url)
         observer = open_events(
             url=host.url,
-            notebook=server.notebook_id,
+            name="notebook",
+            arguments={
+                "notebook_id": server.notebook_id,
+                "types": ["custom", "attachment"],
+                "attachment_identity": "observer",
+                "attachment_kind": "agent",
+                "attachment_name": "Replay observer",
+            },
             token=host.token,
-            identity="observer",
-            name="Replay observer",
             read_timeout=10,
         )
-        events = iter_sse(observer)
+        events = iter_events(observer)
         for event in events:
             if event.name == "ready":
                 break

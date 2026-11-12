@@ -16,6 +16,7 @@ it("closes tools' arguments and keeps other objects open", () => {
     .map(([name]) => name);
   expect(closed.toSorted()).toEqual([
     "CancelRunRequest",
+    "CatalogEventsRequest",
     "CellConfigInput",
     "CellInput",
     "CreateNotebookRequest",
@@ -23,6 +24,7 @@ it("closes tools' arguments and keeps other objects open", () => {
     "EditRequest",
     "ExecuteRequest",
     "InputReplyRequest",
+    "NotebookEventsRequest",
     "NotebookRequest",
     "PutCell",
     "RequestedCell",
@@ -82,6 +84,25 @@ it("lists each tool with its arguments, result and problems", () => {
   ).not.toHaveProperty("outputSchema");
 });
 
+it("lists each event with its arguments and payload, and no HTTP paths", () => {
+  expect(stable.paths).toEqual({});
+  const events = (stable as { "x-events"?: Array<Record<string, unknown>> })[
+    "x-events"
+  ];
+  expect(events).toEqual([
+    expect.objectContaining({
+      name: "catalog",
+      inputSchema: { $ref: "#/components/schemas/CatalogEventsRequest" },
+      payloadSchema: { $ref: "#/components/schemas/CatalogStreamEvent" },
+    }),
+    expect.objectContaining({
+      name: "notebook",
+      inputSchema: { $ref: "#/components/schemas/NotebookEventsRequest" },
+      payloadSchema: { $ref: "#/components/schemas/NotebookStreamEvent" },
+    }),
+  ]);
+});
+
 it("adds experimental features without changing the stable protocol", () => {
   expect(experimental.paths).toEqual(stable.paths);
   expect(experimental["x-tools" as keyof typeof experimental]).toEqual(
@@ -89,7 +110,12 @@ it("adds experimental features without changing the stable protocol", () => {
   );
   const extended = experimental.components.schemas;
   for (const [name, schema] of Object.entries(schemas)) {
-    if (name === "Event" || name === "ObjectType") {
+    if (
+      name === "Event" ||
+      name === "ObjectType" ||
+      name === "CatalogStreamEvent" ||
+      name === "NotebookStreamEvent"
+    ) {
       continue;
     }
     expect(extended[name]).toEqual(schema);

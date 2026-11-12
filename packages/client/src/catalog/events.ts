@@ -8,7 +8,7 @@ import type { StreamEvent } from "../transport/stream.ts";
 /** An event delivered for the requested catalog kinds, plus ready and reset. */
 export type CatalogEvent<K extends CatalogKind = CatalogKind> = StreamEvent<K>;
 
-/** How a catalog stream reaches its host and what it follows. */
+/** What a catalog stream follows. */
 export interface CatalogEventsOptions<
   K extends CatalogKind = CatalogKind,
 > extends EventsOptions<K> {}
@@ -23,10 +23,7 @@ export interface CatalogEventsOptions<
 export class CatalogEvents<
   const K extends CatalogKind = CatalogKind,
 > extends Events<K> {
-  public constructor(
-    source: string | URL | Transport,
-    init: CatalogEventsOptions<K> = {},
-  ) {
-    super(source, init, catalogKinds);
+  public constructor(transport: Transport, init: CatalogEventsOptions<K> = {}) {
+    super(transport, init, catalogKinds);
   }
 }

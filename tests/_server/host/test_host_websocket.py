@@ -1,22 +1,21 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Retained session state on the host WebSocket."""
+"""The notebook event of a notebook whose session is already running."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.testclient import TestClient
 
 from marimo._messaging.cell_output import CellChannel, CellOutput
 from marimo._messaging.notification import (
     CellNotification,
     CompletedRunNotification,
 )
-from marimo._server.host import HOST_API_PATH
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.host.middleware import HostApiMiddleware
@@ -26,25 +25,25 @@ from marimo._session.notebook import AppFileManager
 from marimo._session.state.session_view import SessionView
 from tests._server.host.conftest import FakeManager, FakeSession
 from tests._server.host.drive import (
-    AUTHORITY,
     PORT,
+    TOKEN,
     position,
-    socket_snapshot,
-    with_client_address,
+    subscribe,
+    until_ready,
+    wait_for,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Awaitable, Callable
     from pathlib import Path
 
-    from starlette.types import Message, Receive, Scope, Send
-
-AUTH = {"Authorization": "Bearer snapshot-test"}
+    from tests._server.host.drive import Response
 
 
 @pytest.fixture
-def session_host(
+async def session_host(
     manager: FakeManager, tmp_path: Path
-) -> tuple[Starlette, SessionBridge, FakeSession]:
+) -> AsyncIterator[tuple[Starlette, SessionBridge, FakeSession]]:
     path = tmp_path / "notebook.py"
     path.write_text(
         "import marimo\napp = marimo.App()\n"
@@ -73,256 +72,105 @@ def session_host(
     manager.sessions["existing"] = session
     bridge = SessionBridge(manager)  # type: ignore[arg-type]
     app = Starlette(middleware=[Middleware(HostApiMiddleware)])
-    app.state.host_context = HostContext(
-        bridge=bridge, token="snapshot-test", port=PORT
+    app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=PORT)
+    await bridge.open()
+    try:
+        yield app, bridge, session
+    finally:
+        bridge.close()
+
+
+async def follow(
+    app: Starlette, **arguments: Any
+) -> tuple[Response, Callable[[], Awaitable[None]]]:
+    """Subscribe to the session's notebook through `ready`, with its end."""
+    (notebook_id,) = app.state.host_context.bridge.host.notebooks
+    response, task, disconnect = subscribe(
+        app, "notebook", notebook_id=notebook_id, **arguments
     )
-    return app, bridge, session
+    await wait_for(response, until_ready)
+
+    async def end() -> None:
+        disconnect()
+        await asyncio.wait_for(task, 5)
+
+    return response, end
 
 
-def test_snapshot_is_private_and_precedes_updates_during_accept(
+async def test_the_snapshot_carries_the_session_document_before_ready(
+    session_host: tuple[Starlette, SessionBridge, FakeSession],
+) -> None:
+    app, _, session = session_host
+    response, end = await follow(app)
+    await end()
+    events = response.records
+    names = response.names()
+    assert names[0] == "notebook"
+    assert names.index("cell") < names.index("document")
+    assert "attachment" in names
+    assert names[-1] == "ready"
+    # Session state reaches editors through their own `session` event.
+    assert "marimo" not in names
+    assert all("id" not in event for event in events[:-1])
+    cell = next(e["data"]["cell"] for e in events if e["event"] == "cell")
+    document = next(
+        e["data"]["document"] for e in events if e["event"] == "document"
+    )
+    assert cell["id"] == session.document.cell_ids[0]
+    assert document["order"] == [cell["id"]]
+
+
+async def test_resuming_replays_original_events_then_continues_live(
     session_host: tuple[Starlette, SessionBridge, FakeSession],
 ) -> None:
     app, bridge, session = session_host
-    connections = 0
+    first, end = await follow(app, types=["marimo"])
+    cursor = first.records[-1]["id"]
+    session.notify(CompletedRunNotification(run_id="missed"))
+    await wait_for(first, lambda r: len(r.records) == 2)
+    await end()
 
-    async def app_with_update(
-        scope: Scope, receive: Receive, send: Send
-    ) -> None:
-        async def send_with_update(message: Message) -> None:
-            nonlocal connections
-            if message["type"] == "websocket.accept":
-                connections += 1
-                if connections == 2:
-                    session.notify(CompletedRunNotification(run_id="live"))
-            await send(message)
-
-        await app(scope, receive, send_with_update)
-
-    with TestClient(with_client_address(app_with_update)) as client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            (notebook_id,) = bridge.host.notebooks
-            url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook_id}/events/ws?types=marimo"
-            with client.websocket_connect(url, headers=dict(AUTH)) as first:
-                opening = socket_snapshot(first)
-                initial = opening[:-1]
-                assert initial == [
-                    {
-                        "event": "marimo",
-                        "data": {
-                            "marimo": {
-                                "op": "environment-state",
-                                "source": source,
-                                "state": {
-                                    "restart_required": False,
-                                    "operations": [],
-                                },
-                            }
-                        },
-                    }
-                    for source in ("kernel", "server")
-                ] + [
-                    {
-                        "event": "marimo",
-                        "data": {
-                            "marimo": {
-                                "op": "cell-op",
-                                "cell_id": session.document.cell_ids[0],
-                                "output": {
-                                    "channel": "output",
-                                    "mimetype": "text/plain",
-                                    "data": "retained output",
-                                    "timestamp": 1.0,
-                                },
-                                "console": None,
-                                "status": "idle",
-                                "run_id": "r1",
-                                "execution_id": None,
-                                "timestamp": 1.0,
-                            }
-                        },
-                    }
-                ]
-                with client.websocket_connect(
-                    url, headers=dict(AUTH)
-                ) as second:
-                    assert socket_snapshot(second)[:-1] == initial
-                    live = second.receive_json()
-                    assert first.receive_json() == live
-                    assert live == {
-                        "id": live["id"],
-                        "event": "marimo",
-                        "data": {
-                            "marimo": {
-                                "op": "completed-run",
-                                "run_id": "live",
-                                "outcome": "succeeded",
-                                "error": None,
-                            }
-                        },
-                    }
-        finally:
-            client.portal.call(bridge.close)
+    second, end = await follow(app, types=["marimo"], cursor=cursor)
+    replay = list(second.records)
+    assert replay[:-1] == first.records[1:]
+    session.notify(CompletedRunNotification(run_id="live"))
+    await wait_for(second, lambda r: len(r.records) == 3)
+    await end()
+    live = second.records[-1]
+    assert live["data"]["marimo"]["run_id"] == "live"
+    assert position(bridge.host, live["id"]) > position(
+        bridge.host, replay[-1]["id"]
+    )
 
 
-@pytest.mark.parametrize(
-    ("query", "has_snapshot"),
-    [
-        ("types=marimo&run_id=r1", True),
-        ("types=marimo&run_id=other", False),
-        ("types=custom", False),
-    ],
-)
-def test_snapshot_obeys_type_and_run_filters(
-    session_host: tuple[Starlette, SessionBridge, FakeSession],
-    query: str,
-    has_snapshot: bool,
-) -> None:
-    app, bridge, session = session_host
-    with TestClient(with_client_address(app)) as client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            (notebook_id,) = bridge.host.notebooks
-            notebook = client.portal.call(bridge.host.notebook, notebook_id)
-            url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook_id}/events/ws?{query}"
-            with client.websocket_connect(
-                url, headers=dict(AUTH)
-            ) as websocket:
-                opening = socket_snapshot(websocket)
-                assert len(opening) == (2 if has_snapshot else 1)
-                if has_snapshot:
-                    snapshot = opening[0]
-                    assert "id" not in snapshot
-                    assert snapshot["event"] == "marimo"
-                    assert snapshot["data"]["marimo"]["run_id"] == "r1"
-                    assert (
-                        snapshot["data"]["marimo"]["output"]["data"]
-                        == "retained output"
-                    )
-                if query == "types=custom":
-                    client.portal.call(notebook.emit, "test.marker", {})
-                    assert websocket.receive_json()["event"] == "custom"
-                else:
-                    run_id = "r1" if has_snapshot else "other"
-                    client.portal.call(
-                        session.notify, CompletedRunNotification(run_id=run_id)
-                    )
-                    assert websocket.receive_json()["data"]["marimo"] == {
-                        "op": "completed-run",
-                        "run_id": run_id,
-                        "outcome": "succeeded",
-                        "error": None,
-                    }
-        finally:
-            client.portal.call(bridge.close)
-
-
-def test_opening_delivers_protocol_and_session_state_before_ready(
-    session_host: tuple[Starlette, SessionBridge, FakeSession],
-) -> None:
-    app, bridge, session = session_host
-    with TestClient(with_client_address(app)) as client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            (notebook_id,) = bridge.host.notebooks
-            url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook_id}/events/ws"
-            with client.websocket_connect(url, headers=dict(AUTH)) as socket:
-                opening = socket_snapshot(socket)
-                names = [event["event"] for event in opening]
-                assert names[0] == "notebook"
-                assert names.index("cell") < names.index("document")
-                assert names.index("document") < names.index("marimo")
-                assert "attachment" in names
-                assert all("id" not in event for event in opening[:-1])
-                cell = next(
-                    e["data"]["cell"] for e in opening if e["event"] == "cell"
-                )
-                document = next(
-                    e["data"]["document"]
-                    for e in opening
-                    if e["event"] == "document"
-                )
-                assert cell["id"] == session.document.cell_ids[0]
-                assert document["order"] == [cell["id"]]
-        finally:
-            client.portal.call(bridge.close)
-
-
-@pytest.mark.parametrize("use_header", [False, True])
-def test_reconnect_replays_original_events_then_continues_live(
-    session_host: tuple[Starlette, SessionBridge, FakeSession],
-    use_header: bool,
-) -> None:
-    app, bridge, session = session_host
-    with TestClient(with_client_address(app)) as client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            (notebook_id,) = bridge.host.notebooks
-            url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook_id}/events/ws?types=marimo"
-            with client.websocket_connect(url, headers=dict(AUTH)) as socket:
-                cursor = socket_snapshot(socket)[-1]["id"]
-                client.portal.call(
-                    session.notify, CompletedRunNotification(run_id="missed")
-                )
-                missed = socket.receive_json()
-            headers = dict(AUTH)
-            if use_header:
-                headers["Last-Event-ID"] = cursor
-            else:
-                url += f"&cursor={cursor}"
-            with client.websocket_connect(url, headers=headers) as socket:
-                replay = socket_snapshot(socket)
-                assert replay[:-1] == [missed]
-                client.portal.call(
-                    session.notify, CompletedRunNotification(run_id="live")
-                )
-                live = socket.receive_json()
-                assert live["data"]["marimo"]["run_id"] == "live"
-                assert position(bridge.host, live["id"]) > position(
-                    bridge.host, replay[-1]["id"]
-                )
-        finally:
-            client.portal.call(bridge.close)
-
-
-def test_expired_cursor_resets_to_current_state(
+async def test_an_expired_cursor_resets_to_current_state(
     session_host: tuple[Starlette, SessionBridge, FakeSession],
 ) -> None:
     app, bridge, _ = session_host
-    with TestClient(with_client_address(app)) as client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            (notebook_id,) = bridge.host.notebooks
-            notebook = client.portal.call(bridge.host.notebook, notebook_id)
-            url = f"ws://{AUTHORITY}{HOST_API_PATH}/notebooks/{notebook_id}/events/ws?types=cell,document,marimo,custom"
-            with client.websocket_connect(url, headers=dict(AUTH)) as socket:
-                initial = socket_snapshot(socket)
-                cursor = initial[-1]["id"]
-            # Expire the default 1000-event replay history.
-            for index in range(1001):
-                client.portal.call(
-                    notebook.emit, "test.expire", {"index": index}
-                )
-            with client.websocket_connect(
-                f"{url}&cursor={cursor}", headers=dict(AUTH)
-            ) as socket:
-                reset = socket_snapshot(socket)
-                assert reset[0] == {"event": "reset", "data": {}}
-                assert reset[1:-1] == initial[:-1]
-                assert position(bridge.host, reset[-1]["id"]) > position(
-                    bridge.host, cursor
-                )
-                event = client.portal.call(notebook.emit, "test.live", {})
-                live = socket.receive_json()
-                assert live["event"] == "custom"
-                assert live["data"]["custom"] == msgspec.to_builtins(event)
-                assert position(bridge.host, live["id"]) > position(
-                    bridge.host, reset[-1]["id"]
-                )
-        finally:
-            client.portal.call(bridge.close)
+    (notebook_id,) = bridge.host.notebooks
+    notebook = await bridge.host.notebook(notebook_id)
+    types = ["cell", "document", "marimo", "custom"]
+    first, end = await follow(app, types=types)
+    await end()
+    initial = first.records
+    cursor = initial[-1]["id"]
+    # Expire the default 1000-event replay history.
+    for index in range(1001):
+        notebook.emit("test.expire", {"index": index})
+
+    second, end = await follow(app, types=types, cursor=cursor)
+    reset = list(second.records)
+    assert reset[0] == {"event": "reset", "data": {}}
+    assert reset[1:-1] == initial[:-1]
+    assert position(bridge.host, reset[-1]["id"]) > position(
+        bridge.host, cursor
+    )
+    event = notebook.emit("test.live", {})
+    await wait_for(second, lambda r: len(r.records) > len(reset))
+    await end()
+    live = second.records[-1]
+    assert live["event"] == "custom"
+    assert live["data"]["custom"] == msgspec.to_builtins(event)
+    assert position(bridge.host, live["id"]) > position(
+        bridge.host, reset[-1]["id"]
+    )

@@ -48,8 +48,9 @@ if TYPE_CHECKING:
     import os
     from collections.abc import Awaitable, Callable, Mapping
 
+    from holon.ext.events import Events
     from mcp.server.context import ServerRequestContext
-    from starlette.types import ASGIApp, Receive, Scope, Send
+    from starlette.types import Receive, Scope, Send
 
 APP_ONLY = {"ui": {"visibility": ["app"]}}
 SCHEMA_REF = "#/$defs/{name}"
@@ -506,25 +507,21 @@ def mcp_server() -> Server[Any]:
 
 
 class MCPEndpoint:
-    """An ASGI endpoint serving an MCP server, stateless.
-
-    `handle` serves a request with the session manager, which the editor
-    wraps to serve its events.
-    """
+    """An ASGI endpoint serving an MCP server and its events, stateless."""
 
     def __init__(
         self,
         server: Callable[[], Server[Any]],
-        handle: Callable[[StreamableHTTPSessionManager], ASGIApp]
-        | None = None,
+        events: Callable[[], Events],
     ) -> None:
         self.server = server
-        self.handle = handle
+        self.events = events
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
-        if not origin_allowed(Request(scope, receive)):
+        request = Request(scope, receive)
+        if not origin_allowed(request):
             response = JSONResponse(
                 {
                     "jsonrpc": "2.0",
@@ -547,34 +544,20 @@ class MCPEndpoint:
             # file's contents inside a UI element's value.
             max_request_body_size=sys.maxsize,
         )
-        async with manager.run():
-            handle = (
-                manager.handle_request
-                if self.handle is None
-                else self.handle(manager)
-            )
-            await handle(scope, receive, send)
-
-
-class _EditorEndpoint(MCPEndpoint):
-    async def __call__(
-        self, scope: Scope, receive: Receive, send: Send
-    ) -> None:
         # Made here, since the events endpoint hands tools a copy of the scope.
         tasks = scope.setdefault(_AFTER_REPLY, [])
         # Event hooks read the request, which the SDK does not hand them.
-        token = request_var.set(Request(scope, receive))
+        token = request_var.set(request)
         try:
-            await super().__call__(scope, receive, send)
+            async with manager.run():
+                await self.events().asgi(manager)(scope, receive, send)
         finally:
             request_var.reset(token)
         for task in tasks:
             await task()
 
 
-mcp_endpoint = _EditorEndpoint(
-    mcp_server, lambda manager: events().asgi(manager)
-)
+mcp_endpoint = MCPEndpoint(mcp_server, events)
 
 
 def origin_allowed(request: Request) -> bool:

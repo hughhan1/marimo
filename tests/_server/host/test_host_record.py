@@ -27,7 +27,7 @@ from tests._core.conftest import (
     record,
     runtime_id_of,
 )
-from tests._server.host.drive import call, finished
+from tests._server.host.drive import call, refused
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
@@ -100,7 +100,7 @@ async def test_run_mode_writes_no_record_and_serves_no_host_api(
 
     async with app.router.lifespan_context(app):
         assert not (tmp_path / "hosts-v1").exists()
-        assert (await finished(app, "GET", "/events")).status == 404
+        assert (await refused(app, "catalog"))["status"] == 404
 
 
 @pytest.mark.parametrize("external_port", [1234, 8443])

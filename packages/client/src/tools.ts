@@ -205,3 +205,18 @@ export const tools = {
 
 /** A tool's name, such as `notebook.edit`. */
 export type ToolName = keyof typeof tools;
+
+/** The host's events by name: each one's arguments and the events it carries. */
+export const events = {
+  catalog: {
+    arguments: Protocol.CatalogEventsRequest,
+    payload: Protocol.CatalogStreamEvent,
+  },
+  notebook: {
+    arguments: Protocol.NotebookEventsRequest,
+    payload: Protocol.NotebookStreamEvent,
+  },
+} as const;
+
+/** An event's name, such as `notebook`. */
+export type EventName = keyof typeof events;
