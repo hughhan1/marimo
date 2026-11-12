@@ -4005,9 +4005,6 @@ packages:
   '@sourcegraph/vscode-ws-jsonrpc@0.0.3-fork':
     resolution: {integrity: sha512-EJLq/ni66glk3xYyOZtUIEbjTCw8kMI6RvO0YQtPd+4um2+aTSM1LfN4NrsiVrRkG7EG/U2OkFlKqT8mGo6w4Q==}
 
-  '@stablelib/base64@1.0.1':
-    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -6198,9 +6195,6 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
-  fast-sha256@1.3.0:
-    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
-
   fast-string-truncated-width@3.0.3:
     resolution: {integrity: sha512-0jjjIEL6+0jag3l2XWWizO64/aZVtpiGE3t0Zgqxv0DPuxiMjvB3M24fCyhZUO4KomJQPj3LTSUnDP3GpdwC0g==}
 
@@ -6565,8 +6559,8 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  holon-sh@0.0.1-dev.12:
-    resolution: {integrity: sha512-nM2AoE9QOMly86Lkesh08ne+HUMgKJ+v29c1TvCrOcLcCIneKl6c/tGa4Erp5QH+sd46Qme/SGxqWWtqpqjvuA==}
+  holon-sh@0.0.1-dev.19:
+    resolution: {integrity: sha512-B4rYKHW32CRMMeqnBuy04kQ0oAP+PWy3Lnzo+XsvSddDq3uEEEJxhE0jCd6reulzgFgsAh/8nKLZY3NCT9ExJA==}
     engines: {node: '>=22'}
     peerDependencies:
       '@modelcontextprotocol/server': ^2.3.1
@@ -7550,6 +7544,11 @@ packages:
   mime-types@3.0.2:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
+
+  mime@4.1.2:
+    resolution: {integrity: sha512-ikRzZ2RwbUVDyL9SsU0f2Phcmav4yq5r8faH5ZZKHtOZrMBLnrQOrj0uvqZ5R1uQnj+RO7Wcklw/lAf81mP9LQ==}
+    engines: {node: '>=16'}
+    hasBin: true
 
   min-indent@1.0.1:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
@@ -8946,9 +8945,6 @@ packages:
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
-
-  standardwebhooks@1.1.1:
-    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
 
   static-eval@2.1.1:
     resolution: {integrity: sha512-MgWpQ/ZjGieSVB3eOJVs4OA2LT/q1vx98KPCTTQPzq/aLr0YUXTsgryTXr4SLfR0ZfUUCiedM9n/ABeDIyy4mA==}
@@ -13138,8 +13134,6 @@ snapshots:
     dependencies:
       vscode-jsonrpc: 4.0.0
 
-  '@stablelib/base64@1.0.1': {}
-
   '@standard-schema/spec@1.1.0': {}
 
   '@standard-schema/utils@0.3.0': {}
@@ -15473,8 +15467,6 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
-  fast-sha256@1.3.0: {}
-
   fast-string-truncated-width@3.0.3: {}
 
   fast-string-width@3.0.2:
@@ -15989,11 +15981,11 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  holon-sh@0.0.1-dev.12:
+  holon-sh@0.0.1-dev.19:
     dependencies:
       '@modelcontextprotocol/client': 2.4.0
       ipaddr.js: 2.5.0
-      standardwebhooks: 1.1.1
+      mime: 4.1.2
       undici: 7.29.1
 
   holon-types-darwin-arm64@0.0.1-dev.25:
@@ -16018,7 +16010,7 @@ snapshots:
   holon-ui@0.0.1-dev.7(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
     dependencies:
       '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
-      holon-sh: 0.0.1-dev.12
+      holon-sh: 0.0.1-dev.19
     transitivePeerDependencies:
       - '@modelcontextprotocol/server'
 
@@ -17103,6 +17095,8 @@ snapshots:
   mime-types@3.0.2:
     dependencies:
       mime-db: 1.54.0
+
+  mime@4.1.2: {}
 
   min-indent@1.0.1: {}
 
@@ -18928,11 +18922,6 @@ snapshots:
   stack-trace@0.0.9: {}
 
   stackback@0.0.2: {}
-
-  standardwebhooks@1.1.1:
-    dependencies:
-      '@stablelib/base64': 1.0.1
-      fast-sha256: 1.3.0
 
   static-eval@2.1.1:
     dependencies:
