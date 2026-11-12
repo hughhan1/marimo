@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Any
 
+import msgspec
+from holon.ext.files import file_input_schema
 from starlette.authentication import requires
 from starlette.exceptions import HTTPException
 
@@ -32,7 +34,6 @@ from marimo._server.models.files import (
     FileSearchResponse,
     FileUpdateRequest,
     FileUpdateResponse,
-    FileUploadRequest,
 )
 from marimo._server.models.models import (
     BaseResponse,
@@ -71,6 +72,24 @@ LOGGER = _loggers.marimo_logger()
 # Router for file system endpoints
 
 file_system = OSFileSystem()
+
+# Without a cap an authenticated client could exhaust disk. 1 GiB covers
+# normal notebook-data use cases with margin.
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+
+
+class FileUploadRequest(msgspec.Struct, rename="camel"):
+    # The directory to put the file in
+    path: str
+    # The file's name there
+    name: str
+    # The file, sent in the call or transferred beside it
+    file: Annotated[
+        dict[str, Any],
+        msgspec.Meta(
+            extra_json_schema=file_input_schema(max_size=MAX_UPLOAD_BYTES)
+        ),
+    ]
 
 
 @tool("files_roots", output=FileRootsResponse)

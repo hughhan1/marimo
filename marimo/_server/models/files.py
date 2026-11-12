@@ -1,19 +1,14 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Literal
 
 import msgspec
-from holon.ext.files import file_input_schema
 
 from marimo._metadata.opengraph import OpenGraphMetadata
 from marimo._server.models.models import BaseResponse
 
 FileCreateType = Literal["file", "directory", "notebook"]
-
-# Without a cap an authenticated client could exhaust disk. 1 GiB covers
-# normal notebook-data use cases with margin.
-MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 
 class FileInfo(msgspec.Struct, rename="camel"):
@@ -69,20 +64,6 @@ class FileCreateRequest(msgspec.Struct, rename="camel"):
     type: FileCreateType
     # The name of the file or directory
     name: str
-
-
-class FileUploadRequest(msgspec.Struct, rename="camel"):
-    # The directory to put the file in
-    path: str
-    # The file's name there
-    name: str
-    # The file, sent in the call or transferred beside it
-    file: Annotated[
-        dict[str, Any],
-        msgspec.Meta(
-            extra_json_schema=file_input_schema(max_size=MAX_UPLOAD_BYTES)
-        ),
-    ]
 
 
 class FileSearchRequest(msgspec.Struct, rename="camel"):
