@@ -69,54 +69,7 @@ def receive_completed_run(websocket: SessionEvents, run_id: str) -> None:
         pass
 
 
-def test_untitled_editor_bootstraps_and_reconnects_with_host_events(
-    client: TestClient,
-) -> None:
-    from marimo._server.workspace import EmptyWorkspace
-
-    manager = get_session_manager(client)
-    manager.workspace = EmptyWorkspace()
-    bridge = SessionBridge(manager)
-    client.app.state.host_context = HostContext(
-        bridge=bridge, token="host-token", port=1234
-    )
-    url = "/ws?session_id=new&access_token=fake-token"
-    with client:
-        assert client.portal is not None
-        client.portal.call(bridge.open)
-        try:
-            with connect_session(client, url) as ws:
-                snapshot = socket_snapshot(ws)
-                receive_notification(ws, "kernel-ready")
-                notebook_id = next(
-                    e["data"]["notebook"]["id"]
-                    for e in snapshot
-                    if e["event"] == "notebook"
-                )
-                response = run_cells(
-                    client,
-                    notebook_id,
-                    {first_cell_id(client, "new"): "x = 42"},
-                    headers=headers("new"),
-                )
-                assert response.ok, response.problem
-                receive_completed_run(ws, response.data["id"])
-            with connect_session(client, url) as ws:
-                snapshot = socket_snapshot(ws)
-                assert_reconnect_alert(ws)
-                assert (
-                    next(
-                        e["data"]["notebook"]["id"]
-                        for e in snapshot
-                        if e["event"] == "notebook"
-                    )
-                    == notebook_id
-                )
-        finally:
-            client.portal.call(bridge.close)
-
-
-def test_untitled_editor_restarts_its_runtime_through_the_host(
+def test_untitled_editor_runs_reconnects_and_restarts_its_runtime(
     client: TestClient,
 ) -> None:
     from marimo._server.workspace import EmptyWorkspace
@@ -149,7 +102,17 @@ def test_untitled_editor_restarts_its_runtime_through_the_host(
                 )
                 assert response.ok, response.problem
                 receive_completed_run(ws, response.data["id"])
-
+            with connect_session(client, url) as ws:
+                snapshot = socket_snapshot(ws)
+                assert_reconnect_alert(ws)
+                assert (
+                    next(
+                        e["data"]["notebook"]["id"]
+                        for e in snapshot
+                        if e["event"] == "notebook"
+                    )
+                    == notebook_id
+                )
                 restarted = call_tool(
                     client,
                     "runtime.restart",

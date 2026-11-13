@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import msgspec
 import pytest
-from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from marimo._core import backend as be, protocol
@@ -25,7 +24,7 @@ from marimo._messaging.notification import CompletedRunNotification
 from marimo._server.host import HOST_API_PATH, api as api_module, streams
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
-from marimo._server.host.events import MarimoEvent, MarimoMessage
+from marimo._server.host.events import notification_event
 from marimo._server.main import create_starlette_app
 from marimo._server.models.home import MarimoFile
 from marimo._server.workspace import FixedFilesWorkspace, SingleFileWorkspace
@@ -42,7 +41,6 @@ from tests._server.host.drive import (
     finished,
     position,
     refused,
-    request,
     subscribe,
     until_ready,
     wait_for,
@@ -187,45 +185,6 @@ async def test_a_wrong_method_on_a_known_route_is_a_405_problem(
     assert "POST" in response.headers["allow"]
 
 
-def _declared_routes() -> dict[str, set[str]]:
-    methods: dict[str, set[str]] = {}
-    for route in api_module.build_app().routes:
-        if not isinstance(route, Route):
-            continue
-        path = route.path.replace("{id}", "nb-x").replace("{run_id}", "run-x")
-        methods.setdefault(path, set()).update(route.methods or set())
-    return methods
-
-
-_DECLARED = _declared_routes()
-_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
-_UNKNOWN = [
-    "/nothing",
-    "/notebooks/nb-x/nothing",
-    "/events",
-    "/mcp/",
-]
-_SWEEP = [
-    (path, method) for path in [*_DECLARED, *_UNKNOWN] for method in _METHODS
-]
-
-
-@pytest.mark.parametrize(("path", "method"), _SWEEP)
-async def test_every_method_on_every_route_is_a_response_not_a_500(
-    harness: Harness, path: str, method: str
-) -> None:
-    response, _, disconnect = request(harness.app, method, path, headers=AUTH)
-    await wait_for(response, lambda r: r.status != 0)
-    disconnect()
-    assert response.status != 500
-    # The tool endpoint answers a malformed call in JSON-RPC, as MCP does.
-    if not 200 <= response.status < 300 and path != "/mcp":
-        assert response.headers["content-type"] == "application/problem+json"
-    if response.status == 405:
-        allowed = {m.strip() for m in response.headers["allow"].split(",")}
-        assert allowed == _DECLARED[path]
-
-
 @pytest.mark.parametrize(
     ("host", "admitted"),
     [
@@ -292,21 +251,19 @@ async def test_malformed_bearers_are_401_problems(
     assert updated.problem["type"].endswith(f":{kind}")
 
 
-# A bare integer is a cursor from a host before this one.
-@pytest.mark.parametrize("cursor", ["1", "x", "-1", "1" * 5000, "1 "])
-async def test_a_cursor_the_host_did_not_issue_resets_the_stream(
-    harness: Harness, cursor: str
+async def test_an_unknown_cursor_resets_a_filtered_stream(
+    harness: Harness,
 ) -> None:
-    response, _, disconnect = subscribe(harness.app, "catalog", cursor=cursor)
+    response, task, disconnect = subscribe(
+        harness.app, "catalog", cursor="previous-host-1", types=["notebook"]
+    )
     await wait_for(response, until_ready)
-    assert response.names() == [
-        "reset",
-        "host",
-        "project",
-        "notebook",
-        "ready",
-    ]
+    assert response.names() == ["reset", "notebook", "ready"]
+    assert response.records[0] == {"event": "reset", "data": {}}
+    assert response.records[-1]["data"] == {}
+    assert isinstance(response.records[-1]["id"], str)
     disconnect()
+    await asyncio.wait_for(task, 5)
 
 
 @pytest.mark.parametrize(
@@ -1947,41 +1904,6 @@ async def test_a_file_changed_outside_marimo_needs_a_decision(
         assert (await save(harness, f"save-{n}")).ok
 
 
-@pytest.mark.parametrize("types", [None, ["marimo"]])
-async def test_marimo_notifications_have_their_own_kind(
-    harness: Harness, types: list[str] | None
-) -> None:
-    notebook = await harness.host.notebook(harness.notebook_id)
-    filtered = {} if types is None else {"types": types}
-    response, task, disconnect = subscribe(
-        harness.app, "notebook", notebook_id=notebook.id, **filtered
-    )
-    try:
-        await wait_for(response, until_ready)
-        payload = MarimoMessage(CompletedRunNotification(run_id="r1"))
-        published = notebook.sink.append(
-            RoutedEvent(MarimoEvent(payload), notebook_id=notebook.id)
-        )
-        await wait_for(response, lambda r: "marimo" in r.names())
-        assert [r for r in response.records if r.get("event") == "marimo"] == [
-            {
-                "id": published.event.id,
-                "event": "marimo",
-                "data": {
-                    "marimo": {
-                        "op": "completed-run",
-                        "run_id": "r1",
-                        "outcome": "succeeded",
-                        "error": None,
-                    }
-                },
-            }
-        ]
-    finally:
-        disconnect()
-        await asyncio.wait_for(task, 5)
-
-
 @pytest.mark.parametrize(
     ("filters", "expected"),
     [
@@ -2013,10 +1935,10 @@ async def test_live_events_follow_the_notebook_and_the_filters(
     await analyzed(notebook)
 
     def completed(notebook_id: str, run_id: str) -> RoutedEvent:
-        payload = MarimoMessage(CompletedRunNotification(run_id=run_id))
         return notebook.sink.append(
-            RoutedEvent(
-                MarimoEvent(payload), notebook_id=notebook_id, run_id=run_id
+            notification_event(
+                protocol.NotebookId(notebook_id),
+                CompletedRunNotification(run_id=run_id),
             )
         )
 

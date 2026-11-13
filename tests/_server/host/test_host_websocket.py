@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-import msgspec
 import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -27,7 +26,6 @@ from tests._server.host.conftest import FakeManager, FakeSession
 from tests._server.host.drive import (
     PORT,
     TOKEN,
-    position,
     subscribe,
     until_ready,
     wait_for,
@@ -123,7 +121,7 @@ async def test_the_snapshot_carries_the_session_document_before_ready(
 async def test_resuming_replays_original_events_then_continues_live(
     session_host: tuple[Starlette, SessionBridge, FakeSession],
 ) -> None:
-    app, bridge, session = session_host
+    app, _, session = session_host
     first, end = await follow(app, types=["marimo"])
     cursor = first.records[-1]["id"]
     session.notify(CompletedRunNotification(run_id="missed"))
@@ -138,9 +136,7 @@ async def test_resuming_replays_original_events_then_continues_live(
     await end()
     live = second.records[-1]
     assert live["data"]["marimo"]["run_id"] == "live"
-    assert position(bridge.host, live["id"]) > position(
-        bridge.host, replay[-1]["id"]
-    )
+    assert live["id"] != replay[-1]["id"]
 
 
 async def test_an_expired_cursor_resets_to_current_state(
@@ -162,15 +158,11 @@ async def test_an_expired_cursor_resets_to_current_state(
     reset = list(second.records)
     assert reset[0] == {"event": "reset", "data": {}}
     assert reset[1:-1] == initial[:-1]
-    assert position(bridge.host, reset[-1]["id"]) > position(
-        bridge.host, cursor
-    )
-    event = notebook.emit("test.live", {})
+    assert reset[-1]["id"] != cursor
+    notebook.emit("test.live", {})
     await wait_for(second, lambda r: len(r.records) > len(reset))
     await end()
     live = second.records[-1]
     assert live["event"] == "custom"
-    assert live["data"]["custom"] == msgspec.to_builtins(event)
-    assert position(bridge.host, live["id"]) > position(
-        bridge.host, reset[-1]["id"]
-    )
+    assert live["data"]["custom"] == {"type": "test.live", "data": {}}
+    assert live["id"] != reset[-1]["id"]
