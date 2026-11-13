@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import aclosing
 from contextvars import ContextVar
+from functools import partial
 from typing import TYPE_CHECKING
 
 from holon.ext.events import Events
@@ -26,6 +27,8 @@ from marimo._server.host.session import Close, SessionEventStream
 from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from holon.context import RequestContext
     from holon.ext.events import EventType
     from starlette.requests import Request
@@ -57,7 +60,6 @@ class SessionFrame(BaseModel):
 def events() -> Events:
     """The editor's MCP events: the `session` event alone."""
     served = Events()
-    running: dict[str, asyncio.Task[None]] = {}
 
     def authorize(
         context: RequestContext, arguments: SessionArguments
@@ -69,7 +71,7 @@ def events() -> Events:
         context: RequestContext,
         arguments: SessionArguments,
         subscription_id: str,
-    ) -> None:
+    ) -> Callable[[], Awaitable[None]] | None:
         del context
         connection = request_var.get()
         app_state = AppState(connection)
@@ -82,25 +84,15 @@ def events() -> Events:
         )
         if isinstance(params, ConnectionRejection):
             terminate(subscription_id, INVALID_PARAMS, params.reason)
-            return
+            return None
         stream = SessionEventStream(
             connection,
             bridge=(await ensure_host(connection.app)).bridge,
             manager=app_state.session_manager,
             params=params,
         )
-        running[subscription_id] = asyncio.create_task(
-            deliver(stream, subscription_id)
-        )
-
-    async def on_unsubscribe(
-        context: RequestContext,
-        arguments: SessionArguments,
-        subscription_id: str,
-    ) -> None:
-        del context, arguments
-        if delivering := running.pop(subscription_id, None):
-            await cancel_and_wait(delivering)
+        delivering = asyncio.create_task(deliver(stream, subscription_id))
+        return partial(cancel_and_wait, delivering)
 
     def terminate(subscription_id: str, code: int, reason: str) -> None:
         session.terminate(
@@ -139,6 +131,5 @@ def events() -> Events:
         delivery=("push",),
         authorize=authorize,
         on_subscribe=on_subscribe,
-        on_unsubscribe=on_unsubscribe,
     )
     return served
