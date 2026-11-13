@@ -25,7 +25,7 @@ vi.mock("../../network/holon", async (importOriginal) => ({
   getMarimo: async () => ({
     ext: {
       events: {
-        subscribe: (_name: string, args: unknown) => {
+        watch: (_name: string, args: unknown) => {
           subscribed.push(args);
           return new Promise(() => undefined);
         },

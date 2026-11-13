@@ -4,26 +4,11 @@ import { NotebookEvents, StreamStopped } from "@marimo-team/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type SessionArguments,
-  type SubscribeSession,
+  type WatchSession,
   sessionEvents,
 } from "../server";
 
 const ARGS: SessionArguments = { session_id: "s1", query_params: "" };
-
-/** A subscription that yields these frames, then waits. */
-async function* following(...frames: object[]) {
-  for (const frame of frames) {
-    yield { data: { frame: JSON.stringify(frame) } };
-  }
-  await new Promise(() => undefined);
-}
-
-/** A subscription that fails at once. */
-function failing(error: unknown): AsyncIterable<{ data: never }> {
-  return {
-    [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
-  };
-}
 
 function collect(events: NotebookEvents<string>) {
   const received: unknown[] = [];
@@ -37,16 +22,24 @@ afterEach(() => {
 
 describe("sessionEvents", () => {
   it("subscribes with the session arguments and delivers protocol events", async () => {
-    const subscribe = vi.fn<SubscribeSession>(async () =>
-      following({ event: "reset", data: {} }),
+    const watch = vi.fn<WatchSession>(
+      async (_args, onEvent, { signal, onOpen }) => {
+        onOpen();
+        onEvent({
+          data: { frame: JSON.stringify({ event: "reset", data: {} }) },
+        });
+        await new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      },
     );
     const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
+      sessionEvents(async () => ARGS, watch),
       { types: ["reset"] },
     );
     const received = collect(events);
     await vi.waitFor(() => expect(received).toHaveLength(1));
-    expect(subscribe.mock.calls[0][0]).toEqual(ARGS);
+    expect(watch.mock.calls[0][0]).toEqual(ARGS);
     expect(received).toEqual([{ event: "reset", data: {} }]);
     events.close();
   });
@@ -81,7 +74,9 @@ describe("sessionEvents", () => {
     const events = new NotebookEvents(
       sessionEvents(
         async () => ARGS,
-        async () => failing(ended),
+        async () => {
+          throw ended;
+        },
       ),
     );
     const error = await events.closed.catch((error: unknown) => error);
@@ -112,15 +107,13 @@ describe("sessionEvents", () => {
 
   it("subscribes again after a failure that says nothing final", async () => {
     vi.useFakeTimers();
-    const subscribe = vi.fn<SubscribeSession>(async () => {
+    const watch = vi.fn<WatchSession>(async () => {
       throw new Error("fetch failed");
     });
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
-    );
+    const events = new NotebookEvents(sessionEvents(async () => ARGS, watch));
     await vi.waitFor(async () => {
       await vi.advanceTimersByTimeAsync(1000);
-      expect(subscribe.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(watch.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     events.close();
   });

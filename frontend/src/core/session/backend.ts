@@ -14,7 +14,7 @@ import { isWasm } from "../wasm/utils";
 import { getMarimo, withHeaders } from "../network/holon";
 import {
   type SessionArguments,
-  type SubscribeSession,
+  type WatchSession,
   sessionEvents,
 } from "../transports/server";
 import {
@@ -77,10 +77,10 @@ function afterStartup({
  * A lost stream ends the subscription rather than reconnecting inside it,
  * so `NotebookEvents` retries and the page shows it is connecting.
  */
-const subscribeSession: SubscribeSession = async (args, { signal }) => {
+const watchSession: WatchSession = async (args, onEvent, options) => {
   const { ext } = await getMarimo();
-  return ext.events.subscribe("session", args, {
-    signal,
+  return ext.events.watch("session", args, onEvent, {
+    ...options,
     delivery: "push",
     reconnect: false,
   });
@@ -134,7 +134,7 @@ function server(options: EditorBackendOptions): NotebookBackend {
   // Every notebook shares one client of the editor's tools.
   let send: CallTool | undefined;
   return {
-    transport: sessionEvents(afterStartup(options), subscribeSession),
+    transport: sessionEvents(afterStartup(options), watchSession),
     notebook: (id) =>
       new NotebookClient(
         id,

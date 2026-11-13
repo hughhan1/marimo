@@ -46,11 +46,12 @@ function stopOnFailure(error: unknown) {
 /** What a page subscribes to its session with, as the server declares it. */
 export type SessionArguments = EventArguments["marimo"]["session"];
 
-/** Subscribe to the server's `session` event. */
-export type SubscribeSession = (
+/** Follow the server's `session` event until cancelled or disconnected. */
+export type WatchSession = (
   args: SessionArguments,
-  options: { signal: AbortSignal },
-) => Promise<AsyncIterable<{ data: EventData["marimo"]["session"] }>>;
+  onEvent: (event: { data: EventData["marimo"]["session"] }) => void,
+  options: { signal: AbortSignal; onOpen: () => void },
+) => Promise<void>;
 
 let shared: StreamSlots | undefined;
 
@@ -69,7 +70,7 @@ function pageSlots(): StreamSlots {
  */
 export function sessionEvents(
   args: () => Promise<SessionArguments>,
-  subscribe: SubscribeSession,
+  watch: WatchSession,
   slots: StreamSlots = pageSlots(),
 ): NotebookTransport {
   return async ({ signal }, { open, message }) => {
@@ -78,11 +79,10 @@ export function sessionEvents(
     let held: AbortSignal | undefined;
     try {
       held = await slots.hold(active);
-      const events = await subscribe(await args(), { signal: held });
-      open();
-      for await (const { data } of events) {
-        message(JSON.parse(data.frame));
-      }
+      await watch(await args(), ({ data }) => message(JSON.parse(data.frame)), {
+        signal: held,
+        onOpen: open,
+      });
     } catch (error) {
       if (error instanceof StreamStopped) {
         throw error;

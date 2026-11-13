@@ -62,15 +62,12 @@ export function subscribe(
   return async ({ cursor, signal }, { open, message }) => {
     client ??= host(endpoint, options);
     try {
-      const events = await client.ext.events.subscribe(
+      await client.ext.events.watch(
         name,
         { ...args, ...(cursor === null ? {} : { cursor }) },
-        { signal, delivery: "push", reconnect: false },
+        ({ data }) => message(data),
+        { signal, delivery: "push", reconnect: false, onOpen: open },
       );
-      open();
-      for await (const { data } of events) {
-        message(data);
-      }
     } catch (error) {
       if (signal.aborted) {
         return;
