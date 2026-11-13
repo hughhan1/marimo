@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+from functools import partial
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args
 
 import msgspec
@@ -30,7 +31,7 @@ from marimo._server.host.notebook_api import _context
 from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Awaitable, Callable, Iterator
 
     from holon.context import RequestContext
     from holon.ext.events import EventType
@@ -154,7 +155,6 @@ class _Refused(Exception):
 def host_events() -> Events:
     """The host's MCP events: `catalog` and `notebook`."""
     served = Events()
-    running: dict[str, asyncio.Task[None]] = {}
 
     def follow(
         event_type: EventType[Any, Any],
@@ -166,7 +166,7 @@ def host_events() -> Events:
         notebook_id: protocol.NotebookId | None,
         run_id: str | None = None,
         on_close: Callable[[], None] | None = None,
-    ) -> None:
+    ) -> Callable[[], Awaitable[None]]:
         def send(event: RoutedEvent) -> None:
             event_type.emit(
                 msgspec.json.decode(serialize_event(event)),
@@ -198,7 +198,8 @@ def host_events() -> Events:
                 if on_close is not None:
                     on_close()
 
-        running[subscription_id] = asyncio.create_task(deliver())
+        delivering = asyncio.create_task(deliver())
+        return partial(cancel_and_wait, delivering)
 
     def refuse(
         event_type: EventType[Any, Any],
@@ -218,7 +219,7 @@ def host_events() -> Events:
         context: RequestContext,
         arguments: dict[str, Any],
         subscription_id: str,
-    ) -> None:
+    ) -> Callable[[], Awaitable[None]] | None:
         del context
         host = _context(request_var.get())
         try:
@@ -226,10 +227,10 @@ def host_events() -> Events:
             cursor, types = _cursor(asked.cursor), _types(asked.types)
         except _Refused as refused:
             refuse(catalog, subscription_id, refused.problem)
-            return
+            return None
         # Refresh on subscribing because the catalog has no directory watcher.
         await host.bridge.refresh()
-        follow(
+        return follow(
             catalog,
             subscription_id,
             host.bridge,
@@ -242,7 +243,7 @@ def host_events() -> Events:
         context: RequestContext,
         arguments: dict[str, Any],
         subscription_id: str,
-    ) -> None:
+    ) -> Callable[[], Awaitable[None]] | None:
         del context
         host = _context(request_var.get())
         try:
@@ -256,11 +257,11 @@ def host_events() -> Events:
             )
         except _Refused as refused:
             refuse(notebook_events, subscription_id, refused.problem)
-            return
+            return None
         except HostError as error:
             refuse(notebook_events, subscription_id, problem_for(error))
-            return
-        follow(
+            return None
+        return follow(
             notebook_events,
             subscription_id,
             host.bridge,
@@ -270,13 +271,6 @@ def host_events() -> Events:
             run_id=_given(asked.run_id),
             on_close=lambda: notebook.detach(attachment.id),
         )
-
-    async def on_unsubscribe(
-        context: RequestContext, arguments: object, subscription_id: str
-    ) -> None:
-        del context, arguments
-        if delivering := running.pop(subscription_id, None):
-            await cancel_and_wait(delivering)
 
     def declare(
         name: str, on_subscribe: Any
@@ -289,7 +283,6 @@ def host_events() -> Events:
             payload_schema=dedented(msgspec.json.schema(event.payload)),
             delivery=("push",),
             on_subscribe=on_subscribe,
-            on_unsubscribe=on_unsubscribe,
         )
 
     catalog = declare("catalog", on_catalog)
