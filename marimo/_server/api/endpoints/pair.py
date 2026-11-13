@@ -23,7 +23,7 @@ class AgentMessage(msgspec.Struct):
     message: Any
 
 
-@tool("pair_notebooks_messages", input=AgentMessage)
+@tool("pair_notebooks_messages")
 @requires("edit")
 async def messages(*, request: Request, body: AgentMessage) -> None:
     """Send any JSON content to all agents attached to the notebook."""
@@ -45,7 +45,7 @@ class DetachRequest(msgspec.Struct):
     attachment_id: str
 
 
-@tool("pair_notebooks_attachments_detach", input=DetachRequest)
+@tool("pair_notebooks_attachments_detach")
 @requires("edit")
 async def detach(*, request: Request, body: DetachRequest) -> None:
     """Disconnect one attachment without stopping its notebook runtime."""

@@ -9,7 +9,6 @@ from marimo import _loggers
 from marimo._server.api.tools import tool
 from marimo._server.api.utils import dispatch_control_request
 from marimo._server.models.models import (
-    BaseResponse,
     DiscoverDataSourcesRequest,
     ListDataSourceConnectionRequest,
     ListSQLSchemasRequest,
@@ -25,79 +24,55 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool(
-    "datasources_discover",
-    input=DiscoverDataSourcesRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_discover")
 @requires("edit")
 async def discover_data_sources(
     *, request: Request, body: DiscoverDataSourcesRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to discover the notebook's data sources."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "datasources_preview_column",
-    input=PreviewDatasetColumnRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_preview_column")
 @requires("edit")
 async def preview_column(
     *, request: Request, body: PreviewDatasetColumnRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to preview a column of a dataset."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "datasources_preview_sql_table",
-    input=PreviewSQLTableRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_preview_sql_table")
 @requires("edit")
 async def preview_sql_table(
     *, request: Request, body: PreviewSQLTableRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to preview a SQL table."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "datasources_preview_sql_table_list",
-    input=ListSQLTablesRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_preview_sql_table_list")
 @requires("edit")
 async def preview_sql_table_list(
     *, request: Request, body: ListSQLTablesRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to list the tables of a SQL schema."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "datasources_preview_sql_schema_list",
-    input=ListSQLSchemasRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_preview_sql_schema_list")
 @requires("edit")
 async def preview_sql_schema_list(
     *, request: Request, body: ListSQLSchemasRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to list the schemas of a SQL database."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "datasources_preview_datasource_connection",
-    input=ListDataSourceConnectionRequest,
-    output=SuccessResponse,
-)
+@tool("datasources_preview_datasource_connection")
 @requires("edit")
 async def preview_datasource_connection(
     *, request: Request, body: ListDataSourceConnectionRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to describe a data source connection."""
     return await dispatch_control_request(request, body)

@@ -8,10 +8,6 @@ from marimo._server.codes import WebSocketCloseReason, WebSocketCodes
 from marimo._server.workspace import MarimoFileKey
 from marimo._types.ids import SessionId
 
-SESSION_QUERY_PARAM_KEY = "session_id"
-FILE_QUERY_PARAM_KEY = "file"
-KIOSK_QUERY_PARAM_KEY = "kiosk"
-
 
 @dataclass
 class ConnectionParams:
@@ -21,6 +17,7 @@ class ConnectionParams:
     file_key: MarimoFileKey
     kiosk: bool
     auto_instantiate: bool
+    query_params: str = ""
 
 
 @dataclass
@@ -37,25 +34,22 @@ class ConnectionRejection:
 
 def parse_connection_params(
     app_state: AppState,
+    *,
+    session_id: str | None,
+    file: str | None = None,
+    kiosk: bool = False,
+    query_params: str = "",
 ) -> ConnectionParams | ConnectionRejection:
-    """Extract and validate session connection parameters.
-
-    Transport-agnostic: reads query params and config from the request held
-    by `app_state`.
-    """
-    # Extract session_id
-    raw_session_id = app_state.query_params(SESSION_QUERY_PARAM_KEY)
-    if raw_session_id is None:
+    """Validate the session arguments against the app's workspace and config."""
+    if session_id is None:
         return ConnectionRejection(
             WebSocketCodes.NORMAL_CLOSE, WebSocketCloseReason.NO_SESSION_ID
         )
 
-    session_id = SessionId(raw_session_id)
+    session_id = SessionId(session_id)
 
-    # Extract file_key
     file_key: MarimoFileKey | None = (
-        app_state.query_params(FILE_QUERY_PARAM_KEY)
-        or app_state.session_manager.workspace.get_unique_file_key()
+        file or app_state.session_manager.workspace.get_unique_file_key()
     )
 
     if file_key is None:
@@ -63,10 +57,6 @@ def parse_connection_params(
             WebSocketCodes.NORMAL_CLOSE, WebSocketCloseReason.NO_FILE_KEY
         )
 
-    # Extract kiosk mode
-    kiosk = app_state.query_params(KIOSK_QUERY_PARAM_KEY) == "true"
-
-    # Extract config-based parameters
     config = app_state.config_manager_at_file(file_key).get_config()
     auto_instantiate = config.runtime.auto_instantiate
 
@@ -75,4 +65,5 @@ def parse_connection_params(
         file_key=file_key,
         kiosk=kiosk,
         auto_instantiate=auto_instantiate,
+        query_params=query_params,
     )

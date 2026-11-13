@@ -5,7 +5,7 @@ import { ArrowRightSquareIcon, EyeIcon } from "lucide-react";
 import { KnownQueryParams } from "@/core/constants";
 import { useLayoutState } from "@/core/layout/state";
 import { kioskModeAtom, viewStateAtom } from "@/core/mode";
-import { getTools } from "@/core/network/holon";
+import { callMarimo } from "@/core/network/holon";
 import { Banner } from "@/plugins/impl/common/error-banner";
 import { prettyError } from "@/utils/errors";
 import { Button } from "../ui/button";
@@ -40,7 +40,7 @@ export const ViewerBanner = () => {
     try {
       // No reload: the server replies with consumer-capabilities
       // (edit: true), which flips kiosk mode off and hides this banner.
-      await (await getTools()).kernel_takeover({});
+      await callMarimo((tools) => tools.kernel_takeover({}));
     } catch (error) {
       toast({
         title: "Failed to take over session",

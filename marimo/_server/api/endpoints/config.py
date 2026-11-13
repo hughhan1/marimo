@@ -20,7 +20,6 @@ from marimo._server.api.tools import after_reply, tool
 from marimo._server.api.utils import enforce_consumer_capability
 from marimo._server.lsp import any_lsp_server_running
 from marimo._server.models.models import (
-    BaseResponse,
     SaveUserConfigurationRequest,
     SuccessResponse,
 )
@@ -33,17 +32,13 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool(
-    "kernel_save_user_config",
-    input=SaveUserConfigurationRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_save_user_config")
 @requires("edit")
 async def save_user_config(
     *,
     request: Request,
     body: SaveUserConfigurationRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Save the user's configuration and apply it to the server and kernel."""
     app_state = AppState(request)
     session_id = app_state.get_current_session_id()

@@ -40,7 +40,7 @@ MAX_FILES = DirectoryScanner.MAX_FILES
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("home_recent_files", output=RecentFilesResponse)
+@tool("home_recent_files")
 @requires("edit")
 async def read_code(
     *,
@@ -57,11 +57,7 @@ async def read_code(
     return RecentFilesResponse(files=files)
 
 
-@tool(
-    "home_workspace_files",
-    input=WorkspaceFilesRequest,
-    output=WorkspaceFilesResponse,
-)
+@tool("home_workspace_files")
 @requires("read")
 async def workspace_files(
     *,
@@ -190,7 +186,7 @@ def _get_active_sessions(app_state: AppState) -> list[MarimoFile]:
     return files[::-1]
 
 
-@tool("home_running_notebooks", output=RunningNotebooksResponse)
+@tool("home_running_notebooks")
 @requires("edit")
 async def running_notebooks(
     *,
@@ -201,11 +197,7 @@ async def running_notebooks(
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 
-@tool(
-    "home_shutdown_session",
-    input=ShutdownSessionRequest,
-    output=RunningNotebooksResponse,
-)
+@tool("home_shutdown_session")
 @requires("edit")
 async def shutdown_session(
     *,
@@ -218,7 +210,7 @@ async def shutdown_session(
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 
-@tool("home_tutorial_open", input=OpenTutorialRequest, output=MarimoFile)
+@tool("home_tutorial_open")
 @requires("edit")
 async def tutorial(
     *,

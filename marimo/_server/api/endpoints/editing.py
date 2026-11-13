@@ -15,7 +15,6 @@ from marimo._server.api.utils import (
     notify_server_missing_packages,
 )
 from marimo._server.models.models import (
-    BaseResponse,
     CodeCompletionRequest,
     FocusCellRequest,
     FormatCellsRequest,
@@ -30,24 +29,20 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool(
-    "kernel_code_autocomplete",
-    input=CodeCompletionRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_code_autocomplete")
 @requires("edit")
 async def code_complete(
     *, request: Request, body: CodeCompletionRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel for code completions at a position in a cell."""
     return await dispatch_control_request(request, body)
 
 
-@tool("kernel_focus_cell", input=FocusCellRequest, output=SuccessResponse)
+@tool("kernel_focus_cell")
 @requires("edit")
 async def focus_cell(
     *, request: Request, body: FocusCellRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Tell the notebook's clients to focus a cell."""
     app_state = AppState(request)
     app_state.require_current_session().notify(
@@ -57,7 +52,7 @@ async def focus_cell(
     return SuccessResponse()
 
 
-@tool("kernel_format", input=FormatCellsRequest, output=FormatResponse)
+@tool("kernel_format")
 @requires("edit")
 async def format_cell(
     *, request: Request, body: FormatCellsRequest
@@ -90,9 +85,9 @@ async def format_cell(
         ) from None
 
 
-@tool("kernel_stdin", input=StdinRequest, output=SuccessResponse)
+@tool("kernel_stdin")
 @requires("edit")
-async def stdin(*, request: Request, body: StdinRequest) -> BaseResponse:
+async def stdin(*, request: Request, body: StdinRequest) -> SuccessResponse:
     """Answer the kernel's request for input."""
     app_state = AppState(request)
     app_state.require_current_session().put_input(body.text)
@@ -100,15 +95,11 @@ async def stdin(*, request: Request, body: StdinRequest) -> BaseResponse:
     return SuccessResponse()
 
 
-@tool(
-    "kernel_install_missing_packages",
-    input=InstallPackagesRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_install_missing_packages")
 @requires("edit")
 async def install_missing_packages(
     *, request: Request, body: InstallPackagesRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Install packages into the kernel's environment, or the server's."""
     cmd = body.as_command()
 

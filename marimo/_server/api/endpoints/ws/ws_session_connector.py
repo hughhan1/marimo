@@ -189,9 +189,7 @@ class SessionConnector:
 
     def _extract_query_params(self) -> QueryParams:
         """Read notebook parameters independently of stream options."""
-        params = StarletteQueryParams(
-            self.connection.query_params.get("query_params", "")
-        )
+        params = StarletteQueryParams(self.params.query_params)
         query_params = QueryParams({}, NoopStream())
         for key, value in params.multi_items():
             if key not in QueryParams.IGNORED_KEYS:

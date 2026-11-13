@@ -248,11 +248,7 @@ async def ai_chat(
     )
 
 
-@tool(
-    "ai_inline_completion",
-    input=AiInlineCompletionRequest,
-    output=TextResponse,
-)
+@tool("ai_inline_completion")
 @requires("edit")
 async def ai_inline_completion(
     *,
@@ -311,7 +307,7 @@ async def ai_inline_completion(
     return TextResponse(text=content)
 
 
-@tool("ai_invoke_tool", input=InvokeAiToolRequest, output=InvokeAiToolResponse)
+@tool("ai_invoke_tool")
 @requires("edit")
 async def invoke_tool(
     *,
@@ -346,7 +342,7 @@ async def invoke_tool(
         )
 
 
-@tool("ai_mcp_status", output=MCPStatusResponse)
+@tool("ai_mcp_status")
 @requires("edit")
 async def mcp_status(
     *,
@@ -423,7 +419,7 @@ async def mcp_status(
         )
 
 
-@tool("ai_mcp_refresh", output=MCPRefreshResponse)
+@tool("ai_mcp_refresh")
 @requires("edit")
 async def mcp_refresh(
     *,

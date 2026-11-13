@@ -1,5 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
+import { UnknownProblem } from "@marimo-team/client/protocol";
 import { HTTPError } from "@/utils/errors";
 import { once } from "@/utils/once";
 import { getRuntimeManager } from "../runtime/config";
@@ -11,57 +12,23 @@ export const getMarimo = once(async () => {
     marimo: {
       endpoint: runtimeManager.getMcpURL(),
       fileOrigins: [runtimeManager.httpURL.origin],
-      fetch: (input: RequestInfo | URL, init?: RequestInit) => {
-        const headers = new Headers(init?.headers);
-        for (const [key, value] of Object.entries(runtimeManager.headers())) {
-          headers.set(key, value);
-        }
-        return fetch(input, { ...init, headers });
-      },
+      fetch: withHeaders(() => runtimeManager.headers()),
     },
   }).marimo;
 });
 
 type Tools = Awaited<ReturnType<typeof getMarimo>>["tools"];
 
-/** What a failed call carries: the server's problem, as its error text. */
-export interface Problem {
-  type: string;
-  title: string;
-  detail?: string;
-  status: number;
-}
-
-interface Content {
-  type: string;
-  text?: string;
-}
-
-function contents(result: unknown): Content[] {
-  const content = (result as { content?: unknown } | null)?.content;
-  return Array.isArray(content) ? (content as Content[]) : [];
-}
-
-/** The problem a failed call describes, if its text is one. */
-export function problemOf(result: unknown): Problem | undefined {
-  const text = contents(result).find((item) => item.type === "text")?.text;
-  if (!text?.startsWith("{")) {
-    return undefined;
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as Problem).status === "number" &&
-      typeof (parsed as Problem).title === "string"
-    ) {
-      return parsed as Problem;
+export function withHeaders(
+  headers: () => Record<string, string>,
+): typeof globalThis.fetch {
+  return (input, init) => {
+    const sent = new Headers(init?.headers);
+    for (const [name, value] of Object.entries(headers())) {
+      sent.set(name, value);
     }
-  } catch {
-    // Not a problem after all; the text stands as the message.
-  }
-  return undefined;
+    return globalThis.fetch(input, { ...init, headers: sent });
+  };
 }
 
 /** A reply that may list files to download. */
@@ -86,34 +53,24 @@ export async function repliedFile(reply: Replied, fallback: string) {
   };
 }
 
-type AnyTool = (input: never, options: never) => Promise<unknown>;
-
-/** Typed tools, whose failures keep the problem callers branch on. */
-export const getTools = once(async (): Promise<Tools> => {
+export async function callMarimo<T>(
+  call: (tools: Tools) => Promise<T>,
+): Promise<T> {
   const { ToolCallError } = await import("#holon-ui");
-  const { tools } = await getMarimo();
-  return new Proxy({} as Tools, {
-    get: (_, name) =>
-      // A promise resolving to this object looks for `then` on it.
-      name === "then"
-        ? undefined
-        : (input: never, options: never) =>
-            (tools[name as never] as AnyTool)(input, options).catch(
-              (error: unknown) => {
-                if (!(error instanceof ToolCallError)) {
-                  throw error;
-                }
-                const problem = problemOf(error.result);
-                if (problem === undefined) {
-                  const text = contents(error.result).find(
-                    (item) => item.type === "text",
-                  )?.text;
-                  throw new HTTPError(500, "Tool call failed", {
-                    detail: text,
-                  });
-                }
-                throw new HTTPError(problem.status, problem.title, problem);
-              },
-            ),
-  });
-});
+  try {
+    return await call((await getMarimo()).tools);
+  } catch (error) {
+    if (!(error instanceof ToolCallError)) {
+      throw error;
+    }
+    const problem = UnknownProblem.safeParse(error.data);
+    if (problem.success) {
+      throw new HTTPError(
+        problem.data.status,
+        problem.data.title,
+        problem.data,
+      );
+    }
+    throw new HTTPError(500, "Tool call failed", { detail: error.text });
+  }
+}

@@ -11,12 +11,11 @@ import {
 import type { NotebookBackend } from "../notebook/replica";
 import { PyodideBridge } from "../wasm/bridge";
 import { isWasm } from "../wasm/utils";
-import { getMarimo } from "../network/holon";
+import { getMarimo, withHeaders } from "../network/holon";
 import {
   type SessionArguments,
   type SubscribeSession,
   sessionEvents,
-  withHeaders,
 } from "../transports/server";
 import {
   createStaticNotebookBackend,

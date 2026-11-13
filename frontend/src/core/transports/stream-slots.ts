@@ -1,5 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
+import { z } from "zod";
+
 /**
  * Which of a browser's tabs may hold a session stream open.
  *
@@ -24,14 +26,16 @@ interface Tab {
   readonly heard: number;
 }
 
-type Message =
-  | {
-      readonly kind: "tab";
-      readonly id: string;
-      readonly visible: boolean;
-      readonly seen: number;
-    }
-  | { readonly kind: "gone"; readonly id: string };
+const MessageSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("tab"),
+    id: z.string(),
+    visible: z.boolean(),
+    seen: z.number(),
+  }),
+  z.object({ kind: z.literal("gone"), id: z.string() }),
+]);
+type Message = z.infer<typeof MessageSchema>;
 
 export interface StreamSlots {
   /**
@@ -85,7 +89,12 @@ export function streamSlots({
     return ahead.length < MAX_STREAMS;
   };
 
-  channel.addEventListener("message", ({ data }: MessageEvent<Message>) => {
+  channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+    const parsed = MessageSchema.safeParse(event.data);
+    if (!parsed.success) {
+      return;
+    }
+    const { data } = parsed;
     if (data.kind === "gone") {
       tabs.delete(data.id);
     } else {
@@ -120,6 +129,7 @@ export function streamSlots({
 
   return {
     hold: async (signal) => {
+      signal.throwIfAborted();
       while (!allowed()) {
         await new Promise<void>((resolve, reject) => {
           const done = () => {

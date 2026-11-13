@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("secrets_keys", input=ListSecretKeysRequest, output=SuccessResponse)
+@tool("secrets_keys")
 @requires("edit")
 async def list_keys(
     *, request: Request, body: ListSecretKeysRequest
@@ -41,7 +41,7 @@ async def list_keys(
     return await dispatch_control_request(request, body)
 
 
-@tool("secrets_create", input=CreateSecretRequest, output=BaseResponse)
+@tool("secrets_create")
 @requires("edit")
 async def create_secret(
     *, request: Request, body: CreateSecretRequest
@@ -64,7 +64,7 @@ async def create_secret(
     return SuccessResponse(success=True)
 
 
-@tool("secrets_delete", input=DeleteSecretRequest, output=BaseResponse)
+@tool("secrets_delete")
 @requires("edit")
 async def delete_secret(
     *, request: Request, body: DeleteSecretRequest

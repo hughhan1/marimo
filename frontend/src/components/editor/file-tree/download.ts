@@ -1,6 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { getTools, repliedFile } from "@/core/network/holon";
+import { callMarimo, repliedFile } from "@/core/network/holon";
 import { getRequestClient } from "@/core/network/requests";
 import { isWasm } from "@/core/wasm/utils";
 import { deserializeBlob } from "@/utils/blob";
@@ -16,8 +16,10 @@ import { type Base64String, base64ToDataURL } from "@/utils/json/base64";
  */
 export async function downloadFile(path: string, name: string): Promise<void> {
   if (!isWasm()) {
-    const tools = await getTools();
-    const file = await repliedFile(await tools.files_download({ path }), name);
+    const file = await repliedFile(
+      await callMarimo((tools) => tools.files_download({ path })),
+      name,
+    );
     downloadBlob(file.contents, name);
     return;
   }

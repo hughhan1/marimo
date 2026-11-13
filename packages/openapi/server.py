@@ -10,6 +10,6 @@ from __future__ import annotations
 
 # Importing the routes registers the tools.
 from marimo._server.api.router import build_routes  # noqa: F401
-from marimo._server.api.tools import mcp_server
+from marimo._server.api.tools import EditorMCP
 
-server = mcp_server()
+server = EditorMCP().server

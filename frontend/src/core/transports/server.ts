@@ -2,7 +2,7 @@
 
 import { type NotebookTransport, StreamStopped } from "@marimo-team/client";
 import type { EventArguments, EventData } from "#holon-ui";
-import { jsonParseWithSpecialChar } from "@/utils/json/json-parser";
+import { z } from "zod";
 import { classifyCloseEvent } from "./connection-state";
 import {
   type StreamSlots,
@@ -21,30 +21,26 @@ const FORBIDDEN = -32024;
  * closed its socket with. `cause` is the connection status the editor shows.
  */
 function stopOnFailure(error: unknown) {
-  const { code, data } = (error ?? {}) as {
-    code?: unknown;
-    data?: { reason?: string };
-  };
-  const reason = code === FORBIDDEN ? "MARIMO_UNAUTHORIZED" : data?.reason;
+  const failure = z
+    .object({
+      code: z.number().optional(),
+      data: z
+        .object({ reason: z.string().optional() })
+        .optional()
+        .catch(undefined),
+    })
+    .safeParse(error);
+  const reason = failure.success
+    ? failure.data.code === FORBIDDEN
+      ? "MARIMO_UNAUTHORIZED"
+      : failure.data.data?.reason
+    : undefined;
   const decision = classifyCloseEvent({ reason });
   if (decision.kind === "retry") {
     return undefined;
   }
   const message = "reason" in decision.status ? decision.status.reason : "";
   return new StreamStopped(message, { cause: decision.status });
-}
-
-/** Send each request with the runtime's headers, read before each request. */
-export function withHeaders(
-  headers: () => Record<string, string>,
-): typeof globalThis.fetch {
-  return (input, init) => {
-    const sent = new Headers(init?.headers);
-    for (const [name, value] of Object.entries(headers())) {
-      sent.set(name, value);
-    }
-    return globalThis.fetch(input, { ...init, headers: sent });
-  };
 }
 
 /** What a page subscribes to its session with, as the server declares it. */
@@ -69,9 +65,7 @@ function pageSlots(): StreamSlots {
  *
  * Subscribing connects to the session, as opening its socket did. Each
  * subscription starts the page over with a reset and a snapshot, so the
- * cursor goes unused. An event carries one frame's text, read by marimo's
- * parser, which reads `NaN`; a frame it cannot read arrives as an empty
- * object, which `NotebookEvents` rejects as not an event.
+ * cursor goes unused.
  */
 export function sessionEvents(
   args: () => Promise<SessionArguments>,
@@ -79,13 +73,15 @@ export function sessionEvents(
   slots: StreamSlots = pageSlots(),
 ): NotebookTransport {
   return async ({ signal }, { open, message }) => {
+    const attempt = new AbortController();
+    const active = AbortSignal.any([signal, attempt.signal]);
     let held: AbortSignal | undefined;
     try {
-      held = await slots.hold(signal);
+      held = await slots.hold(active);
       const events = await subscribe(await args(), { signal: held });
       open();
       for await (const { data } of events) {
-        message(jsonParseWithSpecialChar(data.frame));
+        message(JSON.parse(data.frame));
       }
     } catch (error) {
       if (error instanceof StreamStopped) {
@@ -97,6 +93,8 @@ export function sessionEvents(
       if (stopped !== undefined) {
         throw stopped;
       }
+    } finally {
+      attempt.abort();
     }
   };
 }

@@ -17,7 +17,7 @@ from starlette.testclient import TestClient
 
 from marimo._server.api.endpoints.login import router as auth_router
 from marimo._server.api.middleware import AuthBackend
-from marimo._server.api.tools import mcp_endpoint
+from marimo._server.api.tools import EditorMCP
 from marimo._server.router import APIRouter
 from marimo._server.tokens import AuthToken
 from tests._server.mocks import get_starlette_server_state_init
@@ -30,7 +30,7 @@ def create_app(base_url: str = "") -> Starlette:
     router.include_router(auth_router)
     app = Starlette(
         routes=[
-            Route("/api/mcp", mcp_endpoint, methods=["POST"]),
+            Route("/api/mcp", EditorMCP(), methods=["POST"]),
             *router.routes,
         ],
         middleware=[

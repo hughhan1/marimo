@@ -134,7 +134,7 @@ class AuthTokenResponse(msgspec.Struct):
     token: str | None
 
 
-@tool("auth_token", output=AuthTokenResponse)
+@tool("auth_token")
 @requires("edit")
 async def auth_token(*, request: Request) -> AuthTokenResponse:
     """Get the auth token for the current session, null when auth is off."""

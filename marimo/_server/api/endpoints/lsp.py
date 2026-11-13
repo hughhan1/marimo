@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("lsp_health", output=LspHealthResponse)
+@tool("lsp_health")
 @requires("edit")
 async def lsp_health(*, request: Request) -> LspHealthResponse:
     """Report the health of the language servers."""
@@ -25,7 +25,7 @@ async def lsp_health(*, request: Request) -> LspHealthResponse:
     return await app_state.session_manager.lsp_server.get_health()
 
 
-@tool("lsp_restart", input=LspRestartRequest, output=LspRestartResponse)
+@tool("lsp_restart")
 @requires("edit")
 async def lsp_restart(
     *, request: Request, body: LspRestartRequest

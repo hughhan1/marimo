@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("cache_clear", input=ClearCacheRequest, output=SuccessResponse)
+@tool("cache_clear")
 @requires("edit")
 async def clear_cache(
     *, request: Request, body: ClearCacheRequest
@@ -28,7 +28,7 @@ async def clear_cache(
     return await dispatch_control_request(request, ClearCacheCommand())
 
 
-@tool("cache_info", input=GetCacheInfoRequest, output=SuccessResponse)
+@tool("cache_info")
 @requires("edit")
 async def get_cache_info(
     *, request: Request, body: GetCacheInfoRequest

@@ -9,7 +9,13 @@ from starlette.authentication import requires
 from starlette.responses import StreamingResponse
 
 from marimo import _loggers
-from marimo._runtime.commands import HTTPRequest, UpdateUIElementCommand
+from marimo._runtime.commands import (
+    DebugCellCommand,
+    ExecuteScratchpadCommand,
+    HTTPRequest,
+    SetBreakpointsCommand,
+    UpdateUIElementCommand,
+)
 from marimo._server.api.deps import AppState
 from marimo._server.api.tools import tool
 from marimo._server.api.utils import (
@@ -19,7 +25,6 @@ from marimo._server.api.utils import (
     parse_request,
 )
 from marimo._server.models.models import (
-    BaseResponse,
     DebugCellRequest,
     ExecuteScratchpadRequest,
     InvokeFunctionRequest,
@@ -55,17 +60,13 @@ LOGGER = _loggers.marimo_logger()
 router = APIRouter()
 
 
-@tool(
-    "kernel_set_ui_element_value",
-    input=UpdateUIElementValuesRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_set_ui_element_value")
 @requires("read")
 async def set_ui_element_values(
     *,
     request: Request,
     body: UpdateUIElementValuesRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Set UI elements' values, which runs the cells that read them."""
     app_state = AppState(request)
     command = UpdateUIElementCommand(
@@ -83,28 +84,24 @@ async def set_ui_element_values(
     return SuccessResponse()
 
 
-@tool("kernel_set_model_value", input=ModelRequest, output=SuccessResponse)
+@tool("kernel_set_model_value")
 @requires("read")
 async def set_model_values(
     *,
     request: Request,
     body: ModelRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Send a model message to the kernel's widget."""
     return await dispatch_control_request(request, body)
 
 
-@tool(
-    "kernel_instantiate",
-    input=InstantiateNotebookRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_instantiate")
 @requires("edit")
 async def instantiate(
     *,
     request: Request,
     body: InstantiateNotebookRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Start the notebook with its UI elements' initial values."""
     app_state = AppState(request)
     app_state.require_current_session().instantiate(
@@ -115,20 +112,18 @@ async def instantiate(
     return SuccessResponse()
 
 
-@tool(
-    "kernel_function_call", input=InvokeFunctionRequest, output=SuccessResponse
-)
+@tool("kernel_function_call")
 @requires("read")
 async def function_call(
     *,
     request: Request,
     body: InvokeFunctionRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Call a function a UI element registered with the kernel."""
     return await dispatch_control_request(request, body)
 
 
-@tool("kernel_status", output=KernelStatusResponse)
+@tool("kernel_status")
 @requires("edit")
 async def kernel_status(
     *,
@@ -249,53 +244,61 @@ async def execute_code(
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
-@tool(
-    "kernel_scratchpad_run",
-    input=ExecuteScratchpadRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_scratchpad_run")
 @requires("edit")
 async def run_scratchpad(
     *,
     request: Request,
     body: ExecuteScratchpadRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Run code in the scratchpad, outside the notebook's cells."""
-    return await dispatch_control_request(request, body)
+    return await dispatch_control_request(
+        request,
+        ExecuteScratchpadCommand(
+            code=body.code, request=HTTPRequest.from_request(request)
+        ),
+    )
 
 
-@tool("kernel_pdb_pm", input=DebugCellRequest, output=SuccessResponse)
+@tool("kernel_pdb_pm")
 @requires("edit")
 async def run_post_mortem(
     *,
     request: Request,
     body: DebugCellRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Start a post-mortem debugger on a cell's last error."""
-    return await dispatch_control_request(request, body)
+    return await dispatch_control_request(
+        request,
+        DebugCellCommand(
+            cell_id=body.cell_id, request=HTTPRequest.from_request(request)
+        ),
+    )
 
 
-@tool(
-    "kernel_pdb_breakpoints",
-    input=SetBreakpointsRequest,
-    output=SuccessResponse,
-)
+@tool("kernel_pdb_breakpoints")
 @requires("edit")
 async def set_breakpoints(
     *,
     request: Request,
     body: SetBreakpointsRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Set the debugger's breakpoints in a cell."""
-    return await dispatch_control_request(request, body)
+    return await dispatch_control_request(
+        request,
+        SetBreakpointsCommand(
+            breakpoints=body.breakpoints,
+            request=HTTPRequest.from_request(request),
+        ),
+    )
 
 
-@tool("kernel_restart_session", output=SuccessResponse)
+@tool("kernel_restart_session")
 @requires("edit")
 async def restart_session(
     *,
     request: Request,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Close the session so the client's reload starts a fresh kernel."""
     app_state = AppState(request)
     session_manager = app_state.session_manager
@@ -308,12 +311,12 @@ async def restart_session(
     return SuccessResponse()
 
 
-@tool("kernel_shutdown", output=SuccessResponse)
+@tool("kernel_shutdown")
 @requires("edit")
 async def shutdown(
     *,
     request: Request,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Shut down the session, and the server when it was the last one."""
     LOGGER.debug("Received shutdown request")
     app_state = AppState(request)
@@ -345,7 +348,7 @@ async def shutdown(
     return SuccessResponse()
 
 
-@tool("kernel_takeover", output=SuccessResponse)
+@tool("kernel_takeover")
 @requires("edit")
 async def takeover_endpoint(
     *,
