@@ -463,14 +463,14 @@ class EditorMCP(MCPEndpoint):
         definitions = {
             definition["name"]: definition for definition in contract()
         }
-        self.files = FileServer(
+        files = FileServer(
             self.storage,
             tools=definitions.get,
             max_inline_bytes=_MAX_INLINE_BYTES,
         )
-        server = tool_server(contract, partial(_call, self.files))
-        server.extensions[EXTENSION] = self.files.settings()
-        server.middleware.insert(0, self.files)
+        server = tool_server(contract, partial(_call, files))
+        server.extensions[EXTENSION] = files.settings()
+        server.middleware.insert(0, files)
         served = events()
         served.serve(server)
         super().__init__(server, served)
