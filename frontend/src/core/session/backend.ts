@@ -11,7 +11,7 @@ import {
 import type { NotebookBackend } from "../notebook/replica";
 import { PyodideBridge } from "../wasm/bridge";
 import { isWasm } from "../wasm/utils";
-import { getMarimo, withHeaders } from "../network/holon";
+import { getMarimo } from "../network/holon";
 import {
   type SessionArguments,
   type SubscribeSession,
@@ -139,7 +139,13 @@ function server(options: EditorBackendOptions): NotebookBackend {
       new NotebookClient(
         id,
         (send ??= mcp(options.mcpUrl(), {
-          fetch: withHeaders(options.headers),
+          requestInit: {
+            credentials: "include",
+            redirect: "error",
+            get headers() {
+              return options.headers();
+            },
+          },
         })),
       ),
     checkHealth: options.checkHealth,

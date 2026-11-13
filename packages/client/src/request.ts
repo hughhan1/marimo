@@ -2,6 +2,7 @@
 
 import {
   createApps,
+  type Binding,
   type RuntimeClient,
   ToolCallError,
 } from "holon-sh/runtime";
@@ -10,16 +11,9 @@ import { parseProblem, type Problem, type UnknownProblem } from "./problem.ts";
 import { type ToolName, tools } from "./tools.ts";
 
 /** How a client reaches and authenticates with a host. */
-export interface ClientOptions {
+export interface ClientOptions extends Pick<Binding, "fetch" | "requestInit"> {
   /** Sent as `Authorization: Bearer <token>`. */
   readonly token?: string;
-  /**
-   * Sends each request. Defaults to `globalThis.fetch`.
-   *
-   * Wrap it to add headers or change requests. It receives each request with
-   * the client's own headers already set.
-   */
-  readonly fetch?: typeof globalThis.fetch;
 }
 
 /**
@@ -134,7 +128,7 @@ const identity = { name: "@marimo-team/client", version: "0.1.0" };
 /** An MCP client of a host's tools and events at `endpoint`. */
 export function host(
   endpoint: URL,
-  { token, fetch }: ClientOptions = {},
+  { token, ...transport }: ClientOptions = {},
 ): RuntimeClient {
   return createApps(
     identity,
@@ -145,7 +139,7 @@ export function host(
         ...(token === undefined
           ? {}
           : { authProvider: { token: async () => token } }),
-        fetch,
+        ...transport,
       },
     },
   ).host;

@@ -12,24 +12,18 @@ export const getMarimo = once(async () => {
     marimo: {
       endpoint: runtimeManager.getMcpURL(),
       fileOrigins: [runtimeManager.httpURL.origin],
-      fetch: withHeaders(() => runtimeManager.headers()),
+      requestInit: {
+        credentials: "include",
+        redirect: "error",
+        get headers() {
+          return runtimeManager.headers();
+        },
+      },
     },
   }).marimo;
 });
 
 type Tools = Awaited<ReturnType<typeof getMarimo>>["tools"];
-
-export function withHeaders(
-  headers: () => Record<string, string>,
-): typeof globalThis.fetch {
-  return (input, init) => {
-    const sent = new Headers(init?.headers);
-    for (const [name, value] of Object.entries(headers())) {
-      sent.set(name, value);
-    }
-    return globalThis.fetch(input, { ...init, headers: sent });
-  };
-}
 
 /** A reply that may list files to download. */
 export interface Replied {
