@@ -135,7 +135,7 @@ def events() -> Events:
         "session",
         description="Follow an editor session: its notebook and kernel.",
         input_schema=SessionArguments,
-        payload_schema=SessionFrame,
+        payload_schema=SessionFrame.model_json_schema(),
         delivery=("push",),
         authorize=authorize,
         on_subscribe=on_subscribe,

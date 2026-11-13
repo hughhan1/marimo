@@ -49,35 +49,14 @@ KINDS = frozenset(get_args(get_args(protocol.ObjectType)[0])) | {"marimo"}
 """The kinds `types` may name."""
 
 
-def _schema(kind: Any) -> dict[str, Any]:
-    """A type's JSON Schema with every reference expanded.
-
-    The SDK's pydantic resolves references against its own definitions, and
-    no protocol type refers to itself.
-    """
-    (root,), definitions = msgspec.json.schema_components([kind])
-
-    def expand(node: Any) -> Any:
-        if isinstance(node, list):
-            return [expand(item) for item in node]
-        if not isinstance(node, dict):
-            return node
-        if "$ref" in node:
-            name = node["$ref"].rsplit("/", 1)[1]
-            rest = {key: value for key, value in node.items() if key != "$ref"}
-            return {**expand(definitions[name]), **expand(rest)}
-        return {key: expand(value) for key, value in node.items()}
-
-    standalone: dict[str, Any] = dedented(expand(root))
-    return standalone
-
-
-def _arguments(kind: Any) -> TypeAdapter[dict[str, Any]]:
+def _arguments(kind: type[msgspec.Struct]) -> TypeAdapter[dict[str, Any]]:
     """A subscription's arguments for the SDK, described by `kind`'s schema.
 
     The SDK refuses an argument `kind` does not declare. A declared one's
     invalid value is the host's problem, so the hooks decode the rest.
     """
+    _, definitions = msgspec.json.schema_components([kind])
+    (schema,) = definitions.values()
     names = {field.encode_name for field in msgspec.structs.fields(kind)}
 
     def declared(value: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +68,7 @@ def _arguments(kind: Any) -> TypeAdapter[dict[str, Any]]:
         Annotated[
             dict[str, Any],
             PlainValidator(declared),
-            WithJsonSchema(_schema(kind)),
+            WithJsonSchema(dedented(schema)),
         ]
     )
 
@@ -307,11 +286,7 @@ def host_events() -> Events:
             name,
             description=event.description,
             input_schema=_arguments(event.arguments),
-            payload_schema=TypeAdapter(
-                Annotated[
-                    dict[str, Any], WithJsonSchema(_schema(event.payload))
-                ]
-            ),
+            payload_schema=dedented(msgspec.json.schema(event.payload)),
             delivery=("push",),
             on_subscribe=on_subscribe,
             on_unsubscribe=on_unsubscribe,
