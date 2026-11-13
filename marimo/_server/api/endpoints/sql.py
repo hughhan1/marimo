@@ -8,7 +8,6 @@ from starlette.authentication import requires
 from marimo._server.api.tools import tool
 from marimo._server.api.utils import dispatch_control_request
 from marimo._server.models.models import (
-    BaseResponse,
     SuccessResponse,
     ValidateSQLRequest,
 )
@@ -17,10 +16,10 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("sql_validate", input=ValidateSQLRequest, output=SuccessResponse)
+@tool("sql_validate")
 @requires("edit")
 async def validate_sql(
     *, request: Request, body: ValidateSQLRequest
-) -> BaseResponse:
+) -> SuccessResponse:
     """Ask the kernel to validate a SQL query."""
     return await dispatch_control_request(request, body)

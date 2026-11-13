@@ -20,7 +20,7 @@ LOGGER = _loggers.marimo_logger()
 _SNIPPETS: list[Snippets] = []
 
 
-@tool("documentation_snippets", output=Snippets)
+@tool("documentation_snippets")
 @requires("edit")
 async def load_snippets(
     *,

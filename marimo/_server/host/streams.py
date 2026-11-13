@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
-from functools import cache
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args
 
 import msgspec
@@ -173,7 +172,6 @@ class _Refused(Exception):
         self.problem = refusal
 
 
-@cache
 def host_events() -> Events:
     """The host's MCP events: `catalog` and `notebook`."""
     served = Events()

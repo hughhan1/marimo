@@ -27,20 +27,32 @@ import { AttachmentStatus } from "../footer-items/attachment-status";
 
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
 const API = vi.hoisted(() => ({ post: vi.fn() }));
-vi.mock("@/core/network/holon", () => ({
-  getTools: async () => ({
-    pair_notebooks_attachments_detach: ({
-      id,
-      attachment_id,
-    }: {
-      id: string;
-      attachment_id: string;
-    }) =>
-      API.post(`/pair/notebooks/${encodeURIComponent(id)}/attachments/detach`, {
+vi.mock("@/core/network/holon", () => {
+  function mockTools() {
+    return {
+      pair_notebooks_attachments_detach: ({
+        id,
         attachment_id,
-      }),
-  }),
-}));
+      }: {
+        id: string;
+        attachment_id: string;
+      }) =>
+        API.post(
+          `/pair/notebooks/${encodeURIComponent(id)}/attachments/detach`,
+          {
+            attachment_id,
+          },
+        ),
+    };
+  }
+  return {
+    callMarimo: async <T,>(
+      call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
+    ) => {
+      return call(mockTools());
+    },
+  };
+});
 
 const attachmentsAtom = atom<Attachment[]>([]);
 vi.mock("@/core/session/active-notebook", async (importOriginal) => ({

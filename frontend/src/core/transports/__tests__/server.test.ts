@@ -11,15 +11,15 @@ import {
 const ARGS: SessionArguments = { session_id: "s1", query_params: "" };
 
 /** A subscription that yields these frames, then waits. */
-async function* following(...frames: string[]) {
+async function* following(...frames: object[]) {
   for (const frame of frames) {
-    yield { data: { frame } };
+    yield { data: { frame: JSON.stringify(frame) } };
   }
   await new Promise(() => undefined);
 }
 
 /** A subscription that fails at once. */
-function failing(error: unknown): AsyncIterable<{ data: { frame: string } }> {
+function failing(error: unknown): AsyncIterable<{ data: never }> {
   return {
     [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
   };
@@ -36,21 +36,41 @@ afterEach(() => {
 });
 
 describe("sessionEvents", () => {
-  it("subscribes with the session's arguments and reads frames with marimo's parser", async () => {
+  it("subscribes with the session arguments and delivers protocol events", async () => {
     const subscribe = vi.fn<SubscribeSession>(async () =>
-      following('{"event":"marimo","id":"7","data":{"marimo":{"value":NaN}}}'),
+      following({ event: "reset", data: {} }),
     );
     const events = new NotebookEvents(
       sessionEvents(async () => ARGS, subscribe),
-      { types: ["marimo"] },
+      { types: ["reset"] },
     );
     const received = collect(events);
     await vi.waitFor(() => expect(received).toHaveLength(1));
     expect(subscribe.mock.calls[0][0]).toEqual(ARGS);
-    expect(received).toEqual([
-      { event: "marimo", id: "7", data: { marimo: { value: Number.NaN } } },
-    ]);
+    expect(received).toEqual([{ event: "reset", data: {} }]);
     events.close();
+  });
+
+  it("releases a held slot when a subscription attempt fails", async () => {
+    let held: AbortSignal | undefined;
+    const slots = {
+      hold: async (signal: AbortSignal) => {
+        held = signal;
+        return signal;
+      },
+    };
+    const transport = sessionEvents(
+      async () => ARGS,
+      async () => {
+        throw new Error("offline");
+      },
+      slots,
+    );
+    await transport(
+      { cursor: null, signal: new AbortController().signal },
+      { open: vi.fn(), message: vi.fn() },
+    );
+    expect(held?.aborted).toBe(true);
   });
 
   it("stops when the session terminates the subscription with a final close", async () => {
@@ -75,17 +95,20 @@ describe("sessionEvents", () => {
     `);
   });
 
-  it("stops when the caller may not follow the session", async () => {
-    const events = new NotebookEvents(
-      sessionEvents(
-        async () => ARGS,
-        async () => {
-          throw Object.assign(new Error("Forbidden"), { code: -32024 });
-        },
-      ),
-    );
-    await expect(events.closed).rejects.toBeInstanceOf(StreamStopped);
-  });
+  it.each([undefined, null, "refused"])(
+    "stops when the caller may not follow the session (data: %s)",
+    async (data) => {
+      const events = new NotebookEvents(
+        sessionEvents(
+          async () => ARGS,
+          async () => {
+            throw Object.assign(new Error("Forbidden"), { code: -32024, data });
+          },
+        ),
+      );
+      await expect(events.closed).rejects.toBeInstanceOf(StreamStopped);
+    },
+  );
 
   it("subscribes again after a failure that says nothing final", async () => {
     vi.useFakeTimers();

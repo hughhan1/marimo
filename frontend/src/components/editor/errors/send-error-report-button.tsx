@@ -8,7 +8,7 @@ import { attachmentLabel, useNotebookAttachments } from "@/core/notebook";
 import { agentToast } from "@/components/editor/agent-toast";
 import { pairConfigAtom } from "@/core/config/pair";
 import { stableSessionIdAtom } from "@/core/kernel/session";
-import { getTools } from "@/core/network/holon";
+import { callMarimo } from "@/core/network/holon";
 import { HTTPError, prettyError } from "@/utils/errors";
 
 export function SendErrorReportButton({
@@ -31,11 +31,12 @@ export function SendErrorReportButton({
     }
     setSending(true);
     try {
-      const tools = await getTools();
-      await tools.pair_notebooks_messages({
-        id: stableSessionId,
-        message: getContent(),
-      });
+      await callMarimo((tools) =>
+        tools.pair_notebooks_messages({
+          id: stableSessionId,
+          message: getContent(),
+        }),
+      );
       agentToast({
         title: `Sent to ${agents.map(attachmentLabel).join(", ")}`,
       });

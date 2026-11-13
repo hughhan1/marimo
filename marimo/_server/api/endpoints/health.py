@@ -57,7 +57,7 @@ class ServerStatus(msgspec.Struct):
     lsp_running: bool
 
 
-@tool("status", output=ServerStatus)
+@tool("status")
 @requires("edit")
 async def status(*, request: Request) -> ServerStatus:
     """Report the server's health, open notebooks, mode and versions."""
@@ -104,14 +104,14 @@ def _sessions(request: Request) -> dict[str, SessionInfo]:
     }
 
 
-@tool("sessions", output=dict[str, SessionInfo])
+@tool("sessions")
 @requires("edit")
 async def list_sessions(*, request: Request) -> dict[str, SessionInfo]:
     """List active session IDs and their notebook paths."""
     return _sessions(request)
 
 
-@tool("version", output=TextResponse)
+@tool("version")
 @requires("read")
 async def version(*, request: Request) -> TextResponse:
     """The server's marimo version."""
@@ -147,7 +147,7 @@ class Environment(
     experimental_flags: dict[str, Any]
 
 
-@tool("environment", output=Environment)
+@tool("environment")
 @requires("edit")
 async def environment(*, request: Request) -> Environment:
     """Describe the server's Python environment and platform."""
@@ -198,7 +198,7 @@ class Usage(msgspec.Struct):
     gpu: list[GpuUsage]
 
 
-@tool("usage", output=Usage)
+@tool("usage")
 @requires("edit")
 async def usage(*, request: Request) -> Usage:
     """Report the memory, CPU and GPU use of the server and kernel."""
@@ -296,7 +296,7 @@ class Connections(msgspec.Struct):
     active: int
 
 
-@tool("status_connections", output=Connections)
+@tool("status_connections")
 @requires("read")
 async def connections(*, request: Request) -> Connections:
     """Count the clients connected to the server."""

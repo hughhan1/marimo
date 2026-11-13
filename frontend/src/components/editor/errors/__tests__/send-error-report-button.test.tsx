@@ -41,18 +41,27 @@ import { SendErrorReportButton } from "../send-error-report-button";
 
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
 const API = vi.hoisted(() => ({ post: vi.fn() }));
-vi.mock("@/core/network/holon", () => ({
-  getTools: async () => ({
-    pair_notebooks_messages: ({
-      id,
-      message,
-    }: {
-      id: string;
-      message: unknown;
-    }) =>
-      API.post(`/pair/notebooks/${encodeURIComponent(id)}/messages`, message),
-  }),
-}));
+vi.mock("@/core/network/holon", () => {
+  function mockTools() {
+    return {
+      pair_notebooks_messages: ({
+        id,
+        message,
+      }: {
+        id: string;
+        message: unknown;
+      }) =>
+        API.post(`/pair/notebooks/${encodeURIComponent(id)}/messages`, message),
+    };
+  }
+  return {
+    callMarimo: async <T,>(
+      call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
+    ) => {
+      return call(mockTools());
+    },
+  };
+});
 vi.mock("@/components/editor/chrome/wrapper/useOpenAiAssistant", () => ({
   useOpenAiAssistant: () => vi.fn(),
 }));

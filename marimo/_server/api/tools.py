@@ -17,8 +17,8 @@ import inspect
 import json
 import sys
 from dataclasses import dataclass
-from functools import cache
-from typing import TYPE_CHECKING, Any
+from functools import cache, partial
+from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
 import msgspec
 import msgspec.json
@@ -37,7 +37,6 @@ from marimo import __version__
 from marimo._core import protocol
 from marimo._core.operations import (
     PlainKind,
-    Reply,
     is_problem,
     problem as make_problem,
 )
@@ -75,34 +74,28 @@ class FileResult(msgspec.Struct, frozen=True):
 
 @dataclass(frozen=True)
 class Tool:
-    handler: Callable[..., Any]
-    input: Any = None
-    """The type whose fields are the arguments, or None for a tool with none."""
-    output: Any = None
-    """The reply's type, or None for an empty reply."""
+    handler: Callable[..., object]
+    input: type[msgspec.Struct] | None
+    output: object
     description: str = ""
     title: str | None = None
 
 
 TOOLS: dict[str, Tool] = {}
+F = TypeVar("F", bound="Callable[..., object]")
 
 
-def tool(
-    name: str,
-    *,
-    input: Any = None,  # noqa: A002
-    output: Any = None,
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Serve an editor handler as a tool.
-
-    The handler takes `request`, the endpoint's request, and `body`, the
-    decoded `input`, by keyword. It returns an `output` instance or a
-    `FileResult`.
-    """
-
-    def decorate(handler: Callable[..., Any]) -> Callable[..., Any]:
+def tool(name: str) -> Callable[[F], F]:
+    def decorate(handler: F) -> F:
+        hints = get_type_hints(
+            inspect.unwrap(handler), localns={"Request": Request}
+        )
+        output = hints["return"]
         TOOLS[name] = Tool(
-            handler, input, output, _doc(handler) or _doc(input)
+            handler,
+            hints.get("body"),
+            None if output is type(None) else output,
+            _doc(handler) or _doc(hints.get("body")),
         )
         return handler
 
@@ -127,28 +120,8 @@ def after_reply(request: Request, task: Callable[[], Awaitable[None]]) -> None:
 # ---- arguments --------------------------------------------------------------
 
 
-@cache
-def _server_filled(kind: Any) -> frozenset[str]:
-    """The input's fields the server fills from the call, by wire name.
-
-    A request struct may carry the HTTP request the kernel reports as the
-    caller's context. A caller must not supply it.
-    """
-    if kind is None:
-        return frozenset()
-    return frozenset(
-        member.encode_name
-        for member in msgspec.structs.fields(kind)
-        if "HTTPRequest" in str(member.type)
-    )
-
-
-def _arguments(
-    request: Request, found: Tool, arguments: dict[str, Any]
-) -> dict[str, Any]:
+def _arguments(found: Tool, arguments: dict[str, Any]) -> dict[str, Any]:
     """The keyword arguments an editor handler takes for a call."""
-    filled = _server_filled(found.input)
-    # Not every input type forbids unknown fields, and none may be filled.
     known = (
         set()
         if found.input is None
@@ -158,20 +131,13 @@ def _arguments(
         }
     )
     for key in arguments:
-        if key not in known or key in filled:
+        if key not in known:
             raise msgspec.ValidationError(
                 f"Object contains unknown field `{key}`"
             )
     if found.input is None:
         return {}
-    body = msgspec.convert(arguments, found.input)
-    if filled:
-        from marimo._runtime.commands import HTTPRequest
-
-        for member in msgspec.structs.fields(found.input):
-            if member.encode_name in filled:
-                setattr(body, member.name, HTTPRequest.from_request(request))
-    return {"body": body}
+    return {"body": msgspec.convert(arguments, found.input)}
 
 
 # ---- schemas ----------------------------------------------------------------
@@ -206,20 +172,11 @@ def inline_schema(
     kind: Any,
     schema_of: dict[Any, Any],
     components: dict[str, Any],
-    omit: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """A type's schema with its root inlined, so its fields are the object's."""
     root = dict(schema_of[kind])
     if "$ref" in root:
         root = dict(components[root["$ref"].removeprefix("#/$defs/")])
-    if omit:
-        root["properties"] = {
-            key: value
-            for key, value in root.get("properties", {}).items()
-            if key not in omit
-        }
-        if "required" in root:
-            root["required"] = [k for k in root["required"] if k not in omit]
     return _with_defs(root, components)
 
 
@@ -254,9 +211,7 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
         if given is None:
             arguments: dict[str, Any] = {"type": "object", "properties": {}}
         else:
-            arguments = inline_schema(
-                given, schema_of, components, _server_filled(given)
-            )
+            arguments = inline_schema(given, schema_of, components)
             arguments.pop("title", None)
             arguments.pop("description", None)
         definition: dict[str, Any] = {
@@ -320,7 +275,9 @@ def dedented(node: Any) -> Any:
 
 
 async def _call(
-    ctx: ServerRequestContext[Any, Any], params: types.CallToolRequestParams
+    files: FileServer,
+    ctx: ServerRequestContext[Any, Any],
+    params: types.CallToolRequestParams,
 ) -> types.CallToolResult:
     request = ctx.request
     assert isinstance(request, Request)
@@ -346,7 +303,7 @@ async def _call(
     try:
         result = found.handler(
             request=request,
-            **_arguments(request, found, params.arguments or {}),
+            **_arguments(found, params.arguments or {}),
         )
         if inspect.isawaitable(result):
             result = await result
@@ -357,7 +314,7 @@ async def _call(
     except Exception as error:  # noqa: BLE001
         return tool_result(params.name, await _problem_for(request, error))
     if isinstance(result, FileResult):
-        return await files().reply(
+        return await files.reply(
             ctx,
             result.data,
             name=result.filename,
@@ -367,7 +324,7 @@ async def _call(
     return tool_result(params.name, result)
 
 
-def tool_result(name: str, reply: Reply | Any) -> types.CallToolResult:
+def tool_result(name: str, reply: object) -> types.CallToolResult:
     """A reply as a tool's result, or a problem as its failure."""
     if is_problem(reply):
         return types.CallToolResult(
@@ -416,41 +373,14 @@ async def _problem_for(request: Request, error: Exception) -> protocol.Problem:
     return make_problem(kind, detail if detail is None else str(detail))
 
 
-# ---- files ------------------------------------------------------------------
-
-
-@cache
-def file_storage() -> LocalStorage:
-    """Where uploads wait for their call and file replies are served.
-
-    Its app is mounted at `/api/mcp/files`, under the tool endpoint, where
-    the targets it issues point.
-    """
-    return LocalStorage()
-
-
-@cache
-def files() -> FileServer:
-    """The tools' file arguments and file replies."""
-    definitions = {definition["name"]: definition for definition in contract()}
-    return FileServer(
-        file_storage(),
-        tools=definitions.get,
-        max_inline_bytes=_MAX_INLINE_BYTES,
-    )
-
-
-# ---- servers and endpoints --------------------------------------------------
-
-
 def tool_server(
     definitions: Callable[[], list[dict[str, Any]]],
-    call: Callable[[Request, str, Any], Awaitable[Reply]] | None = None,
+    call: Callable[
+        [ServerRequestContext[Any, Any], types.CallToolRequestParams],
+        Awaitable[types.CallToolResult],
+    ],
 ) -> Server[Any]:
-    """An MCP server of tools: `definitions` lists them and `call` serves one.
-
-    Without `call`, the editor's own tools are served.
-    """
+    """An MCP server of tools: `definitions` lists them and `call` serves one."""
 
     async def list_tools(
         ctx: ServerRequestContext[Any, Any], params: Any
@@ -458,19 +388,6 @@ def tool_server(
         del ctx, params
         return types.ListToolsResult(
             tools=[types.Tool.model_validate(each) for each in definitions()]
-        )
-
-    async def call_tool(
-        ctx: ServerRequestContext[Any, Any],
-        params: types.CallToolRequestParams,
-    ) -> types.CallToolResult:
-        if call is None:
-            return await _call(ctx, params)
-        request = ctx.request
-        assert isinstance(request, Request)
-        return tool_result(
-            params.name,
-            await call(request, params.name, params.arguments or {}),
         )
 
     def input_schema(name: str) -> dict[str, Any] | None:
@@ -487,23 +404,9 @@ def tool_server(
         "marimo",
         version=__version__,
         on_list_tools=list_tools,
-        on_call_tool=call_tool,
+        on_call_tool=call,
         get_tool_input_schema=input_schema,
     )
-
-
-@cache
-def mcp_server() -> Server[Any]:
-    """The MCP server of the editor's tools.
-
-    The endpoint serves it, and `packages/openapi/server.py` hands it to
-    `holon types generate`, which reads the tools' contract from it.
-    """
-    server = tool_server(contract)
-    server.extensions[EXTENSION] = files().settings()
-    server.middleware.insert(0, files())
-    events().serve(server)
-    return server
 
 
 class MCPEndpoint:
@@ -511,8 +414,8 @@ class MCPEndpoint:
 
     def __init__(
         self,
-        server: Callable[[], Server[Any]],
-        events: Callable[[], Events],
+        server: Server[Any],
+        events: Events,
     ) -> None:
         self.server = server
         self.events = events
@@ -532,11 +435,8 @@ class MCPEndpoint:
             )
             await response(scope, receive, send)
             return
-        # The manager is meant to live as long as the app, in a lifespan the
-        # server's many test apps never enter. A stateless request shares
-        # nothing with the next, so each gets a manager of its own.
         manager = StreamableHTTPSessionManager(
-            self.server(),
+            self.server,
             json_response=True,
             stateless=True,
             security_settings=TRANSPORT_SECURITY,
@@ -550,14 +450,30 @@ class MCPEndpoint:
         token = request_var.set(request)
         try:
             async with manager.run():
-                await self.events().asgi(manager)(scope, receive, send)
+                await self.events.asgi(manager)(scope, receive, send)
         finally:
             request_var.reset(token)
         for task in tasks:
             await task()
 
 
-mcp_endpoint = MCPEndpoint(mcp_server, events)
+class EditorMCP(MCPEndpoint):
+    def __init__(self) -> None:
+        self.storage = LocalStorage()
+        definitions = {
+            definition["name"]: definition for definition in contract()
+        }
+        self.files = FileServer(
+            self.storage,
+            tools=definitions.get,
+            max_inline_bytes=_MAX_INLINE_BYTES,
+        )
+        server = tool_server(contract, partial(_call, self.files))
+        server.extensions[EXTENSION] = self.files.settings()
+        server.middleware.insert(0, self.files)
+        served = events()
+        served.serve(server)
+        super().__init__(server, served)
 
 
 def origin_allowed(request: Request) -> bool:

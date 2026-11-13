@@ -1,6 +1,10 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { createApps, type RuntimeClient } from "holon-sh/runtime";
+import {
+  createApps,
+  type RuntimeClient,
+  ToolCallError,
+} from "holon-sh/runtime";
 import * as z from "zod";
 import { parseProblem, type Problem, type UnknownProblem } from "./problem.ts";
 import { type ToolName, tools } from "./tools.ts";
@@ -166,13 +170,7 @@ export function mcp(endpoint: URL, options: ClientOptions = {}): CallTool {
     if (!result.isError) {
       return { ok: true, data: result.structuredContent ?? {} };
     }
-    const [block] = result.content;
-    let problem: unknown;
-    try {
-      problem = block?.type === "text" ? JSON.parse(block.text) : undefined;
-    } catch {
-      problem = undefined;
-    }
+    const problem = new ToolCallError(identity.name, operation, result).data;
     if (typeof problem !== "object" || problem === null) {
       throw new Error(`${operation} failed without a problem`);
     }

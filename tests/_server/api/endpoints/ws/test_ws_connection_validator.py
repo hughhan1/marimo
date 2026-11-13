@@ -13,15 +13,12 @@ from marimo._server.codes import WebSocketCloseReason, WebSocketCodes
 
 
 def _app_state(
-    query: dict[str, str] | None = None,
     unique_file_key: str | None = "test.py",
 ) -> MagicMock:
-    query = query or {}
     config: MarimoConfig = MarimoConfig.from_dict(
         {"runtime": {"auto_instantiate": True}}
     )
     app_state = MagicMock()
-    app_state.query_params.side_effect = query.get
     workspace = app_state.session_manager.workspace
     workspace.get_unique_file_key.return_value = unique_file_key
     manager = app_state.config_manager_at_file.return_value
@@ -30,7 +27,7 @@ def _app_state(
 
 
 def test_missing_session_id_is_rejected() -> None:
-    result = parse_connection_params(_app_state())
+    result = parse_connection_params(_app_state(), session_id=None)
     assert result == ConnectionRejection(
         WebSocketCodes.NORMAL_CLOSE, WebSocketCloseReason.NO_SESSION_ID
     )
@@ -38,7 +35,7 @@ def test_missing_session_id_is_rejected() -> None:
 
 def test_missing_file_key_is_rejected() -> None:
     result = parse_connection_params(
-        _app_state(query={"session_id": "123"}, unique_file_key=None)
+        _app_state(unique_file_key=None), session_id="123"
     )
     assert result == ConnectionRejection(
         WebSocketCodes.NORMAL_CLOSE, WebSocketCloseReason.NO_FILE_KEY
@@ -47,19 +44,20 @@ def test_missing_file_key_is_rejected() -> None:
 
 def test_extracts_params() -> None:
     result = parse_connection_params(
-        _app_state(query={"session_id": "123", "kiosk": "true"})
+        _app_state(), session_id="123", kiosk=True, query_params="x=1&x=2"
     )
     assert result == ConnectionParams(
         session_id="123",
         file_key="test.py",
         kiosk=True,
         auto_instantiate=True,
+        query_params="x=1&x=2",
     )
 
 
 def test_file_query_param_wins_over_unique_file_key() -> None:
     result = parse_connection_params(
-        _app_state(query={"session_id": "123", "file": "other.py"})
+        _app_state(), session_id="123", file="other.py"
     )
     assert isinstance(result, ConnectionParams)
     assert result.file_key == "other.py"

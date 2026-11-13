@@ -29,7 +29,7 @@ from marimo._server.api.endpoints.execution import router as execution_router
 from marimo._server.api.endpoints.health import router as health_router
 from marimo._server.api.endpoints.login import router as login_router
 from marimo._server.api.endpoints.terminal import router as terminal_router
-from marimo._server.api.tools import file_storage, mcp_endpoint
+from marimo._server.api.tools import EditorMCP
 from marimo._server.router import APIRouter
 
 if TYPE_CHECKING:
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 
 # Define the app routes
-def build_routes(base_url: str = "") -> list[BaseRoute]:
+def build_routes(editor: EditorMCP, base_url: str = "") -> list[BaseRoute]:
     app_router = APIRouter(prefix=base_url)
     app_router.include_router(
         execution_router, prefix="/api/kernel", name="execution"
@@ -50,12 +50,12 @@ def build_routes(base_url: str = "") -> list[BaseRoute]:
     app_router.routes.append(
         Route(
             f"{base_url}/api/mcp",
-            mcp_endpoint,
+            editor,
             methods=["POST"],
         )
     )
     app_router.routes.append(
-        Mount(f"{base_url}/api/mcp/files", file_storage().app)
+        Mount(f"{base_url}/api/mcp/files", editor.storage.app)
     )
     app_router.include_router(health_router, name="health")
     app_router.include_router(assets_router, name="assets")

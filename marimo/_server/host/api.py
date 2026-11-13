@@ -23,7 +23,7 @@ from marimo._server.api.auth import TOKEN_QUERY_PARAM
 from marimo._server.api.deps import AppStateBase
 from marimo._server.api.utils import format_url_host, open_url_in_browser
 from marimo._server.host.notebook_api import _context, problem
-from marimo._server.host.tools import host_mcp_endpoint
+from marimo._server.host.tools import mcp_endpoint
 from marimo._server.tokens import AuthToken
 
 if TYPE_CHECKING:
@@ -37,7 +37,7 @@ LOGGER = _loggers.marimo_logger()
 def build_app() -> Router:
     """Build the host API router."""
     return Router(
-        routes=[Route("/mcp", host_mcp_endpoint, methods=["POST"])],
+        routes=[Route("/mcp", mcp_endpoint(), methods=["POST"])],
         default=_not_found,
         # Clients never follow redirects, so a trailing slash is a miss.
         redirect_slashes=False,

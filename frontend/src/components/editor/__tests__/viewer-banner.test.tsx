@@ -8,9 +8,18 @@ import { kioskModeAtom, viewStateAtom } from "@/core/mode";
 import { ViewerBanner } from "../viewer-banner";
 
 const takeover = vi.hoisted(() => vi.fn(async () => ({})));
-vi.mock("@/core/network/holon", () => ({
-  getTools: async () => ({ kernel_takeover: takeover }),
-}));
+vi.mock("@/core/network/holon", () => {
+  function mockTools() {
+    return { kernel_takeover: takeover };
+  }
+  return {
+    callMarimo: async <T,>(
+      call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
+    ) => {
+      return call(mockTools());
+    },
+  };
+});
 
 describe("ViewerBanner", () => {
   it("renders nothing when not in kiosk mode", () => {

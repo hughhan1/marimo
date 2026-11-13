@@ -28,6 +28,7 @@ from marimo._server.api.middleware import (
     WebSocketOriginMiddleware,
 )
 from marimo._server.api.router import build_routes
+from marimo._server.api.tools import EditorMCP
 from marimo._server.errors import handle_error
 from marimo._server.host.middleware import HostApiMiddleware
 from marimo._server.lsp import LspServer
@@ -128,8 +129,9 @@ def create_starlette_app(
 
     final_middlewares.extend(MIDDLEWARE_REGISTRY.get_all())
 
+    editor = EditorMCP()
     app = Starlette(
-        routes=build_routes(base_url=base_url),
+        routes=build_routes(editor, base_url=base_url),
         middleware=final_middlewares,
         lifespan=lifespan,
         exception_handlers={
@@ -145,6 +147,7 @@ def create_starlette_app(
             app_state=app.state,
             timeout_duration_minutes=timeout,
         )
+    app.state.editor_mcp = editor
     app.state.session_secret = session_secret
     app.state.origin_policy = origin_policy
     return app

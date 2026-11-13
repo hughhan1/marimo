@@ -1,32 +1,16 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's session stream as an MCP event, beside the tools at `/api/mcp`.
-
-A page follows its session by subscribing to the `session` event with the
-parameters the session's socket took in its URL. The subscription is the
-session's connection: subscribing connects to the session, and ending it
-starts the session's time to live. Each subscription starts the page over
-with a reset, sent with the session's first frame. Each frame carries the
-text the socket sent, since marimo's frames carry numbers JSON cannot, such
-as `NaN`. A frame that would have closed the socket terminates the
-subscription with its reason.
-
-Events are MCP Events, the Triggers & Events Working Group's draft:
-https://github.com/modelcontextprotocol/experimental-ext-triggers-events
-"""
+"""The editor's session stream as MCP events at `/api/mcp`."""
 
 from __future__ import annotations
 
 import asyncio
 from contextlib import aclosing
 from contextvars import ContextVar
-from functools import cache
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode
 
 from holon.ext.events import Events
 from mcp.types import INVALID_PARAMS, ErrorData
 from pydantic import BaseModel, ConfigDict
-from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core import protocol
@@ -44,6 +28,7 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from holon.context import RequestContext
     from holon.ext.events import EventType
+    from starlette.requests import Request
 
 LOGGER = _loggers.marimo_logger()
 
@@ -66,26 +51,9 @@ class SessionArguments(BaseModel):
 
 
 class SessionFrame(BaseModel):
-    """One frame of the session, as the text its socket sent."""
-
     frame: str
 
 
-def _connection(arguments: SessionArguments) -> Request:
-    request = request_var.get()
-    query = {
-        "session_id": arguments.session_id,
-        "query_params": arguments.query_params,
-    }
-    if arguments.file is not None:
-        query["file"] = arguments.file
-    if arguments.kiosk:
-        query["kiosk"] = "true"
-    scope = {**request.scope, "query_string": urlencode(query).encode()}
-    return Request(scope, request.receive)
-
-
-@cache
 def events() -> Events:
     """The editor's MCP events: the `session` event alone."""
     served = Events()
@@ -103,9 +71,15 @@ def events() -> Events:
         subscription_id: str,
     ) -> None:
         del context
-        connection = _connection(arguments)
+        connection = request_var.get()
         app_state = AppState(connection)
-        params = parse_connection_params(app_state)
+        params = parse_connection_params(
+            app_state,
+            session_id=arguments.session_id,
+            file=arguments.file,
+            kiosk=arguments.kiosk,
+            query_params=arguments.query_params,
+        )
         if isinstance(params, ConnectionRejection):
             terminate(subscription_id, INVALID_PARAMS, params.reason)
             return

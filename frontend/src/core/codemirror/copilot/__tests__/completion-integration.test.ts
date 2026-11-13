@@ -23,16 +23,23 @@ const fixture: { client?: CopilotLanguageServerClient } = vi.hoisted(
 // The tool answers as the existing `API.post` spies do.
 vi.mock("@/core/network/holon", async (importOriginal) => {
   const { API } = await import("@/core/network/api");
-  return {
-    ...(await importOriginal<typeof import("@/core/network/holon")>()),
-    getTools: async () => ({
+  function mockTools() {
+    return {
       ai_inline_completion: async (
         body: unknown,
         options: { signal?: AbortSignal },
       ) => ({
         text: await API.post("/ai/inline_completion", body, options),
       }),
-    }),
+    };
+  }
+  return {
+    ...(await importOriginal<typeof import("@/core/network/holon")>()),
+    callMarimo: async <T>(
+      call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
+    ) => {
+      return call(mockTools());
+    },
   };
 });
 

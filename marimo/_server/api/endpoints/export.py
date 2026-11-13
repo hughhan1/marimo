@@ -101,7 +101,7 @@ async def _get_export_availability() -> ExportAvailabilityResponse:
     )
 
 
-@tool("export_availability", output=ExportAvailabilityResponse)
+@tool("export_availability")
 @requires("read")
 async def get_export_availability(
     *,
@@ -112,11 +112,7 @@ async def get_export_availability(
     return await _get_export_availability()
 
 
-@tool(
-    "export_requirements_install",
-    input=InstallExportRequirementsRequest,
-    output=ExportAvailabilityResponse,
-)
+@tool("export_requirements_install")
 @requires("edit")
 async def install_export_requirements(
     *,
@@ -161,7 +157,7 @@ async def install_export_requirements(
     return availability
 
 
-@tool("export_html", input=ExportAsHTMLRequest, output=FileResult)
+@tool("export_html")
 @requires("read")
 async def export_as_html(
     *,
@@ -212,11 +208,7 @@ async def export_as_html(
     )
 
 
-@tool(
-    "export_auto_export_html",
-    input=ExportAsHTMLRequest,
-    output=SuccessResponse,
-)
+@tool("export_auto_export_html")
 @requires("edit")
 async def auto_export_as_html(
     *,
@@ -287,7 +279,7 @@ async def auto_export_as_html(
     return SuccessResponse()
 
 
-@tool("export_script", input=ExportAsScriptRequest, output=FileResult)
+@tool("export_script")
 @requires("edit")
 async def export_as_script(
     *,
@@ -321,7 +313,7 @@ async def export_as_script(
     )
 
 
-@tool("export_markdown", input=ExportAsMarkdownRequest, output=FileResult)
+@tool("export_markdown")
 @requires("edit")
 async def export_as_markdown(
     *,
@@ -356,7 +348,7 @@ async def export_as_markdown(
     )
 
 
-@tool("export_ipynb", input=ExportAsIPYNBRequest, output=FileResult)
+@tool("export_ipynb")
 @requires("edit")
 async def export_as_ipynb(
     *,
@@ -392,11 +384,7 @@ async def export_as_ipynb(
     )
 
 
-@tool(
-    "export_auto_export_markdown",
-    input=AutoExportAsMarkdownRequest,
-    output=SuccessResponse,
-)
+@tool("export_auto_export_markdown")
 @requires("edit")
 async def auto_export_as_markdown(
     *,
@@ -450,11 +438,7 @@ async def auto_export_as_markdown(
     return SuccessResponse()
 
 
-@tool(
-    "export_auto_export_ipynb",
-    input=AutoExportAsIPYNBRequest,
-    output=SuccessResponse,
-)
+@tool("export_auto_export_ipynb")
 @requires("edit")
 async def auto_export_as_ipynb(
     *,
@@ -531,7 +515,7 @@ async def auto_export_as_ipynb(
     return SuccessResponse()
 
 
-@tool("export_pdf", input=ExportAsPDFRequest, output=FileResult)
+@tool("export_pdf")
 @requires("edit")
 async def export_as_pdf(
     *, request: Request, body: ExportAsPDFRequest
@@ -563,11 +547,7 @@ async def export_as_pdf(
     )
 
 
-@tool(
-    "export_update_cell_outputs",
-    input=UpdateCellOutputsRequest,
-    output=SuccessResponse,
-)
+@tool("export_update_cell_outputs")
 @requires("edit")
 async def update_cell_outputs(
     *, request: Request, body: UpdateCellOutputsRequest

@@ -13,6 +13,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Any
 
 import msgspec
+from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core.calls import Caller, decode, dispatch, once
@@ -21,15 +22,20 @@ from marimo._core.protocol_tools import TOOLS
 from marimo._messaging.notification import ConsumerCapabilities
 from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
-from marimo._server.api.tools import MCPEndpoint, schemas, tool_server
+from marimo._server.api.tools import (
+    MCPEndpoint,
+    schemas,
+    tool_result,
+    tool_server,
+)
 from marimo._server.host.auth import bearer_matches
 from marimo._server.host.notebook_api import _context
 from marimo._server.host.streams import host_events
 from marimo._types.ids import ConsumerId
 
 if TYPE_CHECKING:
-    from mcp.server.lowlevel import Server
-    from starlette.requests import Request
+    from mcp import types
+    from mcp.server.context import ServerRequestContext
 
     from marimo._core.operations import Reply
 
@@ -139,13 +145,19 @@ def _connection_may_call(request: Request, name: str) -> bool:
     )
 
 
-@cache
-def mcp_server() -> Server[Any]:
-    """The MCP server of every host tool and event, for the host record's token."""
-    server = tool_server(lambda: definitions(catalog=True), call)
-    host_events().serve(server)
-    return server
+def mcp_endpoint() -> MCPEndpoint:
+    async def call_tool(
+        ctx: ServerRequestContext[Any, Any],
+        params: types.CallToolRequestParams,
+    ) -> types.CallToolResult:
+        request = ctx.request
+        assert isinstance(request, Request)
+        return tool_result(
+            params.name,
+            await call(request, params.name, params.arguments or {}),
+        )
 
-
-host_mcp_endpoint = MCPEndpoint(mcp_server, host_events)
-"""Serves the host's tools and events to the host record's token."""
+    server = tool_server(lambda: definitions(catalog=True), call_tool)
+    served = host_events()
+    served.serve(server)
+    return MCPEndpoint(server, served)

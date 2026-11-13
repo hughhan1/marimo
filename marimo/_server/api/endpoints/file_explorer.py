@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException
 
 from marimo import _loggers
 from marimo._server.api.deps import AppState
-from marimo._server.api.tools import FileResult, files, tool
+from marimo._server.api.tools import FileResult, tool
 from marimo._server.files.os_file_system import OSFileSystem
 from marimo._server.files.roots import resolve_file_roots
 from marimo._server.models.files import (
@@ -92,7 +92,7 @@ class FileUploadRequest(msgspec.Struct, rename="camel"):
     ]
 
 
-@tool("files_roots", output=FileRootsResponse)
+@tool("files_roots")
 @requires("edit")
 def file_roots(*, request: Request) -> FileRootsResponse:
     """List the directories the file browser may start from."""
@@ -106,7 +106,7 @@ def file_roots(*, request: Request) -> FileRootsResponse:
     )
 
 
-@tool("files_list_files", input=FileListRequest, output=FileListResponse)
+@tool("files_list_files")
 @requires("edit")
 async def list_files(
     *,
@@ -124,9 +124,7 @@ async def list_files(
     return FileListResponse(files=files, root=root)
 
 
-@tool(
-    "files_file_details", input=FileDetailsRequest, output=FileDetailsResponse
-)
+@tool("files_file_details")
 @requires("edit")
 async def file_details(
     *,
@@ -149,7 +147,7 @@ class FileDownloadRequest(msgspec.Struct):
     path: str
 
 
-@tool("files_download", input=FileDownloadRequest, output=FileResult)
+@tool("files_download")
 @requires("edit")
 def download_file(
     *, request: Request, body: FileDownloadRequest
@@ -181,7 +179,7 @@ def download_file(
     )
 
 
-@tool("files_create", input=FileCreateRequest, output=FileCreateResponse)
+@tool("files_create")
 @requires("edit")
 async def create_file_or_directory(
     *,
@@ -200,7 +198,7 @@ async def create_file_or_directory(
         return FileCreateResponse(success=False, message=str(e))
 
 
-@tool("files_upload", input=FileUploadRequest, output=FileCreateResponse)
+@tool("files_upload")
 @requires("edit")
 async def upload_file(
     *,
@@ -208,10 +206,12 @@ async def upload_file(
     body: FileUploadRequest,
 ) -> FileCreateResponse:
     """Add a file to the directory `path`, as `name`."""
-    del request
+    app_state = AppState(request)
     try:
         info = await file_system.add_file(
-            body.path, body.name, files().received(body.file)
+            body.path,
+            body.name,
+            app_state.state.editor_mcp.files.received(body.file),
         )
         return FileCreateResponse(success=True, info=info)
     except Exception as e:
@@ -219,7 +219,7 @@ async def upload_file(
         return FileCreateResponse(success=False, message=str(e))
 
 
-@tool("files_delete", input=FileDeleteRequest, output=FileDeleteResponse)
+@tool("files_delete")
 @requires("edit")
 async def delete_file_or_directory(
     *,
@@ -237,7 +237,7 @@ async def delete_file_or_directory(
         return FileDeleteResponse(success=False, message=str(e))
 
 
-@tool("files_copy", input=FileCopyRequest, output=FileCopyResponse)
+@tool("files_copy")
 @requires("edit")
 async def copy_file_or_directory(
     *,
@@ -255,7 +255,7 @@ async def copy_file_or_directory(
         return FileCopyResponse(success=False, message=str(e))
 
 
-@tool("files_move", input=FileMoveRequest, output=FileMoveResponse)
+@tool("files_move")
 @requires("edit")
 async def move_file_or_directory(
     *,
@@ -273,7 +273,7 @@ async def move_file_or_directory(
         return FileMoveResponse(success=False, message=str(e))
 
 
-@tool("files_update", input=FileUpdateRequest, output=FileUpdateResponse)
+@tool("files_update")
 @requires("edit")
 async def update_file(
     *,
@@ -296,7 +296,7 @@ async def update_file(
         return FileUpdateResponse(success=False, message=str(e))
 
 
-@tool("files_open", input=FileOpenRequest, output=BaseResponse)
+@tool("files_open")
 @requires("edit")
 async def open_file(
     *,
@@ -314,7 +314,7 @@ async def open_file(
         return ErrorResponse(success=False, message=str(e))
 
 
-@tool("files_search", input=FileSearchRequest, output=FileSearchResponse)
+@tool("files_search")
 @requires("edit")
 async def search_files(
     *,

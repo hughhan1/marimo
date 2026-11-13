@@ -23,7 +23,7 @@ import {
 import { agentToast } from "@/components/editor/agent-toast";
 import { pairConfigAtom } from "@/core/config/pair";
 import { stableSessionIdAtom } from "@/core/kernel/session";
-import { getTools } from "@/core/network/holon";
+import { callMarimo } from "@/core/network/holon";
 import { useTimeAgo } from "@/hooks/useFormatting";
 import { FooterItem } from "../footer-item";
 
@@ -167,11 +167,12 @@ function AttachmentStatusItem({ attachment }: { attachment: Attachment }) {
     }
     setState("disconnecting");
     try {
-      const tools = await getTools();
-      await tools.pair_notebooks_attachments_detach({
-        id: stableSessionId,
-        attachment_id: attachment.id,
-      });
+      await callMarimo((tools) =>
+        tools.pair_notebooks_attachments_detach({
+          id: stableSessionId,
+          attachment_id: attachment.id,
+        }),
+      );
     } catch {
       agentToast({ variant: "danger", title: `Could not disconnect ${label}` });
     } finally {

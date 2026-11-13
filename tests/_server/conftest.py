@@ -32,9 +32,6 @@ if TYPE_CHECKING:
 
     from websockets.sync.server import Server as WebSocketServer
 
-# Module-level app only for client_with_lifespans fixture
-_module_app = create_starlette_app(base_url="", enable_auth=True)
-
 
 @contextmanager
 def serve_in_thread(server: WebSocketServer) -> Iterator[None]:
@@ -99,7 +96,8 @@ def init() -> bool:
 
 @pytest.fixture(scope="module")
 def client_with_lifespans() -> Generator[TestClient, None, None]:
-    with TestClient(_module_app) as c:
+    app = create_starlette_app(base_url="", enable_auth=True)
+    with TestClient(app) as c:
         yield c
 
 
@@ -119,22 +117,6 @@ def user_config_manager() -> Iterator[UserConfigStore]:
     yield TestUserConfigManager()
 
     tmp.cleanup()
-
-
-@pytest.fixture(autouse=True)
-def fresh_mcp_events() -> None:
-    """Give each test its own MCP Events.
-
-    Events keep to the event loop they are first served on, and each test
-    client follows its sessions on a loop of its own.
-    """
-    from marimo._server.api.events import events
-    from marimo._server.api.tools import mcp_server
-    from marimo._server.host.streams import host_events
-    from marimo._server.host.tools import mcp_server as host_mcp_server
-
-    for cached in (events, mcp_server, host_events, host_mcp_server):
-        cached.cache_clear()
 
 
 @pytest.fixture

@@ -38,11 +38,18 @@ vi.mock("@/core/network/holon", () => {
     }
     return response.json();
   };
-  return {
-    getTools: async () => ({
+  function mockTools() {
+    return {
       sessions: read("/api/sessions"),
       auth_token: read("/auth/token"),
-    }),
+    };
+  }
+  return {
+    callMarimo: async <T,>(
+      call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
+    ) => {
+      return call(mockTools());
+    },
   };
 });
 

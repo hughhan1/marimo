@@ -20,7 +20,8 @@ vi.mock("../../wasm/bridge", () => ({
 }));
 // Each subscription to the session event, which never confirms.
 const subscribed = vi.hoisted((): unknown[] => []);
-vi.mock("../../network/holon", () => ({
+vi.mock("../../network/holon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../network/holon")>()),
   getMarimo: async () => ({
     ext: {
       events: {

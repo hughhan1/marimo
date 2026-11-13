@@ -16,7 +16,7 @@ import { copyToClipboard } from "@/utils/copy";
 import { Events } from "@/utils/events";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useRuntimeManager } from "@/core/runtime/config";
-import { getTools } from "@/core/network/holon";
+import { callMarimo } from "@/core/network/holon";
 import { pairConfigAtom } from "@/core/config/pair";
 import { stableSessionIdAtom } from "@/core/kernel/session";
 import {
@@ -33,8 +33,7 @@ import {
 function useAuthToken(): string | null {
   const [token, setToken] = useState<string | null>(null);
   useEffect(() => {
-    getTools()
-      .then((tools) => tools.auth_token({}))
+    callMarimo((tools) => tools.auth_token({}))
       .then((data) => setToken(data?.token ?? null))
       .catch(() => setToken(null));
   }, []);
@@ -64,8 +63,7 @@ export const PairWithAgentModal: React.FC<{
       return;
     }
     let cancelled = false;
-    getTools()
-      .then((tools) => tools.sessions({}))
+    callMarimo((tools) => tools.sessions({}))
       .then((sessions) => {
         if (!cancelled) {
           const session = Object.values(sessions).find(

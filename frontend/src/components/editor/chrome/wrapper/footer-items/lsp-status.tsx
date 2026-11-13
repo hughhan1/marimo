@@ -6,7 +6,7 @@ import type React from "react";
 import { Spinner } from "@/components/icons/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
-import { getTools } from "@/core/network/holon";
+import { callMarimo } from "@/core/network/holon";
 import { connectionAtom } from "@/core/network/connection";
 import type { LspHealthResponse } from "@/core/network/types";
 import { isWasm } from "@/core/wasm/utils";
@@ -28,7 +28,7 @@ export const LspStatus: React.FC = () => {
     }
 
     try {
-      const health = await (await getTools()).lsp_health({});
+      const health = await callMarimo((tools) => tools.lsp_health({}));
       setLspHealth(health);
       return health;
     } catch {
@@ -43,7 +43,7 @@ export const LspStatus: React.FC = () => {
 
   const handleRestart = async () => {
     try {
-      const result = await (await getTools()).lsp_restart({});
+      const result = await callMarimo((tools) => tools.lsp_restart({}));
 
       if (result.success) {
         toast({

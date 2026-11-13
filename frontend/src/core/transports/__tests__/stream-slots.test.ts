@@ -78,6 +78,14 @@ afterEach(() => {
 });
 
 describe("streamSlots", () => {
+  it("refuses an already-aborted request even when a slot is available", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("closed"));
+    await expect(tab(true).slots.hold(controller.signal)).rejects.toThrow(
+      "closed",
+    );
+  });
+
   it("lets the most recently seen tabs hold a stream, however many are visible", async () => {
     const visible = Array.from({ length: MAX_STREAMS + 1 }, () => tab(true));
     await settle();

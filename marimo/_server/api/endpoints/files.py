@@ -14,7 +14,6 @@ from marimo._server.api.tools import tool
 from marimo._server.api.utils import enforce_consumer_capability
 from marimo._server.files.path_validator import PathValidator
 from marimo._server.models.models import (
-    BaseResponse,
     CopyNotebookRequest,
     ReadCodeResponse,
     RenameNotebookRequest,
@@ -33,7 +32,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("kernel_read_code", output=ReadCodeResponse)
+@tool("kernel_read_code")
 @requires("read")
 async def read_code(
     *,
@@ -62,13 +61,13 @@ async def read_code(
     return ReadCodeResponse(contents=contents)
 
 
-@tool("kernel_rename", input=RenameNotebookRequest, output=SuccessResponse)
+@tool("kernel_rename")
 @requires("edit")
 async def rename_file(
     *,
     request: Request,
     body: RenameNotebookRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Rename or move the notebook file."""
     app_state = AppState(request)
     directory = app_state.session_manager.workspace.directory
@@ -103,13 +102,13 @@ async def rename_file(
     return SuccessResponse()
 
 
-@tool("kernel_save_layout", input=SaveLayoutRequest, output=SuccessResponse)
+@tool("kernel_save_layout")
 @requires("edit")
 async def save_layout(
     *,
     request: Request,
     body: SaveLayoutRequest,
-) -> BaseResponse:
+) -> SuccessResponse:
     """Save the notebook's layout beside it."""
     app_state = AppState(request)
     app_state.require_current_session().app_file_manager.save_layout(
@@ -118,7 +117,7 @@ async def save_layout(
     return SuccessResponse()
 
 
-@tool("kernel_copy", input=CopyNotebookRequest, output=TextResponse)
+@tool("kernel_copy")
 @requires("edit")
 async def copy(
     *,
@@ -152,11 +151,7 @@ async def copy(
     return TextResponse(text=session.app_file_manager.copy(body))
 
 
-@tool(
-    "kernel_save_app_config",
-    input=SaveAppConfigurationRequest,
-    output=TextResponse,
-)
+@tool("kernel_save_app_config")
 @requires("edit")
 async def save_app_config(
     *,
