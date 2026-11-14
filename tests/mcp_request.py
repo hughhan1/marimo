@@ -33,12 +33,9 @@ def request_meta() -> dict[str, Any]:
 
 
 def request_headers(method: str, name: str | None = None) -> dict[str, str]:
-    """The headers that mirror a request's method and, for a call, its tool.
-
-    The transport answers JSON only to a caller that accepts it.
-    """
+    """The headers that mirror a request's method and, for a call, its tool."""
     headers = {
-        "Accept": "application/json",
+        "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": PROTOCOL_VERSION,
         "Mcp-Method": method,
     }
@@ -152,10 +149,7 @@ def _closed(error: dict[str, Any]) -> SessionClosed:
 
 def stream_headers(name: str) -> dict[str, str]:
     """The headers of a subscription to the event `name`, which streams."""
-    return {
-        **request_headers("events/stream", name),
-        "Accept": "application/json, text/event-stream",
-    }
+    return request_headers("events/stream", name)
 
 
 def stream_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
