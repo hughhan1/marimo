@@ -215,7 +215,7 @@ class Host:
             response = await self.client.post(
                 "mcp",
                 headers={
-                    "Accept": "application/json",
+                    "Accept": "application/json, text/event-stream",
                     "MCP-Protocol-Version": PROTOCOL_VERSION,
                     "Mcp-Method": "tools/call",
                     "Mcp-Name": name,
