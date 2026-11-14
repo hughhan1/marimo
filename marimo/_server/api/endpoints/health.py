@@ -36,7 +36,6 @@ router = APIRouter()
 
 
 def health_check(request: Request) -> JSONResponse:
-    del request  # Unused
     return JSONResponse({"status": "healthy"})
 
 
@@ -115,7 +114,6 @@ async def list_sessions(*, request: Request) -> dict[str, SessionInfo]:
 @requires("read")
 async def version(*, request: Request) -> TextResponse:
     """The server's marimo version."""
-    del request  # Unused
     return TextResponse(text=__version__)
 
 
@@ -151,7 +149,6 @@ class Environment(
 @requires("edit")
 async def environment(*, request: Request) -> Environment:
     """Describe the server's Python environment and platform."""
-    del request  # Unused
     # Collect off the event loop; the install-location and dependency scans
     # touch the filesystem and can block.
     info = await asyncio.to_thread(get_system_info, redact_home=True)

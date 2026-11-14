@@ -349,7 +349,6 @@ async def mcp_status(
     request: Request,
 ) -> MCPStatusResponse:
     """Report the connection status of the configured MCP servers."""
-    del request
     try:
         # Try to get MCP client
         mcp_client = get_mcp_client()

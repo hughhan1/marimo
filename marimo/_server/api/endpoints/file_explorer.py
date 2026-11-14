@@ -132,7 +132,6 @@ async def file_details(
     body: FileDetailsRequest,
 ) -> FileDetailsResponse:
     """Describe a file and read its contents, bounded when asked."""
-    del request
     if body.max_bytes is not None and body.max_bytes < 0:
         raise HTTPException(
             status_code=400,
@@ -187,7 +186,6 @@ async def create_file_or_directory(
     body: FileCreateRequest,
 ) -> FileCreateResponse:
     """Create an empty file, a new notebook, or a directory."""
-    del request
     try:
         info = file_system.create_file_or_directory(
             body.path, body.type, body.name, None
@@ -206,7 +204,6 @@ async def upload_file(
     body: FileUploadRequest,
 ) -> FileCreateResponse:
     """Add a file to the directory `path`, as `name`."""
-    del request
     try:
         info = await file_system.add_file(body.path, body.name, body.file)
         return FileCreateResponse(success=True, info=info)
@@ -223,7 +220,6 @@ async def delete_file_or_directory(
     body: FileDeleteRequest,
 ) -> FileDeleteResponse:
     """Delete a file or directory."""
-    del request
     try:
         file_system.get_info(body.path)
         success = file_system.delete_file_or_directory(body.path)
@@ -241,7 +237,6 @@ async def copy_file_or_directory(
     body: FileCopyRequest,
 ) -> FileCopyResponse:
     """Copy a file or directory to a new path."""
-    del request
     try:
         file_system.get_info(body.path)
         info = file_system.copy_file_or_directory(body.path, body.new_path)
@@ -259,7 +254,6 @@ async def move_file_or_directory(
     body: FileMoveRequest,
 ) -> FileMoveResponse:
     """Move a file or directory to a new path."""
-    del request
     try:
         file_system.get_info(body.path)
         info = file_system.move_file_or_directory(body.path, body.new_path)
@@ -300,7 +294,6 @@ async def open_file(
     body: FileOpenRequest,
 ) -> BaseResponse:
     """Open a file in the user's editor."""
-    del request
     try:
         file_system.get_info(body.path)
         success = file_system.open_in_editor(body.path, body.line_number)
@@ -318,7 +311,6 @@ async def search_files(
     body: FileSearchRequest,
 ) -> FileSearchResponse:
     """Search for files and directories by name."""
-    del request
     files = await asyncio.to_thread(
         file_system.search,
         query=body.query,

@@ -56,7 +56,7 @@ dependencies = [
     "pyzmq>=27.1.0; sys_platform != 'emscripten'",
     # the server's API is MCP tools, served by the MCP SDK
     "mcp>=2.3.0,<3; sys_platform != 'emscripten'",
-    "holon-sh==0.0.1.dev16; sys_platform != 'emscripten'",
+    "holon-sh==0.0.1.dev20; sys_platform != 'emscripten'",
 ]
 readme = "README.md"
 license = "Apache-2.0"
@@ -483,6 +483,7 @@ convention = "google"
 "protocols/host/generate.py" = ["T201"]
 "protocols/host/conformance/test_*.py" = ["ANN201", "ANN202", "T201", "D", "F841", "PLW1514"]
 "marimo/_runtime/patches.py" = ["T100"]
+"marimo/_server/api/endpoints/*" = ["ARG001"]
 # Prefer multi-line "\n".join([...]) expected strings in codegen tests.
 "tests/_ast/test_codegen.py" = ["FLY002"]
 
