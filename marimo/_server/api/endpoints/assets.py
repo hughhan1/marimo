@@ -655,7 +655,6 @@ async def public_files_service_worker(request: Request) -> Response:
     """
     Service worker that adds the notebook ID to the request headers.
     """
-    del request
     return Response(
         content="""
         let notebookIdPromise = new Promise((resolve) => {
