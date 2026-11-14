@@ -100,8 +100,8 @@ class SessionState(msgspec.Struct, frozen=True):
 
     `events` are `session` payloads that build the page: a `reset`, the
     notebook's host events ending in `ready`, then the notifications that
-    start the editor. They are empty when the page has no session yet:
-    subscribing starts one and sends its state. `closed` is why the page
+    start the editor. They are only a `reset` when the page has no session
+    yet: subscribing starts one and sends its state. `closed` is why the page
     cannot follow a session at all.
     """
 
@@ -219,10 +219,10 @@ class SessionEvents:
                 WebSocketCloseReason.KIOSK_NOT_ALLOWED,
             )
         place = _place(manager, params)
-        if place is None:
+        if place is None or bridge.notebook_for_session(place[0]) is None:
             # Subscribing starts or joins the session, and sends its state.
             self._unread.add(params.session_id)
-            return SessionState(self.session.cursor(), [])
+            return SessionState(self.session.cursor(), [_RESET])
         self._unread.discard(params.session_id)
         session, viewer = place
         events = self._snapshot(
@@ -245,8 +245,7 @@ class SessionEvents:
     ) -> list[dict[str, Any]]:
         """A session's state, read without yielding to the event loop."""
         notebook = bridge.notebook_for_session(session)
-        if notebook is None:
-            return [_RESET]
+        assert notebook is not None
         include_code = manager.should_send_code_to_frontend()
         return [
             _RESET,

@@ -547,8 +547,7 @@ def test_running_notebooks_handles_files_outside_directory(
     with connect_session(
         client, f"/ws?session_id={SESSION_ID}", headers=headers
     ) as websocket:
-        data = websocket.receive_text()
-        assert data
+        assert receive_notification(websocket, "kernel-ready")
 
         # Create two separate temp directories
         with tempfile.TemporaryDirectory() as router_dir:
