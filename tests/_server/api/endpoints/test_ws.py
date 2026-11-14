@@ -117,6 +117,12 @@ def test_a_page_keeps_its_session_across_polling_and_streaming_until_it_is_shut_
         time.sleep(0.05)
     with connect_session(client, WS_URL, resume=cursor[0]):
         pass
+    moved = client.post(
+        "/api/kernel/set_ui_element_value",
+        headers=headers("123"),
+        json={"objectIds": ["slider"], "values": [4]},
+    )
+    assert moved.status_code == 200, moved.text
     with connect_session(client, WS_URL, poll=cursor[0]):
         pass
     _portal(client).call(manager.close_session, SessionId("123"))
