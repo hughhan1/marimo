@@ -5980,7 +5980,7 @@
         },
         "outputSchema": {
           "title": "SessionState",
-          "description": "A page's session as of `cursor`, the `session` event's position.\n\n`events` are `session` payloads that build the page: a `reset`, the\nnotebook's host events ending in `ready`, then the notifications that\nstart the editor. They are empty when the page has no session yet:\nsubscribing starts one and sends its state. `closed` is why the page\ncannot follow a session at all.",
+          "description": "A page's session as of `cursor`, the `session` event's position.\n\n`events` are `session` payloads that build the page: a `reset`, the\nnotebook's host events ending in `ready`, then the notifications that\nstart the editor. They are only a `reset` when the page has no session\nyet: subscribing starts one and sends its state. `closed` is why the page\ncannot follow a session at all.",
           "type": "object",
           "properties": {
             "cursor": {
