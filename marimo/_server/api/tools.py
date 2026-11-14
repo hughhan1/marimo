@@ -47,7 +47,6 @@ if TYPE_CHECKING:
     import os
     from collections.abc import Awaitable, Callable, Mapping
 
-    from holon.ext.events import Events
     from mcp.server.context import ServerRequestContext
     from starlette.types import Receive, Scope, Send
 
@@ -412,13 +411,8 @@ def tool_server(
 class MCPEndpoint:
     """An ASGI endpoint serving an MCP server and its events, stateless."""
 
-    def __init__(
-        self,
-        server: Server[Any],
-        events: Events,
-    ) -> None:
+    def __init__(self, server: Server[Any]) -> None:
         self.server = server
-        self.events = events
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
@@ -437,23 +431,20 @@ class MCPEndpoint:
             return
         manager = StreamableHTTPSessionManager(
             self.server,
-            json_response=True,
             stateless=True,
             security_settings=TRANSPORT_SECURITY,
             # The routes took a body of any size, and `mo.ui.file` sends a
             # file's contents inside a UI element's value.
             max_request_body_size=sys.maxsize,
         )
-        # Made here, since the events endpoint hands tools a copy of the scope.
-        tasks = scope.setdefault(_AFTER_REPLY, [])
         # Event hooks read the request, which the SDK does not hand them.
         token = request_var.set(request)
         try:
             async with manager.run():
-                await self.events.asgi(manager)(scope, receive, send)
+                await manager.handle_request(scope, receive, send)
         finally:
             request_var.reset(token)
-        for task in tasks:
+        for task in scope.get(_AFTER_REPLY, ()):
             await task()
 
 
@@ -471,9 +462,8 @@ class EditorMCP(MCPEndpoint):
         server = tool_server(contract, partial(_call, self.files))
         server.extensions[EXTENSION] = self.files.settings()
         server.middleware.insert(0, self.files)
-        served = events()
-        served.serve(server)
-        super().__init__(server, served)
+        events().serve(server)
+        super().__init__(server)
 
 
 def origin_allowed(request: Request) -> bool:

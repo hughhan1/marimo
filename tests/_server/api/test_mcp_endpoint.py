@@ -248,8 +248,13 @@ def test_a_notification_is_acknowledged_and_dropped(
 def test_an_older_client_is_answered_under_the_same_rules(
     client: TestClient,
 ) -> None:
-    # The SDK also answers the revisions before 2026-07-28. The caller's
-    # credential and the reply's shape are marimo's, so they hold there too.
+    # The SDK also answers the revisions before 2026-07-28, as one event of
+    # a stream. The caller's credential and the reply's shape are marimo's,
+    # so they hold there too.
+    def reply(response: Any) -> dict[str, Any]:
+        _, _, data = response.text.partition("data: ")
+        return json.loads(data)  # type: ignore[no-any-return]
+
     call = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -258,11 +263,11 @@ def test_an_older_client_is_answered_under_the_same_rules(
     }
     older = {"MCP-Protocol-Version": "2025-06-18"}
     refused = client.post("/api/mcp", json=call, headers=older)
-    problem = tool_problem(refused.json()["result"])
+    problem = tool_problem(reply(refused)["result"])
     assert problem is not None
     assert problem["status"] == 401
     answered = client.post("/api/mcp", json=call, headers={**HEADERS, **older})
-    assert answered.json()["result"]["structuredContent"]["status"] == (
+    assert reply(answered)["result"]["structuredContent"]["status"] == (
         "healthy"
     )
 
