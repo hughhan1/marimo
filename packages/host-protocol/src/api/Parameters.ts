@@ -9,19 +9,19 @@ import * as Runtime from "../model/Runtime.ts";
 
 export const AttachmentIdentity = Runtime.AttachmentIdentity.annotateKey({
   description:
-    "An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`invalid-request`.\n",
+    "An opaque client identity, copied to the attachment's `identity`.\nClients can reuse it across streams and reconnects so consumers\ncan group their attachments within a host. It is descriptive data,\nnot an authentication credential or an idempotency key. Every\nstream still creates its own attachment. An invalid value is\n`InvalidParams`.\n",
 });
 
 export const AttachmentKind = Runtime.AttachmentKind.annotate({
   default: "client",
 }).annotateKey({
   description:
-    "What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `invalid-request`.\n",
+    "What kind of client is attached, such as `browser`, `editor`, or\n`agent`. Copied to the attachment's `kind`; omitted means `client`.\nHosts accept kinds they do not recognize. Values must contain one\nor more lowercase ASCII letters, digits, or hyphens; an invalid value\nis `InvalidParams`.\n",
 });
 
 export const AttachmentName = Runtime.AttachmentName.annotateKey({
   description:
-    "A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `invalid-request`.\n",
+    "A human-readable label copied to the attachment's `name`, such as\n`Notebook CLI`. Omitted or empty means the attachment's name is\nnull. The value must be at most 256 characters; a longer value\nis `InvalidParams`.\n",
 });
 
 export const IdempotencyKey = Schema.String.annotateKey({

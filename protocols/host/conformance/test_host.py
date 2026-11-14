@@ -153,8 +153,12 @@ async def test_refusals(host, name, arguments, kind):
     ],
     ids=lambda arguments: next(iter(arguments)),
 )
-async def test_notebook_refusals(host, scratch, arguments):
-    failed(await snapshot(host, scratch, **arguments), "invalid-request")
+async def test_arguments_the_schema_refuses_are_invalid_params(
+    host, scratch, arguments
+):
+    with pytest.raises(Refused) as refused:
+        await snapshot(host, scratch, **arguments)
+    assert refused.value.error["code"] == -32602
 
 
 async def test_unknown_arguments_are_invalid_params(host):

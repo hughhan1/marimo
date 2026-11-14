@@ -103,7 +103,7 @@ async def test_ending_the_stream_during_startup_detaches_session(
         consumer.on_detach()
     )
     handler = SessionEventStream(
-        connection=MagicMock(),
+        http_request=MagicMock(),
         bridge=MagicMock(),
         manager=manager,
         params=ConnectionParams(
@@ -157,7 +157,7 @@ def test_without_session(client: TestClient) -> None:
             ws.receive_text()
             raise AssertionError()
     assert exc_info.value.code == WebSocketCodes.UNEXPECTED_ERROR
-    assert "session_id: Field required" in exc_info.value.reason
+    assert "session_id" in exc_info.value.reason
 
 
 def test_disconnect_and_reconnect(client: TestClient) -> None:
@@ -1033,7 +1033,7 @@ async def test_check_status_update_runs_off_the_event_loop(
     monkeypatch.setattr(session_handler, "check_for_updates", slow_check)
 
     handler = SessionEventStream(
-        connection=MagicMock(),
+        http_request=MagicMock(),
         bridge=MagicMock(),
         manager=MagicMock(mode=SessionMode.EDIT),
         params=ConnectionParams(

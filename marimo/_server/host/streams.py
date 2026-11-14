@@ -12,19 +12,18 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from functools import partial
-from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args
+from typing import TYPE_CHECKING, Any, get_args
 
 import msgspec
 from holon.ext.events import Events
 from mcp.types import ErrorData
-from pydantic import PlainValidator, TypeAdapter, WithJsonSchema
+from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.errors import HostError
 from marimo._core.operations import problem, problem_for
 from marimo._core.protocol_tools import EVENTS
-from marimo._server.api.events import request_var
 from marimo._server.api.tools import dedented
 from marimo._server.host.events import serialize_event
 from marimo._server.host.notebook_api import _context
@@ -33,52 +32,19 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterator
 
-    from holon.context import RequestContext
     from holon.ext.events import EventType
+    from mcp.server.context import ServerRequestContext
 
     from marimo._core.stream import RoutedEvent
     from marimo._server.host.bridge import SessionBridge
 
 LOGGER = _loggers.marimo_logger()
 
-T = TypeVar("T")
-
 # The draft leaves -32000 to -32019 to implementations.
 _REFUSED = -32001
 
 KINDS = frozenset(get_args(get_args(protocol.ObjectType)[0])) | {"marimo"}
 """The kinds `types` may name."""
-
-
-def _arguments(kind: type[msgspec.Struct]) -> TypeAdapter[dict[str, Any]]:
-    """A subscription's arguments for the SDK, described by `kind`'s schema.
-
-    The SDK refuses an argument `kind` does not declare. A declared one's
-    invalid value is the host's problem, so the hooks decode the rest.
-    """
-    _, definitions = msgspec.json.schema_components([kind])
-    (schema,) = definitions.values()
-    names = {field.encode_name for field in msgspec.structs.fields(kind)}
-
-    def declared(value: dict[str, Any]) -> dict[str, Any]:
-        if unknown := set(value) - names:
-            raise ValueError(f"no argument named {', '.join(sorted(unknown))}")
-        return value
-
-    return TypeAdapter(
-        Annotated[
-            dict[str, Any],
-            PlainValidator(declared),
-            WithJsonSchema(dedented(schema)),
-        ]
-    )
-
-
-def _decode(arguments: dict[str, Any], kind: type[T]) -> T:
-    try:
-        return msgspec.convert(arguments, kind)
-    except msgspec.ValidationError as error:
-        raise _Refused(problem("invalid-request", str(error))) from None
 
 
 class _EventSubscription:
@@ -216,14 +182,14 @@ def host_events() -> Events:
         )
 
     async def on_catalog(
-        context: RequestContext,
+        context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        host = _context(request_var.get())
+        assert isinstance(context.request, Request)
+        host = _context(context.request)
         try:
-            asked = _decode(arguments, protocol.CatalogEventsRequest)
+            asked = msgspec.convert(arguments, protocol.CatalogEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
         except _Refused as refused:
             refuse(catalog, subscription_id, refused.problem)
@@ -240,14 +206,14 @@ def host_events() -> Events:
         )
 
     async def on_notebook(
-        context: RequestContext,
+        context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        host = _context(request_var.get())
+        assert isinstance(context.request, Request)
+        host = _context(context.request)
         try:
-            asked = _decode(arguments, protocol.NotebookEventsRequest)
+            asked = msgspec.convert(arguments, protocol.NotebookEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
             notebook = await host.bridge.host.notebook(asked.notebook_id)
             attachment = notebook.attach(
@@ -276,10 +242,12 @@ def host_events() -> Events:
         name: str, on_subscribe: Any
     ) -> EventType[Any, dict[str, Any]]:
         event = EVENTS[name]
+        _, definitions = msgspec.json.schema_components([event.arguments])
+        (arguments,) = definitions.values()
         return served.event(
             name,
             description=event.description,
-            input_schema=_arguments(event.arguments),
+            input_schema=dedented(arguments),
             payload_schema=dedented(msgspec.json.schema(event.payload)),
             delivery=("push",),
             on_subscribe=on_subscribe,

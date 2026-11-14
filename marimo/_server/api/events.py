@@ -5,17 +5,18 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import aclosing
-from contextvars import ContextVar
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from holon.ext.events import Events
 from mcp.types import INVALID_PARAMS, ErrorData
 from pydantic import BaseModel, ConfigDict
+from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
+from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionRejection,
@@ -29,13 +30,10 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from holon.context import RequestContext
     from holon.ext.events import EventType
-    from starlette.requests import Request
+    from mcp.server.context import ServerRequestContext
 
 LOGGER = _loggers.marimo_logger()
-
-request_var: ContextVar[Request] = ContextVar("marimo.events.request")
 
 # The sketch leaves -32000 to -32019 to implementations.
 _CLOSED = -32000
@@ -62,31 +60,33 @@ def events() -> Events:
     served = Events()
 
     def authorize(
-        context: RequestContext, arguments: SessionArguments
+        context: ServerRequestContext[Any, Any], arguments: dict[str, Any]
     ) -> bool:
-        del context, arguments
-        return "read" in request_var.get().auth.scopes
+        del arguments
+        assert isinstance(context.request, Request)
+        return "read" in context.request.auth.scopes
 
     async def on_subscribe(
-        context: RequestContext,
-        arguments: SessionArguments,
+        context: ServerRequestContext[Any, Any],
+        arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        connection = request_var.get()
+        asked = SessionArguments.model_validate(arguments)
+        connection = context.request
+        assert isinstance(connection, Request)
         app_state = AppState(connection)
         params = parse_connection_params(
             app_state,
-            session_id=arguments.session_id,
-            file=arguments.file,
-            kiosk=arguments.kiosk,
-            query_params=arguments.query_params,
+            session_id=asked.session_id,
+            file=asked.file,
+            kiosk=asked.kiosk,
+            query_params=asked.query_params,
         )
         if isinstance(params, ConnectionRejection):
             terminate(subscription_id, INVALID_PARAMS, params.reason)
             return None
         stream = SessionEventStream(
-            connection,
+            HTTPRequest.from_request(connection),
             bridge=(await ensure_host(connection.app)).bridge,
             manager=app_state.session_manager,
             params=params,
@@ -123,10 +123,10 @@ def events() -> Events:
             LOGGER.exception("An editor session's stream failed")
             terminate(subscription_id, _CLOSED, "The session's stream failed")
 
-    session: EventType[SessionArguments, SessionFrame] = served.event(
+    session: EventType[dict[str, Any], SessionFrame] = served.event(
         "session",
         description="Follow an editor session: its notebook and kernel.",
-        input_schema=SessionArguments,
+        input_schema=SessionArguments.model_json_schema(),
         payload_schema=SessionFrame.model_json_schema(),
         delivery=("push",),
         authorize=authorize,
