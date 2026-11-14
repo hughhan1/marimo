@@ -192,23 +192,28 @@ describe("sessionEvents", () => {
     events.close();
   });
 
-  it("polls while the page is hidden and is pushed while it is visible, resuming from its cursor", async () => {
-    let visibility: DocumentVisibilityState = "hidden";
-    const page = new EventTarget() as Document;
-    Object.defineProperty(page, "visibilityState", { get: () => visibility });
+  it("polls unless its window has focus, where it is pushed, resuming from its cursor", async () => {
+    let focused = false;
+    const view = Object.assign(new EventTarget(), {
+      document: { hasFocus: () => focused } as Document,
+    });
     const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
     const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, fake.session, page),
+      sessionEvents(async () => ARGS, fake.session, view),
     );
     await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
-    visibility = "visible";
-    page.dispatchEvent(new Event("visibilitychange"));
+    focused = true;
+    view.dispatchEvent(new Event("focus"));
     await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    focused = false;
+    view.dispatchEvent(new Event("blur"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(3));
     expect(
       fake.follows.map(({ delivery, cursor }) => [delivery, cursor]),
     ).toEqual([
       ["poll", "c1"],
       ["push", "c1"],
+      ["poll", "c1"],
     ]);
     expect(fake.session.read).toHaveBeenCalledTimes(1);
     events.close();

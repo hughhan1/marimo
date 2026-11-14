@@ -57,17 +57,20 @@ function reasonOf(error: unknown): string | undefined {
  * from the state's cursor.
  *
  * The client reconnects and resumes from the cursor by itself, and the page
- * shows that it is connecting meanwhile. A visible page is pushed each
- * change, and a hidden one polls, so hidden tabs hold no connection. When
+ * shows that it is connecting meanwhile. The page in the focused window is
+ * pushed each change and every other page polls, so of a browser's pages
+ * only one holds a connection open. When
  * the server skipped changes, the page reads its state again.
  */
 export function sessionEvents(
   args: () => Promise<SessionArguments>,
   session: Session,
-  document: Document = globalThis.document,
+  view: Pick<
+    Window,
+    "document" | "addEventListener" | "removeEventListener"
+  > = globalThis.window,
 ): NotebookTransport {
-  const delivery = () =>
-    document.visibilityState === "hidden" ? "poll" : "push";
+  const delivery = () => (view.document.hasFocus() ? "push" : "poll");
   return async ({ signal }, { open, lost, message }) => {
     const named = await args();
     while (!signal.aborted) {
@@ -91,7 +94,8 @@ export function sessionEvents(
             turn.abort();
           }
         };
-        document.addEventListener("visibilitychange", switched);
+        view.addEventListener("focus", switched);
+        view.addEventListener("blur", switched);
         let reconnecting = false;
         let following: { cursor: string | null } | undefined;
         try {
@@ -138,7 +142,8 @@ export function sessionEvents(
             throw stopped(reasonOf(error));
           }
         } finally {
-          document.removeEventListener("visibilitychange", switched);
+          view.removeEventListener("focus", switched);
+          view.removeEventListener("blur", switched);
         }
       }
     }
