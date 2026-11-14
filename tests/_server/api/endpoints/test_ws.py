@@ -157,7 +157,7 @@ def test_without_session(client: TestClient) -> None:
             ws.receive_text()
             raise AssertionError()
     assert exc_info.value.code == WebSocketCodes.UNEXPECTED_ERROR
-    assert "session_id: Field required" in exc_info.value.reason
+    assert "'session_id' is a required property" in exc_info.value.reason
 
 
 def test_disconnect_and_reconnect(client: TestClient) -> None:

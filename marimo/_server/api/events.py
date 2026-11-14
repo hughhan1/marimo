@@ -60,7 +60,7 @@ def events() -> Events:
     served = Events()
 
     def authorize(
-        context: ServerRequestContext[Any, Any], arguments: SessionArguments
+        context: ServerRequestContext[Any, Any], arguments: dict[str, Any]
     ) -> bool:
         del arguments
         assert isinstance(context.request, Request)
@@ -68,18 +68,19 @@ def events() -> Events:
 
     async def on_subscribe(
         context: ServerRequestContext[Any, Any],
-        arguments: SessionArguments,
+        arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
+        asked = SessionArguments.model_validate(arguments)
         connection = context.request
         assert isinstance(connection, Request)
         app_state = AppState(connection)
         params = parse_connection_params(
             app_state,
-            session_id=arguments.session_id,
-            file=arguments.file,
-            kiosk=arguments.kiosk,
-            query_params=arguments.query_params,
+            session_id=asked.session_id,
+            file=asked.file,
+            kiosk=asked.kiosk,
+            query_params=asked.query_params,
         )
         if isinstance(params, ConnectionRejection):
             terminate(subscription_id, INVALID_PARAMS, params.reason)
@@ -122,10 +123,10 @@ def events() -> Events:
             LOGGER.exception("An editor session's stream failed")
             terminate(subscription_id, _CLOSED, "The session's stream failed")
 
-    session: EventType[SessionArguments, SessionFrame] = served.event(
+    session: EventType[dict[str, Any], SessionFrame] = served.event(
         "session",
         description="Follow an editor session: its notebook and kernel.",
-        input_schema=SessionArguments,
+        input_schema=SessionArguments.model_json_schema(),
         payload_schema=SessionFrame.model_json_schema(),
         delivery=("push",),
         authorize=authorize,

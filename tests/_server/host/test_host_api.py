@@ -271,10 +271,9 @@ async def test_an_unknown_cursor_resets_a_filtered_stream(
     [
         ("catalog", {"cursor": ""}),
         ("notebook", {"cursor": ""}),
-        ("notebook", {"run_id": ""}),
     ],
 )
-async def test_an_empty_cursor_or_run_is_a_400_problem(
+async def test_an_empty_cursor_is_a_400_problem(
     harness: Harness, name: str, arguments: dict[str, Any]
 ) -> None:
     if name == "notebook":
@@ -318,13 +317,27 @@ async def test_an_unknown_type_filter_is_a_400_problem(
     assert notebook._attachments == {}
 
 
-async def test_an_unknown_argument_is_refused_before_subscribing(
-    harness: Harness,
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("future", True),
+        ("run_id", ""),
+        ("attachment_identity", ""),
+        ("attachment_kind", "Agent"),
+        ("attachment_name", "n" * 257),
+    ],
+)
+async def test_an_argument_the_schema_refuses_is_invalid_params_before_subscribing(
+    harness: Harness, argument: str, value: Any
 ) -> None:
     error = await refused(
-        harness.app, "notebook", notebook_id=harness.notebook_id, future=True
+        harness.app,
+        "notebook",
+        notebook_id=harness.notebook_id,
+        **{argument: value},
     )
     assert error["code"] == -32602
+    assert argument in error["message"]
     assert harness.host.peek_notebook(harness.notebook_id) is None
 
 
@@ -605,30 +618,6 @@ async def test_custom_events_have_their_own_kind(
     disconnect_custom()
     disconnect_attach()
     await asyncio.gather(custom_task, attach_task)
-
-
-@pytest.mark.parametrize(
-    ("argument", "value"),
-    [
-        ("attachment_identity", ""),
-        ("attachment_kind", "Agent"),
-        ("attachment_name", "n" * 257),
-    ],
-)
-async def test_invalid_attachment_arguments_are_rejected(
-    harness: Harness, argument: str, value: str
-) -> None:
-    notebook = await harness.host.notebook(harness.notebook_id)
-    problem = await refused(
-        harness.app,
-        "notebook",
-        notebook_id=harness.notebook_id,
-        **{argument: value},
-    )
-    assert problem["status"] == 400
-    assert problem["type"].endswith(":invalid-request")
-    assert f"$.{argument}" in problem["detail"]
-    assert notebook._attachments == {}
 
 
 async def test_an_unexpected_failure_is_an_internal_problem(
