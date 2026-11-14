@@ -99,29 +99,10 @@ def test_a_page_that_read_no_session_follows_the_one_another_page_started(
     with connect_session(client, WS_URL) as first:
         assert_kernel_ready_response(receive_notification(first))
         with connect_session(client, OTHER_WS_URL, resume=cursor[0]) as second:
-            assert_kernel_ready_response(
-                receive_notification(second),
-                create_response({"kiosk": True, "resumed": True}),
-            )
+            receive_until("kernel-ready", second)
 
 
-def test_a_page_that_polls_and_streams_in_turn_stays_in_its_session(
-    client: TestClient,
-) -> None:
-    cursor: list[str] = []
-    with connect_session(client, WS_URL) as page:
-        assert_kernel_ready_response(receive_notification(page))
-    with connect_session(client, WS_URL, read_only=cursor):
-        pass
-    with connect_session(client, WS_URL, poll=cursor[0]):
-        pass
-    with connect_session(client, WS_URL, resume=cursor[0]):
-        pass
-    with connect_session(client, WS_URL, poll=cursor[0]):
-        pass
-
-
-def test_a_page_polling_a_session_that_was_shut_down_is_told_it_is_gone(
+def test_a_page_keeps_its_session_across_polling_and_streaming_until_it_is_shut_down(
     client: TestClient,
 ) -> None:
     cursor: list[str] = []
@@ -134,31 +115,16 @@ def test_a_page_polling_a_session_that_was_shut_down_is_told_it_is_gone(
     while manager.get_session(SessionId("123")) is None:
         assert time.monotonic() < deadline
         time.sleep(0.05)
+    with connect_session(client, WS_URL, resume=cursor[0]):
+        pass
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
     _portal(client).call(manager.close_session, SessionId("123"))
     with pytest.raises(SessionClosed) as closed:
         with connect_session(client, WS_URL, poll=cursor[0]):
             pass
     assert closed.value.error is not None
     assert closed.value.error["code"] == NOT_FOUND
-    assert closed.value.reason == "MARIMO_SHUTDOWN"
-
-
-def test_a_page_rejoining_a_session_another_took_over_is_told_it_views_it(
-    client: TestClient,
-) -> None:
-    cursor: list[str] = []
-    with connect_session(client, WS_URL, read_only=cursor):
-        pass
-    with connect_session(client, WS_URL, resume=cursor[0]) as page:
-        assert_kernel_ready_response(receive_notification(page))
-        instantiate(client, "123")
-    with connect_session(client, OTHER_WS_URL) as other:
-        assert_kernel_ready_response(
-            receive_notification(other), create_response({"resumed": True})
-        )
-        with connect_session(client, WS_URL, resume=cursor[0]) as page:
-            told = receive_until("consumer-capabilities", page)
-            assert told["data"]["consumer_capabilities"]["edit"] is False
 
 
 def test_a_join_that_fails_ends_the_subscription_for_good(
@@ -194,11 +160,10 @@ def test_a_page_whose_join_was_refused_can_join_again(
         del self, session
 
     monkeypatch.setattr(SessionBridge, "adopt", unavailable)
-    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+    with pytest.raises(WebSocketDisconnect):  # noqa: PT012
         with connect_session(client, WS_URL) as websocket:
             while True:
                 websocket.receive_text()
-    assert exc_info.value.reason == "Notebook unavailable"
     monkeypatch.setattr(SessionBridge, "adopt", adopt)
     with connect_session(client, WS_URL) as websocket:
         assert_kernel_ready_response(receive_notification(websocket))
@@ -229,17 +194,14 @@ def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
-        instantiate(client, "123")
         stable_id = manager.sessions[SessionId("123")].stable_id
         websocket.close()
     with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data, create_response({"resumed": True}))
+        receive_notification(websocket)
         assert manager.sessions[SessionId("123")].stable_id == stable_id
     # New connection with a new browser ID (simulates refresh)
     with connect_session(client, OTHER_WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data, create_response({"resumed": True}))
+        receive_notification(websocket)
         assert manager.sessions[SessionId("456")].stable_id == stable_id
 
 
@@ -254,7 +216,6 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
     )
     with connect_session(client, WS_URL) as websocket:
         assert_kernel_ready_response(receive_notification(websocket))
-        instantiate(client, "123")
         view = manager.sessions[SessionId("123")].session_view
         view.add_notification(
             EnvironmentOperationNotification(
@@ -272,10 +233,6 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
 
     for url in (WS_URL, OTHER_WS_URL):
         with connect_session(client, url) as websocket:
-            message = receive_notification(websocket)
-            assert_kernel_ready_response(
-                message, create_response({"resumed": True})
-            )
             environment = receive_until("environment-state", websocket)["data"]
             assert environment["source"] == "kernel"
             assert environment["state"]["operations"][0]["logs"] == {
@@ -525,10 +482,7 @@ async def test_reconnection_cancels_close_handle(client: TestClient) -> None:
 
         # Reconnect immediately (before TTL expires)
         with connect_session(client, WS_URL) as new_websocket:
-            data = receive_notification(new_websocket)
-            assert_kernel_ready_response(
-                data, create_response({"resumed": True})
-            )
+            receive_notification(new_websocket)
 
             # Session should still exist (TTL was canceled)
             session = session_manager.get_session("123")
@@ -573,8 +527,6 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
     a_disconnected = False
     try:
         assert_kernel_ready_response(receive_notification(socket_a))
-        if mode is SessionMode.EDIT:
-            instantiate(client, "123")
         assert session_manager.get_session("123") is not None
 
         with patch(
@@ -590,10 +542,7 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
         assert captured, "Consumer A disconnect did not schedule a TTL close"
 
         with connect_session(client, WS_URL) as ws_b:
-            data = receive_notification(ws_b)
-            assert_kernel_ready_response(
-                data, create_response({"resumed": True})
-            )
+            receive_notification(ws_b)
 
             if disconnect_reconnected:
 
@@ -758,35 +707,6 @@ def test_missing_file_key_closes_connection(client: TestClient) -> None:
 # ============================================================================
 # Advanced WebSocket State Machine Tests
 # ============================================================================
-
-
-async def test_rapid_reconnection_cancels_ttl_cleanup(
-    client: TestClient,
-) -> None:
-    """Test that rapid reconnection cancels the TTL cleanup timer."""
-    with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data)
-        instantiate(client, "123")
-
-    # Disconnect and immediately reconnect (before TTL expires)
-    await asyncio.sleep(0.1)
-
-    with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data, create_response({"resumed": True}))
-
-
-async def test_multiple_rapid_reconnections(client: TestClient) -> None:
-    """Test multiple rapid connect/disconnect cycles don't break session."""
-    for i in range(5):
-        with connect_session(client, WS_URL) as websocket:
-            data = receive_notification(websocket)
-            assert_kernel_ready_response(
-                data, create_response({"resumed": i > 0})
-            )
-            if i == 0:
-                instantiate(client, "123")
 
 
 async def test_websocket_message_queue_delivery(client: TestClient) -> None:

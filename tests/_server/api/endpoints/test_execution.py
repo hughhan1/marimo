@@ -863,7 +863,8 @@ def test_takeover_transfers_edit_without_disconnect(
                 ),
             )
 
-            receive_until("consumer-capabilities", viewer)
+            joined = receive_until("consumer-capabilities", viewer)
+            assert joined["data"]["consumer_capabilities"]["edit"] is False
             resp = client.post(
                 "/api/kernel/takeover",
                 headers={**WS_HEADERS, "Marimo-Session-Id": "vw1"},

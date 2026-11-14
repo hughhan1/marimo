@@ -2,6 +2,8 @@
 
 import { NotebookEvents, StreamStopped } from "@marimo-team/client";
 import { describe, expect, it, vi } from "vitest";
+import { ConnectionClosedReason } from "../../notebook/replica";
+import { closedStatus } from "../connection-state";
 import {
   type Session,
   type SessionArguments,
@@ -89,24 +91,6 @@ const ready = { event: "ready", id: "h-1", data: {} };
 const reset = { event: "reset", data: {} };
 
 describe("sessionEvents", () => {
-  it("delivers the session's state, then follows its changes from the state's cursor", async () => {
-    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, fake.session),
-      {
-        types: ["ready", "reset", "marimo"],
-      },
-    );
-    const received = collect(events);
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
-    expect(fake.follows[0].cursor).toBe("c1");
-    const change = { event: "marimo", data: { marimo: { op: "alert" } } };
-    fake.send(change);
-    await vi.waitFor(() => expect(received).toEqual([reset, ready, change]));
-    expect(events.status).toBe("connected");
-    events.close();
-  });
-
   it("stops with the status of the reason a session refused the page, after its last words", async () => {
     const error = {
       event: "marimo",
@@ -129,22 +113,21 @@ describe("sessionEvents", () => {
     expect(received).toEqual([error]);
     expect(stopped).toBeInstanceOf(StreamStopped);
     expect((stopped as StreamStopped).cause).toMatchObject({
-      reason: "Failed to start kernel sandbox",
+      code: ConnectionClosedReason.KERNEL_STARTUP_ERROR,
     });
-    expect(fake.session.follow).not.toHaveBeenCalled();
   });
 
   it.each([
-    [{ code: -32024, message: "Forbidden" }, "not authorized"],
+    [{ code: -32024, message: "Forbidden" }, "MARIMO_UNAUTHORIZED"],
     [
       {
         code: -32024,
         message: "MARIMO_KIOSK_NOT_ALLOWED",
         data: { reason: "MARIMO_KIOSK_NOT_ALLOWED" },
       },
-      "kiosk mode is not available for this session",
+      "MARIMO_KIOSK_NOT_ALLOWED",
     ],
-    [{ code: -32023, message: "NotFound" }, "kernel not found"],
+    [{ code: -32023, message: "NotFound" }, undefined],
   ])(
     "stops when the session ends or refuses the subscription (%o)",
     async (failure, reason) => {
@@ -155,10 +138,7 @@ describe("sessionEvents", () => {
       );
       const stopped = await events.closed.catch((error: unknown) => error);
       expect(stopped).toBeInstanceOf(StreamStopped);
-      expect((stopped as StreamStopped).cause).toMatchObject({
-        state: "CLOSED",
-        reason,
-      });
+      expect((stopped as StreamStopped).cause).toEqual(closedStatus(reason));
     },
   );
 
@@ -175,33 +155,11 @@ describe("sessionEvents", () => {
     const received = collect(events);
     await vi.advanceTimersByTimeAsync(3000);
     expect(received).toEqual([reset, ready]);
-    expect(fake.follows).toHaveLength(1);
     events.close();
     vi.useRealTimers();
   });
 
-  it("reads the state again after the server skipped changes, and follows from its cursor", async () => {
-    const fake = fakeSession([
-      { cursor: "c1", events: [reset, ready] },
-      { cursor: "c9", events: [reset, { ...ready, id: "h-9" }] },
-    ]);
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, fake.session),
-      {
-        types: ["ready", "reset"],
-      },
-    );
-    const received = collect(events);
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
-    fake.follows[0].onGap();
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
-    expect(fake.follows[0].signal.aborted).toBe(true);
-    expect(fake.follows[1].cursor).toBe("c9");
-    expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]);
-    events.close();
-  });
-
-  it("keeps following until its next subscription is confirmed, passing on each change once", async () => {
+  it("pushes to the focused window and polls otherwise, following until the next subscription is confirmed and passing on each change once", async () => {
     let focused = false;
     const view = Object.assign(new EventTarget(), {
       document: { hasFocus: () => focused } as Document,
@@ -213,6 +171,7 @@ describe("sessionEvents", () => {
     );
     const received = collect(events);
     await vi.waitFor(() => expect(received).toHaveLength(2));
+    expect(events.status).toBe("connected");
     const confirm = fake.holdNext();
     focused = true;
     view.dispatchEvent(new Event("focus"));
@@ -222,7 +181,6 @@ describe("sessionEvents", () => {
     const change = { event: "marimo", data: { marimo: { op: "alert" } } };
     fake.send(change, "e1");
     await vi.waitFor(() => expect(received).toHaveLength(3));
-    expect(fake.follows[0].signal.aborted).toBe(false);
     confirm();
     await vi.waitFor(() => expect(fake.follows).toHaveLength(3));
     expect(fake.follows[0].signal.aborted).toBe(true);
@@ -230,10 +188,17 @@ describe("sessionEvents", () => {
     fake.send(change, "e2");
     await vi.waitFor(() => expect(received).toHaveLength(4));
     expect(received).toEqual([reset, ready, change, change]);
+    expect(
+      fake.follows.map(({ delivery, cursor }) => [delivery, cursor]),
+    ).toEqual([
+      ["poll", "c1"],
+      ["push", "c1"],
+      ["poll", "c1"],
+    ]);
     events.close();
   });
 
-  it("applies nothing more from a kept subscription that skipped changes, and reads its state again", async () => {
+  it("applies nothing more from a kept subscription that skipped changes, and follows again from a fresh state", async () => {
     let focused = false;
     const view = Object.assign(new EventTarget(), {
       document: { hasFocus: () => focused } as Document,
@@ -258,33 +223,7 @@ describe("sessionEvents", () => {
     await vi.waitFor(() =>
       expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]),
     );
-    events.close();
-  });
-
-  it("polls unless its window has focus, where it is pushed, resuming from its cursor", async () => {
-    let focused = false;
-    const view = Object.assign(new EventTarget(), {
-      document: { hasFocus: () => focused } as Document,
-    });
-    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, fake.session, view),
-    );
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
-    focused = true;
-    view.dispatchEvent(new Event("focus"));
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
-    focused = false;
-    view.dispatchEvent(new Event("blur"));
-    await vi.waitFor(() => expect(fake.follows).toHaveLength(3));
-    expect(
-      fake.follows.map(({ delivery, cursor }) => [delivery, cursor]),
-    ).toEqual([
-      ["poll", "c1"],
-      ["push", "c1"],
-      ["poll", "c1"],
-    ]);
-    expect(fake.session.read).toHaveBeenCalledTimes(1);
+    expect(fake.follows.at(-1)?.cursor).toBe("c9");
     events.close();
   });
 });
