@@ -217,12 +217,15 @@ describe("sessionEvents", () => {
     focused = true;
     view.dispatchEvent(new Event("focus"));
     await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    focused = false;
+    view.dispatchEvent(new Event("blur"));
     const change = { event: "marimo", data: { marimo: { op: "alert" } } };
     fake.send(change, "e1");
     await vi.waitFor(() => expect(received).toHaveLength(3));
     expect(fake.follows[0].signal.aborted).toBe(false);
     confirm();
-    await vi.waitFor(() => expect(fake.follows[0].signal.aborted).toBe(true));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(3));
+    expect(fake.follows[0].signal.aborted).toBe(true);
     fake.send(change, "e1");
     fake.send(change, "e2");
     await vi.waitFor(() => expect(received).toHaveLength(4));

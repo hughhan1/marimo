@@ -35,6 +35,7 @@ export {
   type Transport,
   type NotebookTransport,
   StreamStopped,
+  answered,
 } from "./transport/frame.ts";
 
 export {

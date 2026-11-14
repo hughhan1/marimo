@@ -1,13 +1,15 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
-import { type NotebookTransport, StreamStopped } from "@marimo-team/client";
+import {
+  answered,
+  type NotebookTransport,
+  StreamStopped,
+} from "@marimo-team/client";
 import type { EventArguments, EventData, Outputs } from "#holon-ui";
 import { closedStatus } from "./connection-state";
 
 // The draft's Forbidden: the caller may not follow the session.
 const FORBIDDEN = -32024;
-const CONNECTION_CLOSED = -32000;
-const REQUEST_TIMEOUT = -32001;
 
 /** What a page subscribes to its session with, as the server declares it. */
 export type SessionArguments = EventArguments["marimo"]["session"];
@@ -51,23 +53,6 @@ function reasonOf(error: unknown): string | undefined {
     return reason;
   }
   return failure?.code === FORBIDDEN ? "MARIMO_UNAUTHORIZED" : undefined;
-}
-
-function answered(error: unknown): boolean {
-  const failure = error as {
-    code?: unknown;
-    status?: unknown;
-    result?: unknown;
-  } | null;
-  return (
-    failure?.result !== undefined ||
-    (typeof failure?.code === "number" &&
-      failure.code !== CONNECTION_CLOSED &&
-      failure.code !== REQUEST_TIMEOUT) ||
-    (typeof failure?.status === "number" &&
-      failure.status >= 400 &&
-      failure.status < 500)
-  );
 }
 
 /**
@@ -162,7 +147,7 @@ export function sessionEvents(
             const ended = await Promise.race([drained, replaced.promise]);
             cursor = events.cursor ?? cursor;
             if (!ended) {
-              recording = passed = new Set();
+              recording = passed = new Set(skip);
               held = { turn, drained: drained.catch(() => undefined) };
             }
           } catch (error) {
