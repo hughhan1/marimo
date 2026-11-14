@@ -86,6 +86,8 @@ class Response:
         """The events received, each `{event, id?, data}`."""
         self.ended: dict[str, Any] | None = None
         """The error the host ended the subscription with."""
+        self.cursor: str | None = None
+        """The MCP Events cursor a client resumes the subscription from."""
         self.body = b""
         self.changed = asyncio.Event()
         self._buffer = ""
@@ -96,6 +98,7 @@ class Response:
         while "\n\n" in self._buffer:
             raw, self._buffer = self._buffer.split("\n\n", 1)
             message = _message(raw)
+            self.cursor = message.get("params", {}).get("cursor", self.cursor)
             if message.get("method") == "notifications/events/event":
                 self.records.append(message["params"]["data"])
             elif message.get("method") == "notifications/events/terminated":
@@ -236,18 +239,20 @@ def subscribe(
     headers: dict[str, str] = AUTH,
     host: str = AUTHORITY,
     client: tuple[str, int] = LOOPBACK,
+    resume: str | None = None,
     **arguments: Any,
 ) -> tuple[Response, asyncio.Task[None], Callable[[], None]]:
     """Subscribe to the host's event `name`, as a client does.
 
-    Returns what `request` does; the response's records are the events.
+    `resume` is the MCP Events cursor a client resumes from. Returns what
+    `request` does; the response's records are the events.
     """
     return request(
         app,
         "POST",
         "/mcp",
         headers={**stream_headers(name), **headers},
-        body=json.dumps(stream_payload(name, arguments)).encode(),
+        body=json.dumps(stream_payload(name, arguments, resume)).encode(),
         host=host,
         client=client,
     )

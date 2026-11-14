@@ -3,8 +3,10 @@
 
 A subscription names what it follows in its arguments, and the host sends
 it a snapshot or replay that ends in `ready`, then each change, as targeted
-occurrences whose data is the protocol's event. A subscription the host
-refuses ends with the problem as its error's data.
+occurrences whose data is the protocol's event. A subscription the client
+resumes from an MCP cursor starts over with `reset` and a snapshot, since
+its `cursor` argument is the one it first subscribed with. A subscription
+the host refuses ends with the problem as its error's data.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from marimo._core import protocol
 from marimo._core.errors import HostError
 from marimo._core.operations import problem, problem_for
 from marimo._core.protocol_tools import EVENTS
+from marimo._core.stream import RoutedEvent
 from marimo._server.api.tools import dedented
 from marimo._server.host.events import serialize_event
 from marimo._server.host.notebook_api import _context
@@ -35,7 +38,6 @@ if TYPE_CHECKING:
     from holon.ext.events import EventType
     from mcp.server.context import ServerRequestContext
 
-    from marimo._core.stream import RoutedEvent
     from marimo._server.host.bridge import SessionBridge
 
 LOGGER = _loggers.marimo_logger()
@@ -131,6 +133,7 @@ def host_events() -> Events:
         *,
         notebook_id: protocol.NotebookId | None,
         run_id: str | None = None,
+        reset: bool = False,
         on_close: Callable[[], None] | None = None,
     ) -> Callable[[], Awaitable[None]]:
         def send(event: RoutedEvent) -> None:
@@ -148,6 +151,8 @@ def host_events() -> Events:
                     notebook_id=notebook_id,
                     run_id=run_id,
                 ) as subscription:
+                    if reset:
+                        send(RoutedEvent(protocol.ResetEvent(data={})))
                     for event in subscription.initial:
                         send(event)
                     while True:
@@ -191,6 +196,7 @@ def host_events() -> Events:
         try:
             asked = msgspec.convert(arguments, protocol.CatalogEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
+            resumed = _resumed(context)
         except _Refused as refused:
             refuse(catalog, subscription_id, refused.problem)
             return None
@@ -200,9 +206,10 @@ def host_events() -> Events:
             catalog,
             subscription_id,
             host.bridge,
-            cursor,
+            None if resumed else cursor,
             types,
             notebook_id=None,
+            reset=resumed,
         )
 
     async def on_notebook(
@@ -215,6 +222,7 @@ def host_events() -> Events:
         try:
             asked = msgspec.convert(arguments, protocol.NotebookEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
+            resumed = _resumed(context)
             notebook = await host.bridge.host.notebook(asked.notebook_id)
             attachment = notebook.attach(
                 identity=_given(asked.attachment_identity),
@@ -231,10 +239,11 @@ def host_events() -> Events:
             notebook_events,
             subscription_id,
             host.bridge,
-            cursor,
+            None if resumed else cursor,
             types,
             notebook_id=notebook.id,
             run_id=_given(asked.run_id),
+            reset=resumed,
             on_close=lambda: notebook.detach(attachment.id),
         )
 
@@ -256,6 +265,12 @@ def host_events() -> Events:
     catalog = declare("catalog", on_catalog)
     notebook_events = declare("notebook", on_notebook)
     return served
+
+
+def _resumed(context: ServerRequestContext[Any, Any]) -> bool:
+    return (
+        context.params is not None and context.params.get("cursor") is not None
+    )
 
 
 def _given(value: str | msgspec.UnsetType) -> str | None:

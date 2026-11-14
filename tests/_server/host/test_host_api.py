@@ -460,6 +460,45 @@ async def test_types_and_cursors_apply_to_the_stream(harness: Harness) -> None:
     disconnect()
 
 
+async def test_a_stream_the_client_resumes_starts_over_with_reset(
+    harness: Harness,
+) -> None:
+    created = await call(
+        harness.app,
+        "notebook.create",
+        idempotency_key="create",
+        project_id=harness.bridge.index.project_id,
+        path="removed.py",
+    )
+    assert created.ok, created.problem
+    first, _, disconnect = subscribe(
+        harness.app, "catalog", types=["notebook"]
+    )
+    await wait_for(first, until_ready)
+    assert "removed.py" in [
+        r["data"]["notebook"]["path"] for r in first.records[:-1]
+    ]
+    disconnect()
+    deleted = await call(
+        harness.app,
+        "notebook.delete",
+        idempotency_key="delete",
+        notebook_id=created.data["id"],
+    )
+    assert deleted.ok, deleted.problem
+
+    resumed, _, disconnect = subscribe(
+        harness.app,
+        "catalog",
+        types=["notebook"],
+        resume=first.cursor,
+    )
+    await wait_for(resumed, until_ready)
+    assert resumed.names() == ["reset", "notebook", "ready"]
+    assert resumed.records[1]["data"]["notebook"]["path"] != "removed.py"
+    disconnect()
+
+
 async def test_a_notebook_stream_attaches_the_client(harness: Harness) -> None:
     notebook = await harness.host.notebook(harness.notebook_id)
     await analyzed(notebook)
