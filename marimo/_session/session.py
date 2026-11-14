@@ -249,6 +249,7 @@ class SessionImpl(Session):
         self.app_file_manager.config_reader = config_manager
         self.room = Room()
         self.connection_generation = 0
+        self.instantiated = False
         self._kernel_manager = kernel_manager
         self.ttl_seconds = (
             ttl_seconds if ttl_seconds is not None else _DEFAULT_TTL_SECONDS
@@ -531,6 +532,7 @@ class SessionImpl(Session):
         execution_requests: Sequence[ExecuteCellCommand] | None = None,
     ) -> None:
         """Instantiate the app."""
+        self.instantiated = True
         app = self.app_file_manager.app
 
         if execution_requests is None:

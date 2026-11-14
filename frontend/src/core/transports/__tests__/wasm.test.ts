@@ -74,7 +74,7 @@ describe("WASM notebook backend", () => {
     const controller = new AbortController();
     const done = createWasmNotebookBackend(bridge).transport(
       { cursor: "previous-4", signal: controller.signal },
-      { open: vi.fn(), message: vi.fn() },
+      { open: vi.fn(), lost: vi.fn(), message: vi.fn() },
     );
     expect(bridge.subscribe).toHaveBeenCalledWith(
       "previous-4",
@@ -94,7 +94,7 @@ describe("WASM notebook backend", () => {
     await expect(
       createWasmNotebookBackend(bridge).transport(
         { cursor: null, signal: new AbortController().signal },
-        { open: vi.fn(), message: vi.fn() },
+        { open: vi.fn(), lost: vi.fn(), message: vi.fn() },
       ),
     ).rejects.toBeInstanceOf(StreamStopped);
   });

@@ -483,7 +483,8 @@ class TestASGIAppBuilder(unittest.TestCase):
                 client.portal.call(join_kernel_thread_tasks, session_manager)
 
         assert not session_manager.sessions
-        assert invoked_for == ["http", "http"]
+        # The page, then its session's state and its event stream.
+        assert invoked_for == ["http", "http", "http"]
 
 
 class TestDynamicDirectoryMiddleware(unittest.TestCase):

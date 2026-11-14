@@ -63,10 +63,12 @@ def position(host: Host, cursor: str) -> int:
 
 
 def socket_snapshot(websocket: SessionEvents) -> list[dict[str, Any]]:
-    """Read the opening snapshot or replay, including its ready boundary."""
+    """Read the state a page holds at `ready`: from the last `reset`."""
     events = []
     while True:
         event = websocket.receive_json()
+        if event["event"] == "reset":
+            events.clear()
         events.append(event)
         if event["event"] == "ready":
             assert event["data"] == {}

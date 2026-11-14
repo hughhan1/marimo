@@ -143,7 +143,7 @@ def _closed(error: dict[str, Any]) -> SessionClosed:
     data = error.get("data") or {}
     return SessionClosed(
         WebSocketCodes.UNEXPECTED_ERROR,
-        str(data.get("reason", error.get("message", ""))),
+        str(data.get("reason", error.get("message", error.get("detail", "")))),
     )
 
 
@@ -152,7 +152,9 @@ def stream_headers(name: str) -> dict[str, str]:
     return request_headers("events/stream", name)
 
 
-def stream_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def stream_payload(
+    name: str, arguments: dict[str, Any], cursor: str | None = None
+) -> dict[str, Any]:
     """A subscription to the event `name`, pushed on the request's stream."""
     return {
         "jsonrpc": "2.0",
@@ -161,9 +163,32 @@ def stream_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         "params": {
             "name": name,
             "arguments": arguments,
+            "cursor": cursor,
             "_meta": request_meta(),
         },
     }
+
+
+def session_state(body: bytes) -> tuple[list[str], str | SessionClosed]:
+    """A session's state, as `session_state` answered with `body`.
+
+    The frames that build the page, then the cursor to follow it from, or
+    how the session refused the page.
+    """
+    outcome = called(body)
+    if not outcome.ok:
+        problem = outcome.problem or {}
+        if problem.get("status") in (401, 403):
+            return [], SessionClosed(
+                WebSocketCodes.UNAUTHORIZED, WebSocketCloseReason.UNAUTHORIZED
+            )
+        return [], _closed(problem)
+    frames = [json.dumps(event) for event in outcome.data["events"]]
+    if outcome.data.get("closed") is not None:
+        return frames, SessionClosed(
+            WebSocketCodes.UNEXPECTED_ERROR, outcome.data["closed"]
+        )
+    return frames, str(outcome.data["cursor"])
 
 
 def stream_frame(method: str, params: dict[str, Any]) -> bytes:
@@ -180,7 +205,7 @@ def session_message(message: dict[str, Any]) -> str | SessionClosed | None:
     """One message of a `session` stream: a frame's text, or how it ended."""
     params = message.get("params", {})
     if message.get("method") == "notifications/events/event":
-        return str(params["data"]["frame"])
+        return json.dumps(params["data"])
     if message.get("method") == "notifications/events/terminated":
         return _closed(params.get("error") or {})
     if "error" in message:
@@ -205,11 +230,31 @@ class SessionEvents:
     ) -> None:
         self._frames: queue.Queue[str | SessionClosed] = queue.Queue()
         self._client = httpx.Client(timeout=httpx.Timeout(timeout, read=None))
+        read = self._client.post(
+            f"{url}/api/mcp",
+            json=tool_payload("session_state", arguments),
+            headers={
+                **request_headers("tools/call", "session_state"),
+                **(headers or {}),
+            },
+        )
+        frames, cursor = session_state(read.content)
+        if isinstance(cursor, SessionClosed):
+            for frame in frames:
+                self._frames.put(frame)
+            self._frames.put(cursor)
+            if not frames:
+                self._client.close()
+                raise cursor
+            self._response = None
+            return
+        # As a page does, the state is read once following it is confirmed.
+        self._state = frames
         self._response = self._client.send(
             self._client.build_request(
                 "POST",
                 f"{url}/api/mcp",
-                json=stream_payload("session", arguments),
+                json=stream_payload("session", arguments, cursor),
                 headers={**stream_headers("session"), **(headers or {})},
             ),
             stream=True,
@@ -241,6 +286,9 @@ class SessionEvents:
 
     def close(self) -> None:
         """End the subscription, as closing the session's socket did."""
+        if self._response is None:
+            self._client.close()
+            return
         stream = self._response.extensions.get("network_stream")
         if stream is not None:
             # Wakes the reader, which a close alone leaves waiting.
@@ -257,7 +305,12 @@ class SessionEvents:
             for line in self._response.iter_lines():
                 if not line.startswith("data: "):
                     continue
-                read = session_message(json.loads(line[len("data: ") :]))
+                message = json.loads(line[len("data: ") :])
+                if message.get("method") == "notifications/events/active":
+                    for frame in self._state:
+                        self._frames.put(frame)
+                    self._state = []
+                read = session_message(message)
                 if isinstance(read, SessionClosed):
                     closed = read
                     return

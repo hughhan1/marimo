@@ -107,9 +107,7 @@ def test_sessions_stable_id_survives_reconnect(
         client, f"/ws?session_id={connection_id}", headers=token_header()
     ) as websocket:
         # The same connection rejoins its session; another resumes it.
-        assert receive_notification(websocket)["op"] == (
-            "alert" if connection_id == SESSION_ID else "kernel-ready"
-        )
+        assert receive_notification(websocket)["op"] == "kernel-ready"
         response = client.get("/api/sessions", headers=token_header())
         assert response.status_code == 200, response.text
         assert response.json() == {connection_id: expected}

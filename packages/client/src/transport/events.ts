@@ -239,6 +239,11 @@ export class Events<
                 this.#setStatus("connected");
               }
             },
+            lost: () => {
+              if (current && this.#settle !== undefined) {
+                this.#setStatus("connecting");
+              }
+            },
             message: (message) => {
               if (!current || this.#settle === undefined) {
                 return;

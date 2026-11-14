@@ -29,6 +29,7 @@ from tests._server.api.endpoints.ws_helpers import (
     assert_kernel_ready_response,
     create_response,
     headers,
+    instantiate,
     receive_notification,
 )
 from tests._server.host.drive import socket_snapshot
@@ -55,6 +56,7 @@ def test_refresh_session(client: TestClient) -> None:
         data = receive_notification(websocket)
         print(data)
         assert_kernel_ready_response(data, create_response({}))
+        instantiate(client, "123")
 
     # Check the session still exists after closing the websocket
     session = get_session(client, SessionId("123"))
@@ -141,6 +143,7 @@ def test_refresh_resumes_directory_workspace_session(
             data = receive_notification(websocket)
             assert data["op"] == "kernel-ready"
             assert data["data"]["resumed"] is False
+            instantiate(client, "dir1")
 
         # Simulated refresh: new session id, same workspace-relative key
         with connect_session(
@@ -166,6 +169,7 @@ def test_edited_document_survives_resume(client: TestClient) -> None:
         )
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({}))
+        instantiate(client, "123")
         # Replace the notebook's cells through the host.
         session = get_session(client, SessionId("123"))
         assert session is not None
@@ -439,11 +443,9 @@ def test_environment_restored_after_disconnect(
         with connect_session(
             client, _create_ws_url(connection_id)
         ) as websocket:
+            assert receive_notification(websocket)["op"] == "kernel-ready"
             if connection_id != "123":
-                assert receive_notification(websocket)["op"] == "kernel-ready"
                 assert receive_notification(websocket)["op"] == "banner"
-            else:
-                assert receive_notification(websocket)["op"] == "alert"
             assert receive_notification(websocket)["data"] == json.loads(
                 serialize_kernel_message(expected)
             )

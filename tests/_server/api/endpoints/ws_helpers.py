@@ -1,7 +1,7 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlencode
 
 from marimo._messaging.msgspec_encoder import asdict
@@ -12,6 +12,9 @@ from marimo._messaging.notification import (
 )
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.mocks import token_header
+
+if TYPE_CHECKING:
+    from starlette.testclient import TestClient
 
 
 class Frames(Protocol):
@@ -75,6 +78,16 @@ def headers(session_id: str) -> dict[str, str]:
         "Marimo-Session-Id": session_id,
         **token_header("fake-token"),
     }
+
+
+def instantiate(client: TestClient, session_id: str) -> None:
+    """Instantiate a session's notebook, as its page does when told to."""
+    response = client.post(
+        "/api/kernel/instantiate",
+        headers=headers(session_id),
+        json={"objectIds": [], "values": [], "autoRun": False},
+    )
+    assert response.status_code == 200, response.text
 
 
 def assert_kernel_ready_response(

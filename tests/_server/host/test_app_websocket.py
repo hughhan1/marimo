@@ -141,10 +141,7 @@ def test_app_visitors_are_isolated_and_reconnect_retains_identity(
             )
     with connect_session(client, url("alice")) as reconnected:
         snapshot = socket_snapshot(reconnected)
-        assert (
-            receive_notification(reconnected, "alert")["title"]
-            == "Reconnected"
-        )
+        assert receive_notification(reconnected, "kernel-ready")["resumed"]
         assert manager.get_session(SessionId("alice")) is original
         assert (
             next(
