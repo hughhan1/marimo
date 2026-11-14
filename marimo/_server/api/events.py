@@ -131,6 +131,10 @@ class _Page:
     subscriptions: set[str]
     joining: asyncio.Task[None] | None = None
 
+    @property
+    def key(self) -> tuple[str, bool]:
+        return (self.tab.params.session_id, self.tab.params.kiosk)
+
 
 def _ending(reason: str | None) -> ErrorData:
     if reason is None:
@@ -208,7 +212,10 @@ class SessionEvents:
         self._fed: weakref.WeakSet[SessionBridge] = weakref.WeakSet()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._unread: set[str] = set()
-        self._pages: dict[str, _Page] = {}
+        self._pages: dict[tuple[str, bool], _Page] = {}
+        self._roles: weakref.WeakKeyDictionary[
+            Session, dict[tuple[str, bool], bool]
+        ] = weakref.WeakKeyDictionary()
         _, definitions = msgspec.json.schema_components([SessionRequest])
         (arguments,) = definitions.values()
         self.session: EventType[dict[str, Any], _Change] = self.events.event(
@@ -243,6 +250,9 @@ class SessionEvents:
             return SessionState(self.session.cursor(), [_RESET])
         self._unread.discard(params.session_id)
         session, viewer = place
+        self._roles.setdefault(session, {})[
+            (params.session_id, params.kiosk)
+        ] = viewer
         events = self._snapshot(
             bridge,
             manager,
@@ -322,7 +332,9 @@ class SessionEvents:
         change = event.data
         if change.notebook is None:
             return bool(change.to == arguments["session_id"])
-        page = self._pages.get(arguments["session_id"])
+        page = self._pages.get(
+            (arguments["session_id"], arguments.get("kiosk", False))
+        )
         session = None if page is None else page.tab.session
         bridge: SessionBridge = _request(context).app.state.host_context.bridge
         if session is None or session is not bridge.session_for_notebook(
@@ -351,7 +363,8 @@ class SessionEvents:
     ) -> Callable[[], Awaitable[None] | None] | None:
         request = _request(context)
         asked = msgspec.convert(arguments, SessionRequest)
-        if (page := self._pages.get(asked.session_id)) is not None:
+        key = (asked.session_id, asked.kiosk)
+        if (page := self._pages.get(key)) is not None:
             page.subscriptions.add(subscription_id)
             return partial(self._leave, page, subscription_id)
         params = _params(request, asked)
@@ -368,7 +381,7 @@ class SessionEvents:
             sent=lambda sent: to_page([deserialize_kernel_message(sent)]),
             closed=lambda reason: self._on_loop(self._end, page, reason),
         )
-        page = self._pages[asked.session_id] = _Page(tab, {subscription_id})
+        page = self._pages[key] = _Page(tab, {subscription_id})
 
         async def join(before: tuple[Session, bool] | None) -> None:
             try:
@@ -414,14 +427,14 @@ class SessionEvents:
                 self._on_loop(
                     self.session.emit, _Change(event, to=params.session_id)
                 )
-        elif tab.session is not None:
+        elif (joined := tab.session) is not None and self._roles.get(
+            joined, {}
+        ).pop(page.key, tab.viewer) != tab.viewer:
             self._to_page(
                 params.session_id,
                 [
                     ConsumerCapabilitiesNotification(
-                        consumer_capabilities=tab.session.room.get_capabilities(
-                            tab
-                        )
+                        consumer_capabilities=joined.room.get_capabilities(tab)
                     )
                 ],
             )
@@ -433,15 +446,17 @@ class SessionEvents:
         page.subscriptions.discard(subscription_id)
         if page.subscriptions:
             return
-        if self._pages.get(page.tab.params.session_id) is page:
-            del self._pages[page.tab.params.session_id]
+        if self._pages.get(page.key) is page:
+            del self._pages[page.key]
         if page.joining is not None:
             await cancel_and_wait(page.joining)
+        if (session := page.tab.session) is not None:
+            self._roles.setdefault(session, {})[page.key] = page.tab.viewer
         page.tab.leave()
 
     def _end(self, page: _Page, reason: str | None) -> None:
-        if self._pages.get(page.tab.params.session_id) is page:
-            del self._pages[page.tab.params.session_id]
+        if self._pages.get(page.key) is page:
+            del self._pages[page.key]
         for subscription_id in page.subscriptions:
             self._close(subscription_id, reason)
         page.subscriptions.clear()

@@ -145,12 +145,12 @@ def test_a_page_polling_a_session_that_was_shut_down_is_told_it_is_gone(
 def test_a_page_rejoining_a_session_another_took_over_is_told_it_views_it(
     client: TestClient,
 ) -> None:
-    with connect_session(client, WS_URL) as page:
-        assert_kernel_ready_response(receive_notification(page))
-        instantiate(client, "123")
     cursor: list[str] = []
     with connect_session(client, WS_URL, read_only=cursor):
         pass
+    with connect_session(client, WS_URL, resume=cursor[0]) as page:
+        assert_kernel_ready_response(receive_notification(page))
+        instantiate(client, "123")
     with connect_session(client, OTHER_WS_URL) as other:
         assert_kernel_ready_response(
             receive_notification(other), create_response({"resumed": True})
