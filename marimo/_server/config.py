@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
     from marimo._cli.tips import CliTip
     from marimo._config.manager import MarimoConfigManager
-    from marimo._server.api.tools import EditorMCP
     from marimo._server.session_manager import SessionManager
 
 
@@ -44,4 +43,3 @@ class StarletteServerState(StarletteServerStateInit):
     """Typed state for the Starlette server."""
 
     server: Server
-    editor_mcp: EditorMCP
