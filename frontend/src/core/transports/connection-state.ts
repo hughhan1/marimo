@@ -1,63 +1,42 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import {
-  type CloseDecision,
-  ConnectionState,
   ConnectionClosedReason,
+  ConnectionState,
+  type ConnectionStatus,
 } from "../notebook/replica";
 import { Logger } from "@/utils/Logger";
 
-// Keep server reasons in sync with marimo/_server/codes.py. A terminated
-// session subscription carries them in its error. Unclassified reasons retry.
-export function classifyCloseEvent(event: { reason?: string }): CloseDecision {
-  switch (event.reason) {
+/**
+ * The status the editor shows once its session refused or ended it.
+ *
+ * Keep the server's reasons in sync with marimo/_server/codes.py.
+ */
+export function closedStatus(reason: string | undefined): ConnectionStatus & {
+  reason: string;
+} {
+  const closed = (
+    reason: string,
+    code: ConnectionClosedReason = ConnectionClosedReason.KERNEL_DISCONNECTED,
+  ) => ({ state: ConnectionState.CLOSED, code, reason }) as const;
+  switch (reason) {
+    case "MARIMO_UNAUTHORIZED":
+      return closed("not authorized");
+    case "MARIMO_KIOSK_NOT_ALLOWED":
+      return closed("kiosk mode is not available for this session");
+    case "MARIMO_KERNEL_STARTUP_ERROR":
+      return closed(
+        "Failed to start kernel sandbox",
+        ConnectionClosedReason.KERNEL_STARTUP_ERROR,
+      );
+    case undefined:
     case "MARIMO_NO_FILE_KEY":
     case "MARIMO_NO_SESSION_ID":
     case "MARIMO_NO_SESSION":
     case "MARIMO_SHUTDOWN":
-      return {
-        kind: "terminal",
-        status: {
-          state: ConnectionState.CLOSED,
-          code: ConnectionClosedReason.KERNEL_DISCONNECTED,
-          reason: "kernel not found",
-        },
-      };
-    case "MARIMO_UNAUTHORIZED":
-      return {
-        kind: "terminal",
-        status: {
-          state: ConnectionState.CLOSED,
-          code: ConnectionClosedReason.KERNEL_DISCONNECTED,
-          reason: "not authorized",
-        },
-      };
-    case "MARIMO_KIOSK_NOT_ALLOWED":
-      return {
-        kind: "terminal",
-        status: {
-          state: ConnectionState.CLOSED,
-          code: ConnectionClosedReason.KERNEL_DISCONNECTED,
-          reason: "kiosk mode is not available for this session",
-        },
-      };
-    case "MARIMO_KERNEL_STARTUP_ERROR":
-      return {
-        kind: "terminal",
-        status: {
-          state: ConnectionState.CLOSED,
-          code: ConnectionClosedReason.KERNEL_STARTUP_ERROR,
-          reason: "Failed to start kernel sandbox",
-        },
-      };
+      return closed("kernel not found");
     default:
-      if (event.reason) {
-        Logger.warn("Unrecognized connection close reason", event.reason);
-      }
+      Logger.warn("Unrecognized connection close reason", reason);
+      return closed("kernel not found");
   }
-
-  return {
-    kind: "retry",
-    status: { state: ConnectionState.CONNECTING },
-  };
 }

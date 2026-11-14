@@ -14,7 +14,7 @@ from typing import (
 )
 from urllib.parse import quote, urljoin, urlparse
 
-from mcp.shared.inbound import MCP_METHOD_HEADER
+from mcp.shared.inbound import MCP_METHOD_HEADER, MCP_NAME_HEADER
 from starlette import status
 from starlette.authentication import (
     AuthCredentials,
@@ -284,10 +284,11 @@ class SkewProtectionMiddleware:
             return await self.app(scope, receive, send)
         # On the tool endpoint only a tool call changes state, so a page
         # follows its session onto a restarted server, as its socket did.
-        if (
-            path.endswith("/api/mcp")
-            and request.headers.get(MCP_METHOD_HEADER, "tools/call")
+        # Reading the session's state is a call that changes none.
+        if path.endswith("/api/mcp") and (
+            request.headers.get(MCP_METHOD_HEADER, "tools/call")
             != "tools/call"
+            or request.headers.get(MCP_NAME_HEADER) == "session_state"
         ):
             return await self.app(scope, receive, send)
         if "/api/mcp/files/" in request.url.path:

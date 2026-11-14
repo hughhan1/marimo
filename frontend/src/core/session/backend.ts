@@ -13,8 +13,8 @@ import { PyodideBridge } from "../wasm/bridge";
 import { isWasm } from "../wasm/utils";
 import { getMarimo, withHeaders } from "../network/holon";
 import {
+  type Session,
   type SessionArguments,
-  type SubscribeSession,
   sessionEvents,
 } from "../transports/server";
 import {
@@ -71,19 +71,16 @@ function afterStartup({
   };
 }
 
-/**
- * The server's `session` event, through the editor's MCP client.
- *
- * A lost stream ends the subscription rather than reconnecting inside it,
- * so `NotebookEvents` retries and the page shows it is connecting.
- */
-const subscribeSession: SubscribeSession = async (args, { signal }) => {
-  const { ext } = await getMarimo();
-  return ext.events.subscribe("session", args, {
-    signal,
-    delivery: "push",
-    reconnect: false,
-  });
+/** The server's session, through the editor's MCP client. */
+const session: Session = {
+  read: async (args, { signal }) => {
+    const { tools } = await getMarimo();
+    return tools.session_state(args, { signal });
+  },
+  follow: async (args, options) => {
+    const { ext } = await getMarimo();
+    return ext.events.subscribe("session", args, options);
+  },
 };
 
 /**
@@ -134,7 +131,7 @@ function server(options: EditorBackendOptions): NotebookBackend {
   // Every notebook shares one client of the editor's tools.
   let send: CallTool | undefined;
   return {
-    transport: sessionEvents(afterStartup(options), subscribeSession),
+    transport: sessionEvents(afterStartup(options), session),
     notebook: (id) =>
       new NotebookClient(
         id,

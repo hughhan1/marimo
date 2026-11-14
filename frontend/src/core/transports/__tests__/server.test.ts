@@ -1,27 +1,71 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { NotebookEvents, StreamStopped } from "@marimo-team/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  type Session,
   type SessionArguments,
-  type SubscribeSession,
+  type SessionEvent,
+  type SessionState,
   sessionEvents,
 } from "../server";
 
 const ARGS: SessionArguments = { session_id: "s1", query_params: "" };
 
-/** A subscription that yields these frames, then waits. */
-async function* following(...frames: object[]) {
-  for (const frame of frames) {
-    yield { data: { frame: JSON.stringify(frame) } };
-  }
-  await new Promise(() => undefined);
-}
+type Follow = Parameters<Session["follow"]>[1];
 
-/** A subscription that fails at once. */
-function failing(error: unknown): AsyncIterable<{ data: never }> {
+/** A session whose state and subscriptions a test drives. */
+function fakeSession(states: SessionState[]) {
+  const follows: Follow[] = [];
+  const pending: ((event: object) => void)[] = [];
+  let failure: unknown;
+  const session: Session = {
+    read: vi.fn(async () => {
+      const state = states.shift();
+      if (state === undefined) {
+        throw new Error("no state left");
+      }
+      return state;
+    }),
+    follow: vi.fn(async (_args, options) => {
+      follows.push(options);
+      options.onStatus("connected");
+      if (failure !== undefined) {
+        throw failure;
+      }
+      const queue: object[] = [];
+      let wake = () => undefined as void;
+      pending.push((event) => {
+        queue.push(event);
+        wake();
+      });
+      return {
+        cursor: options.cursor,
+        async *[Symbol.asyncIterator]() {
+          while (!options.signal.aborted) {
+            const event = queue.shift();
+            if (event === undefined) {
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+                options.signal.addEventListener("abort", () => resolve(), {
+                  once: true,
+                });
+              });
+            } else {
+              yield { data: event as SessionEvent };
+            }
+          }
+        },
+      };
+    }),
+  };
   return {
-    [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
+    session,
+    follows,
+    send: (event: object) => pending.at(-1)?.(event),
+    failWith: (error: unknown) => {
+      failure = error;
+    },
   };
 }
 
@@ -31,97 +75,137 @@ function collect(events: NotebookEvents<string>) {
   return received;
 }
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+const ready = { event: "ready", id: "h-1", data: {} };
+const reset = { event: "reset", data: {} };
 
 describe("sessionEvents", () => {
-  it("subscribes with the session arguments and delivers protocol events", async () => {
-    const subscribe = vi.fn<SubscribeSession>(async () =>
-      following({ event: "reset", data: {} }),
-    );
+  it("delivers the session's state, then follows its changes from the state's cursor", async () => {
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
     const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
-      { types: ["reset"] },
+      sessionEvents(async () => ARGS, fake.session),
+      {
+        types: ["ready", "reset", "marimo"],
+      },
     );
     const received = collect(events);
-    await vi.waitFor(() => expect(received).toHaveLength(1));
-    expect(subscribe.mock.calls[0][0]).toEqual(ARGS);
-    expect(received).toEqual([{ event: "reset", data: {} }]);
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
+    expect(fake.follows[0].cursor).toBe("c1");
+    const change = { event: "marimo", data: { marimo: { op: "alert" } } };
+    fake.send(change);
+    await vi.waitFor(() => expect(received).toEqual([reset, ready, change]));
+    expect(events.status).toBe("connected");
     events.close();
   });
 
-  it("releases a held slot when a subscription attempt fails", async () => {
-    let held: AbortSignal | undefined;
-    const slots = {
-      hold: async (signal: AbortSignal) => {
-        held = signal;
-        return signal;
-      },
+  it("stops with the status of the reason a session refused the page, after its last words", async () => {
+    const error = {
+      event: "marimo",
+      data: { marimo: { op: "kernel-startup-error", error: "boom" } },
     };
-    const transport = sessionEvents(
-      async () => ARGS,
-      async () => {
-        throw new Error("offline");
-      },
-      slots,
-    );
-    await transport(
-      { cursor: null, signal: new AbortController().signal },
-      { open: vi.fn(), message: vi.fn() },
-    );
-    expect(held?.aborted).toBe(true);
-  });
-
-  it("stops when the session terminates the subscription with a final close", async () => {
-    const ended = Object.assign(new Error("ended"), {
-      code: -32000,
-      data: { reason: "MARIMO_UNAUTHORIZED" },
+    const fake = fakeSession([]);
+    vi.mocked(fake.session.read).mockResolvedValueOnce({
+      cursor: "c1",
+      events: [error],
+      closed: "MARIMO_KERNEL_STARTUP_ERROR",
     });
     const events = new NotebookEvents(
-      sessionEvents(
-        async () => ARGS,
-        async () => failing(ended),
-      ),
-    );
-    const error = await events.closed.catch((error: unknown) => error);
-    expect(error).toBeInstanceOf(StreamStopped);
-    expect((error as StreamStopped).cause).toMatchInlineSnapshot(`
+      sessionEvents(async () => ARGS, fake.session),
       {
-        "code": "KERNEL_DISCONNECTED",
-        "reason": "not authorized",
-        "state": "CLOSED",
-      }
-    `);
+        types: ["marimo"],
+      },
+    );
+    const received = collect(events);
+    const stopped = await events.closed.catch((error: unknown) => error);
+    expect(received).toEqual([error]);
+    expect(stopped).toBeInstanceOf(StreamStopped);
+    expect((stopped as StreamStopped).cause).toMatchObject({
+      reason: "Failed to start kernel sandbox",
+    });
+    expect(fake.session.follow).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, null, "refused"])(
-    "stops when the caller may not follow the session (data: %s)",
-    async (data) => {
+  it.each([
+    [{ code: -32024, message: "Forbidden" }, "not authorized"],
+    [
+      {
+        code: -32000,
+        message: "MARIMO_SHUTDOWN",
+        data: { reason: "MARIMO_SHUTDOWN" },
+      },
+      "kernel not found",
+    ],
+    [new Error("Lost the connection"), "kernel not found"],
+  ])(
+    "stops when the session ends or refuses the subscription (%o)",
+    async (failure, reason) => {
+      const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+      fake.failWith(failure);
       const events = new NotebookEvents(
-        sessionEvents(
-          async () => ARGS,
-          async () => {
-            throw Object.assign(new Error("Forbidden"), { code: -32024, data });
-          },
-        ),
+        sessionEvents(async () => ARGS, fake.session),
       );
-      await expect(events.closed).rejects.toBeInstanceOf(StreamStopped);
+      const stopped = await events.closed.catch((error: unknown) => error);
+      expect(stopped).toBeInstanceOf(StreamStopped);
+      expect((stopped as StreamStopped).cause).toMatchObject({
+        state: "CLOSED",
+        reason,
+      });
     },
   );
 
-  it("subscribes again after a failure that says nothing final", async () => {
-    vi.useFakeTimers();
-    const subscribe = vi.fn<SubscribeSession>(async () => {
-      throw new Error("fetch failed");
-    });
+  it("shows it is connecting while the client reconnects, and connected once it is back", async () => {
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
     const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
+      sessionEvents(async () => ARGS, fake.session),
     );
-    await vi.waitFor(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(subscribe.mock.calls.length).toBeGreaterThanOrEqual(2);
-    });
+    await vi.waitFor(() => expect(events.status).toBe("connected"));
+    fake.follows[0].onStatus("reconnecting");
+    expect(events.status).toBe("connecting");
+    fake.follows[0].onStatus("connected");
+    expect(events.status).toBe("connected");
+    expect(fake.session.follow).toHaveBeenCalledTimes(1);
+    events.close();
+  });
+
+  it("reads the state again after the server skipped changes, and follows from its cursor", async () => {
+    const fake = fakeSession([
+      { cursor: "c1", events: [reset, ready] },
+      { cursor: "c9", events: [reset, { ...ready, id: "h-9" }] },
+    ]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session),
+      {
+        types: ["ready", "reset"],
+      },
+    );
+    const received = collect(events);
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
+    fake.follows[0].onStatus("gap");
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    expect(fake.follows[0].signal.aborted).toBe(true);
+    expect(fake.follows[1].cursor).toBe("c9");
+    expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]);
+    events.close();
+  });
+
+  it("polls while the page is hidden and is pushed while it is visible, resuming from its cursor", async () => {
+    let visibility: DocumentVisibilityState = "hidden";
+    const page = new EventTarget() as Document;
+    Object.defineProperty(page, "visibilityState", { get: () => visibility });
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session, page),
+    );
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
+    visibility = "visible";
+    page.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    expect(
+      fake.follows.map(({ delivery, cursor }) => [delivery, cursor]),
+    ).toEqual([
+      ["poll", "c1"],
+      ["push", "c1"],
+    ]);
+    expect(fake.session.read).toHaveBeenCalledTimes(1);
     events.close();
   });
 });

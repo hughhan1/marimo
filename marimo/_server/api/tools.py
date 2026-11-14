@@ -40,7 +40,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
-from marimo._server.api.events import events, request_var
+from marimo._server.api.events import SessionEvents, request_var
 from marimo._server.errors import handle_error
 
 if TYPE_CHECKING:
@@ -471,9 +471,9 @@ class EditorMCP(MCPEndpoint):
         server = tool_server(contract, partial(_call, self.files))
         server.extensions[EXTENSION] = self.files.settings()
         server.middleware.insert(0, self.files)
-        served = events()
-        served.serve(server)
-        super().__init__(server, served)
+        self.session_events = SessionEvents()
+        self.session_events.events.serve(server)
+        super().__init__(server, self.session_events.events)
 
 
 def origin_allowed(request: Request) -> bool:

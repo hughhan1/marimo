@@ -439,11 +439,9 @@ def test_environment_restored_after_disconnect(
         with connect_session(
             client, _create_ws_url(connection_id)
         ) as websocket:
+            assert receive_notification(websocket)["op"] == "kernel-ready"
             if connection_id != "123":
-                assert receive_notification(websocket)["op"] == "kernel-ready"
                 assert receive_notification(websocket)["op"] == "banner"
-            else:
-                assert receive_notification(websocket)["op"] == "alert"
             assert receive_notification(websocket)["data"] == json.loads(
                 serialize_kernel_message(expected)
             )

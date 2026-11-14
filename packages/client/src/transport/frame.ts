@@ -33,8 +33,10 @@ export interface Attempt {
 
 /** What a transport reports while its connection is open. */
 export interface Handlers {
-  /** The connection is established. */
+  /** The connection is established, or established again. */
   open(): void;
+  /** The connection is lost, and the transport is restoring it. */
+  lost(): void;
   /** One decoded message, not yet validated. */
   message(message: unknown): void;
 }

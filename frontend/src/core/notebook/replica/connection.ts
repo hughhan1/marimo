@@ -30,9 +30,3 @@ export type ConnectionStatus =
   | {
       state: typeof ConnectionState.OPEN | typeof ConnectionState.NOT_STARTED;
     };
-
-/** The recovery policy for a closed connection. */
-export interface CloseDecision {
-  kind: "terminal" | "retry";
-  status: ConnectionStatus;
-}

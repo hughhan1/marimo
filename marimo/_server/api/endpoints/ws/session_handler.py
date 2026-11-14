@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import abc
 import asyncio
-from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from marimo import _loggers
@@ -20,20 +19,12 @@ from marimo._messaging.serde import (
     serialize_kernel_message,
 )
 from marimo._server.api.endpoints.ws.ws_kernel_ready import build_kernel_ready
-from marimo._server.api.endpoints.ws.ws_session_connector import (
-    SessionConnector,
-)
 from marimo._server.codes import WebSocketCloseReason, WebSocketCodes
 from marimo._session.consumer import SessionConsumer
 from marimo._session.model import ConnectionState, SessionMode
 from marimo._types.ids import ConsumerId
-from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-
-    from starlette.requests import HTTPConnection
-
     from marimo._config.cli_state import MarimoCLIState
     from marimo._messaging.types import KernelMessage
     from marimo._plugins.core.web_component import JSONType
@@ -91,56 +82,8 @@ class SessionHandler(SessionConsumer, abc.ABC):
 
     # Shared session lifecycle
 
-    @asynccontextmanager
-    async def _connection_lifetime(
-        self, connection: HTTPConnection
-    ) -> AsyncIterator[asyncio.Task[None]]:
-        """Own attachment through startup, progress delivery, and streaming."""
-        startup = asyncio.create_task(self._connect_session(connection))
-        try:
-            yield startup
-        finally:
-            try:
-                await cancel_and_wait(startup)
-            finally:
-                self._on_disconnect()
-
-    async def _connect_session(self, connection: HTTPConnection) -> None:
-        """Connect this handler to a session (new, resume, reconnect, ...).
-
-        Raises:
-            KernelStartupError: If the kernel fails to start.
-            WebSocketDisconnect: If the connection is rejected; carries the
-                close code and reason.
-        """
-        startup = asyncio.create_task(
-            SessionConnector(
-                manager=self.manager,
-                handler=self,
-                params=self.params,
-                connection=connection,
-            ).connect()
-        )
-        disconnected = asyncio.create_task(self._wait_for_disconnect())
-        try:
-            done, _ = await asyncio.wait(
-                (startup, disconnected), return_when=asyncio.FIRST_COMPLETED
-            )
-            if disconnected in done:
-                await disconnected
-                await cancel_and_wait(startup)
-                raise asyncio.CancelledError
-            await startup
-        finally:
-            await cancel_and_wait(disconnected)
-            await cancel_and_wait(startup)
-
     async def _prepare_session(self, session: Session) -> None:
         """Prepare a selected session before delivering its initial state."""
-
-    @abc.abstractmethod
-    async def _wait_for_disconnect(self) -> None:
-        """Notice a closed transport even while a session is starting."""
 
     def _is_viewer(self, session: Session) -> bool:
         """Whether this consumer gets read-only (kiosk) message filtering.

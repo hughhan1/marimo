@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import queue
+import threading
 import weakref
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -27,9 +28,12 @@ from starlette.websockets import WebSocketDisconnect
 from marimo._server.codes import WebSocketCodes
 from tests.mcp_request import (
     SessionClosed,
+    request_headers,
     session_message,
+    session_state,
     stream_headers,
     stream_payload,
+    tool_payload,
 )
 
 if TYPE_CHECKING:
@@ -64,20 +68,23 @@ class SessionEvents:
         chunks: queue.Queue[object],
         portal: BlockingPortal,
         disconnected: anyio.Event,
-        running: Future[None],
+        running: Future[None] | None,
     ) -> None:
         self._chunks = chunks
         self._buffer = ""
         self._closed: WebSocketDisconnect | None = None
         self._disconnected = disconnected
         self._running = running
+        self.closing = WebSocketDisconnect(WebSocketCodes.NORMAL_CLOSE)
+        """How the stream ends once its frames are read."""
         self.portal = portal
         """The portal whose loop serves the subscription."""
 
     def close(self) -> None:
         """End the subscription, as a page closing its socket, and wait."""
         self.portal.call(self._disconnected.set)
-        self._running.result(timeout=_TIMEOUT)
+        if self._running is not None:
+            self._running.result(timeout=_TIMEOUT)
 
     def receive_text(self) -> str:
         while True:
@@ -106,11 +113,20 @@ class SessionEvents:
                     self._chunks.put(_END)
                     line, self._buffer = self._buffer, ""
                     return line
-                self._closed = WebSocketDisconnect(WebSocketCodes.NORMAL_CLOSE)
+                self._closed = self.closing
                 raise self._closed
             self._buffer += str(chunk)
         line, self._buffer = self._buffer.split("\n", 1)
         return line.rstrip("\r")
+
+
+def _as_event(frame: str) -> str:
+    """A frame of the state, as the stream would carry it."""
+    notification = {
+        "method": "notifications/events/event",
+        "params": {"data": json.loads(frame)},
+    }
+    return f"data: {json.dumps(notification)}\n"
 
 
 @contextmanager
@@ -141,37 +157,73 @@ def connect_session(
         if "access_token" in query
         else {}
     )
-    body = json.dumps(stream_payload("session", arguments)).encode()
-    sent = {
-        name.lower(): value
-        for name, value in {
-            **stream_headers("session"),
-            "content-type": "application/json",
-            "host": "testserver",
-            **(headers or {}),
-        }.items()
-    }
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "root_path": "",
-        "query_string": urlencode(auth).encode(),
-        "headers": [(k.encode(), v.encode()) for k, v in sent.items()],
-        "client": ("testclient", 50000),
-        "server": ("testserver", 80),
-        "state": {},
-    }
+
+    def scope(method_headers: dict[str, str]) -> dict[str, Any]:
+        sent = {
+            name.lower(): value
+            for name, value in {
+                **method_headers,
+                "content-type": "application/json",
+                "host": "testserver",
+                **(headers or {}),
+            }.items()
+        }
+        return {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": "",
+            "query_string": urlencode(auth).encode(),
+            "headers": [(k.encode(), v.encode()) for k, v in sent.items()],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+            "state": {},
+        }
+
     chunks: queue.Queue[object] = queue.Queue()
     portal = _portal(client)
+
+    async def read_state() -> bytes:
+        body = json.dumps(tool_payload("session_state", arguments)).encode()
+        answered: list[bytes] = []
+
+        async def receive() -> dict[str, Any]:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.body":
+                answered.append(message.get("body", b""))
+
+        await client.app(
+            scope(request_headers("tools/call", "session_state")),
+            receive,
+            send,
+        )
+        return b"".join(answered)
+
+    frames, cursor = session_state(portal.call(read_state))
+    if isinstance(cursor, SessionClosed):
+        if not frames:
+            raise WebSocketDisconnect(cursor.code, cursor.reason)
+        for frame in frames:
+            chunks.put(_as_event(frame))
+        chunks.put(_END)
+        closed = SessionEvents(chunks, portal, portal.call(anyio.Event), None)
+        closed.closing = WebSocketDisconnect(cursor.code, cursor.reason)
+        yield closed
+        return
+    stream: queue.Queue[object] = queue.Queue()
     disconnected = portal.call(anyio.Event)
 
     async def run() -> None:
         requested = False
+        body = json.dumps(
+            stream_payload("session", arguments, cursor)
+        ).encode()
 
         async def receive() -> dict[str, Any]:
             nonlocal requested
@@ -189,16 +241,30 @@ def connect_session(
             if message["type"] == "http.response.body":
                 text = message.get("body", b"").decode()
                 if text:
-                    chunks.put(text)
+                    stream.put(text)
 
         try:
-            await client.app(scope, receive, send)
+            await client.app(scope(stream_headers("session")), receive, send)
         finally:
-            chunks.put(_END)
+            stream.put(_END)
 
-    events = SessionEvents(
-        chunks, portal, disconnected, portal.start_task_soon(run)
-    )
+    running = portal.start_task_soon(run)
+    # As a page does, the state is read once following it is confirmed.
+    confirmed = stream.get(timeout=_TIMEOUT)
+    if confirmed is not _END and "notifications/events/active" in str(
+        confirmed
+    ):
+        for frame in frames:
+            chunks.put(_as_event(frame))
+    chunks.put(confirmed)
+
+    def forward() -> None:
+        while (chunk := stream.get()) is not _END:
+            chunks.put(chunk)
+        chunks.put(_END)
+
+    threading.Thread(target=forward, daemon=True).start()
+    events = SessionEvents(chunks, portal, disconnected, running)
     try:
         yield events
     finally:

@@ -358,3 +358,14 @@ class Host:
                 listener(event)
 
         return self._stream.subscribe(filtered)
+
+    def subscribe_notebooks(self, listener: Listener) -> Callable[[], None]:
+        """Subscribe to every notebook's events, as its notebook stream has them."""
+
+        def filtered(event: RoutedEvent) -> None:
+            if event.notebook_id is not None and event.visible_in(
+                event.notebook_id
+            ):
+                listener(event)
+
+        return self._stream.subscribe(filtered)

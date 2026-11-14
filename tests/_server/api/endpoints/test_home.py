@@ -643,8 +643,8 @@ def test_open_notebook_connects_and_reconnects_to_host(
             }
         )
         notebook = None
-        # The second connection rejoins the session and is told so.
-        for notification in ("kernel-ready", "alert"):
+        # The second connection rejoins the session as it is.
+        for notification in ("kernel-ready", "kernel-ready"):
             with connect_session(client, f"/ws?{query}") as socket:
                 snapshot = socket_snapshot(socket)
                 ready = receive_notification(socket, notification)
