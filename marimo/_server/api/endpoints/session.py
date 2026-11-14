@@ -5,7 +5,11 @@ from typing import TYPE_CHECKING
 
 from starlette.authentication import requires
 
-from marimo._server.api.events import SessionRequest, SessionState
+from marimo._server.api.events import (
+    SessionEvents,
+    SessionRequest,
+    SessionState,
+)
 from marimo._server.api.tools import tool
 
 if TYPE_CHECKING:
@@ -21,4 +25,5 @@ async def session_state(
 
     Follow the `session` event from `cursor` for every change after it.
     """
-    return await request.app.state.session_events.state(request, body)
+    events: SessionEvents = request.app.state.session_events
+    return await events.state(request, body)

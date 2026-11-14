@@ -44,6 +44,7 @@ from marimo._server.host.events import (
 from marimo._server.host.lifespan import ensure_host
 from marimo._server.host.session import Tab
 from marimo._session.model import SessionMode
+from marimo._types.ids import ConsumerId
 from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
@@ -146,7 +147,7 @@ def _place(
         return None
     main = session.room.main_consumer
     viewer = params.kiosk or (
-        main is not None and main.consumer_id != params.session_id
+        main is not None and main.consumer_id != ConsumerId(params.session_id)
     )
     return session, viewer
 
@@ -331,7 +332,7 @@ class SessionEvents:
         context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
-    ) -> Callable[[], Awaitable[None]] | None:
+    ) -> Callable[[], Awaitable[None] | None] | None:
         """Join the page to its session while it follows it.
 
         Joining that starts or resumes the session sends the page its new
