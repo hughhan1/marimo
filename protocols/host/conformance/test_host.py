@@ -146,6 +146,7 @@ async def test_refusals(host, name, arguments, kind):
 @pytest.mark.parametrize(
     "arguments",
     [
+        {"conformance": True},
         {"run_id": ""},
         {"attachment_identity": ""},
         {"attachment_kind": "Not a kind"},
@@ -153,14 +154,11 @@ async def test_refusals(host, name, arguments, kind):
     ],
     ids=lambda arguments: next(iter(arguments)),
 )
-async def test_notebook_refusals(host, scratch, arguments):
-    failed(await snapshot(host, scratch, **arguments), "invalid-request")
-
-
-async def test_unknown_arguments_are_invalid_params(host):
+async def test_arguments_the_schema_refuses_are_invalid_params(
+    host, scratch, arguments
+):
     with pytest.raises(Refused) as refused:
-        async with host.subscribe("catalog", conformance=True):
-            pytest.fail("the host accepted an unknown argument")
+        await snapshot(host, scratch, **arguments)
     assert refused.value.error["code"] == -32602
 
 
