@@ -17,8 +17,9 @@ type Follow = Parameters<Session["follow"]>[1];
 /** A session whose state and subscriptions a test drives. */
 function fakeSession(states: SessionState[]) {
   const follows: Follow[] = [];
-  const pending: ((event: object) => void)[] = [];
+  const pending: ((event: object, eventId: string) => void)[] = [];
   let failure: unknown;
+  let gate: Promise<unknown> | undefined;
   const session: Session = {
     read: vi.fn(async () => {
       const state = states.shift();
@@ -29,14 +30,15 @@ function fakeSession(states: SessionState[]) {
     }),
     follow: vi.fn(async (_args, options) => {
       follows.push(options);
+      await gate;
       options.onStatus("connected");
       if (failure !== undefined) {
         throw failure;
       }
-      const queue: object[] = [];
+      const queue: { eventId: string; data: SessionEvent }[] = [];
       let wake = () => undefined as void;
-      pending.push((event) => {
-        queue.push(event);
+      pending.push((event, eventId) => {
+        queue.push({ eventId, data: event as SessionEvent });
         wake();
       });
       return {
@@ -52,19 +54,29 @@ function fakeSession(states: SessionState[]) {
                 });
               });
             } else {
-              yield { data: event as SessionEvent };
+              yield event;
             }
           }
         },
       };
     }),
   };
+  let sent = 0;
   return {
     session,
     follows,
-    send: (event: object) => pending.at(-1)?.(event),
+    send: (event: object, eventId = `e${++sent}`) =>
+      pending.at(-1)?.(event, eventId),
     failWith: (error: unknown) => {
       failure = error;
+    },
+    holdNext: () => {
+      const held = Promise.withResolvers<undefined>();
+      gate = held.promise;
+      return () => {
+        gate = undefined;
+        held.resolve(undefined);
+      };
     },
   };
 }
@@ -189,6 +201,35 @@ describe("sessionEvents", () => {
     expect(fake.follows[0].signal.aborted).toBe(true);
     expect(fake.follows[1].cursor).toBe("c9");
     expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]);
+    events.close();
+  });
+
+  it("keeps following until its next subscription is confirmed, passing on each change once", async () => {
+    let focused = false;
+    const view = Object.assign(new EventTarget(), {
+      document: { hasFocus: () => focused } as Document,
+    });
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session, view),
+      { types: ["ready", "reset", "marimo"] },
+    );
+    const received = collect(events);
+    await vi.waitFor(() => expect(received).toHaveLength(2));
+    const confirm = fake.holdNext();
+    focused = true;
+    view.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    const change = { event: "marimo", data: { marimo: { op: "alert" } } };
+    fake.send(change, "e1");
+    await vi.waitFor(() => expect(received).toHaveLength(3));
+    expect(fake.follows[0].signal.aborted).toBe(false);
+    confirm();
+    await vi.waitFor(() => expect(fake.follows[0].signal.aborted).toBe(true));
+    fake.send(change, "e1");
+    fake.send(change, "e2");
+    await vi.waitFor(() => expect(received).toHaveLength(4));
+    expect(received).toEqual([reset, ready, change, change]);
     events.close();
   });
 
