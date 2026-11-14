@@ -56,7 +56,7 @@ dependencies = [
     "pyzmq>=27.1.0; sys_platform != 'emscripten'",
     # the server's API is MCP tools, served by the MCP SDK
     "mcp>=2.3.0,<3; sys_platform != 'emscripten'",
-    "holon-sh==0.0.1.dev18; sys_platform != 'emscripten'",
+    "holon-sh==0.0.1.dev19; sys_platform != 'emscripten'",
 ]
 readme = "README.md"
 license = "Apache-2.0"
