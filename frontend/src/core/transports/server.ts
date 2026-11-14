@@ -16,7 +16,6 @@ export type SessionEvent = EventData["marimo"]["session"];
 /** A page's session as of a cursor of its `session` event. */
 export type SessionState = Outputs["marimo"]["session_state"];
 
-/** The status of a subscription, as the client reports it. */
 type Status = "connected" | "reconnecting" | "gap";
 
 /** How a page reads its session, and follows it from a cursor. */
@@ -40,13 +39,11 @@ export interface Session {
   >;
 }
 
-/** Why following the session stopped, with the status the editor shows. */
 function stopped(reason: string | undefined) {
   const status = closedStatus(reason);
   return new StreamStopped(status.reason, { cause: status });
 }
 
-/** The reason in an error the server ended or refused the subscription with. */
 function reasonOf(error: unknown): string | undefined {
   const failure = error as { code?: unknown; data?: { reason?: unknown } };
   if (failure?.code === FORBIDDEN) {

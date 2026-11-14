@@ -284,7 +284,6 @@ class SkewProtectionMiddleware:
             return await self.app(scope, receive, send)
         # On the tool endpoint only a tool call changes state, so a page
         # follows its session onto a restarted server, as its socket did.
-        # Reading the session's state is a call that changes none.
         if path.endswith("/api/mcp") and (
             request.headers.get(MCP_METHOD_HEADER, "tools/call")
             != "tools/call"

@@ -71,7 +71,6 @@ function afterStartup({
   };
 }
 
-/** The server's session, through the editor's MCP client. */
 const session: Session = {
   read: async (args, { signal }) => {
     const { tools } = await getMarimo();

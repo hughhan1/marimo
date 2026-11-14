@@ -642,11 +642,10 @@ def test_open_notebook_connects_and_reconnects_to_host(
             }
         )
         notebook = None
-        # The second connection rejoins the session as it is.
-        for notification in ("kernel-ready", "kernel-ready"):
+        for _ in range(2):
             with connect_session(client, f"/ws?{query}") as socket:
                 snapshot = socket_snapshot(socket)
-                ready = receive_notification(socket, notification)
+                ready = receive_notification(socket, "kernel-ready")
             bridge = client.app.state.host_context.bridge
             record = bridge.index.notebook_for(path)
             assert record is not None
@@ -667,13 +666,11 @@ def test_open_notebook_connects_and_reconnects_to_host(
             # Each subscription starts the page over.
             assert snapshot[0] == {"event": "reset", "data": {}}
             assert snapshot[1]["data"]["notebook"]["id"] == record.id
-            assert ready["op"] == notification
-            if notification == "kernel-ready":
-                assert ready["consumer_capabilities"]["edit"] is True
-                if source == "tutorial":
-                    assert any(
-                        e["event"] == "cell" and e["data"]["cell"]["code"]
-                        for e in snapshot
-                    )
+            assert ready["consumer_capabilities"]["edit"] is True
+            if source == "tutorial":
+                assert any(
+                    e["event"] == "cell" and e["data"]["cell"]["code"]
+                    for e in snapshot
+                )
             assert client.portal is not None
             client.portal.call(bridge.index.refresh_async)

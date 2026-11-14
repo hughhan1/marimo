@@ -248,7 +248,6 @@ class SessionEvents:
                 raise cursor
             self._response = None
             return
-        # As a page does, the state is read once following it is confirmed.
         self._state = frames
         self._response = self._client.send(
             self._client.build_request(

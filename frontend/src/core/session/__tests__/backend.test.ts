@@ -18,8 +18,6 @@ vi.mock("../../wasm/utils", () => ({ isWasm: () => wasm.enabled }));
 vi.mock("../../wasm/bridge", () => ({
   PyodideBridge: { INSTANCE: { createNotebookBackend: wasm.create } },
 }));
-// Each subscription to the session event, which never confirms, after a
-// state that has no session yet.
 const subscribed = vi.hoisted((): unknown[] => []);
 vi.mock("../../network/holon", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../network/holon")>()),

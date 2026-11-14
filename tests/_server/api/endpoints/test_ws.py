@@ -79,12 +79,9 @@ def test_a_page_from_before_a_restart_follows_its_session(
 def test_a_page_resuming_from_before_a_restart_runs_its_new_session(
     client: TestClient,
 ) -> None:
-    # A cursor from another process names nothing here. Following it starts
-    # a session, and the page lets go of it to read its state again.
     with connect_session(client, WS_URL, resume="elsewhere.5"):
         pass
     with connect_session(client, WS_URL) as websocket:
-        # No page instantiated that session, so this one does.
         assert_kernel_ready_response(receive_notification(websocket))
 
 
@@ -134,7 +131,6 @@ def test_disconnect_and_reconnect(client: TestClient) -> None:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
         instantiate(client, "123")
-    # Rejoining by the same session id reads the session as it is
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({"resumed": True}))
@@ -148,7 +144,6 @@ def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
         instantiate(client, "123")
         stable_id = manager.sessions[SessionId("123")].stable_id
         websocket.close()
-    # Rejoining by the same session id reads the session as it is
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data, create_response({"resumed": True}))
@@ -443,7 +438,6 @@ async def test_reconnection_cancels_close_handle(client: TestClient) -> None:
         # Reconnect immediately (before TTL expires)
         with connect_session(client, WS_URL) as new_websocket:
             data = receive_notification(new_websocket)
-            # The same page rejoins its session as it is.
             assert_kernel_ready_response(
                 data, create_response({"resumed": True})
             )
@@ -492,7 +486,6 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
     try:
         assert_kernel_ready_response(receive_notification(socket_a))
         if mode is SessionMode.EDIT:
-            # An app's server instantiates it; an editor's page does.
             instantiate(client, "123")
         assert session_manager.get_session("123") is not None
 
@@ -1026,7 +1019,6 @@ async def test_check_status_update_runs_off_the_event_loop(
     assert await asyncio.wait_for(asyncio.to_thread(started.wait, 10), 20)
     assert sent.empty()
 
-    # Once the check completes, the alert is sent to the page
     release.set()
     message = deserialize_kernel_message(
         await asyncio.wait_for(sent.get(), timeout=10)

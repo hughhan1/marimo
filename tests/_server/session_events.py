@@ -122,7 +122,6 @@ class SessionEvents:
 
 
 def _as_event(frame: str) -> str:
-    """A frame of the state, as the stream would carry it."""
     notification = {
         "method": "notifications/events/event",
         "params": {"data": json.loads(frame)},
@@ -299,8 +298,6 @@ def connect_session(
             stream.put(_END)
 
     running = portal.start_task_soon(run)
-    # As a page does, the state is read once following it is confirmed: by
-    # the stream's first message, or its refusal.
     opening: list[object] = []
     while not opening or not any(
         chunk is _END or "\n\n" in str(chunk).replace("\r", "")

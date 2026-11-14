@@ -99,15 +99,10 @@ class SessionState(msgspec.Struct, frozen=True):
 
 @dataclass(frozen=True)
 class _Change:
-    """A `session` payload as kept, with where it goes."""
-
     event: dict[str, Any]
     notebook: str | None = None
-    """The notebook it changes, for every page that follows it."""
     to: str | None = None
-    """The page it is for alone, by session id."""
     op: str | None = None
-    """A marimo notification's name, which viewing pages filter by."""
 
 
 def _request(context: ServerRequestContext[Any, Any]) -> Request:
@@ -118,8 +113,6 @@ def _request(context: ServerRequestContext[Any, Any]) -> Request:
 
 @dataclass
 class _Page:
-    """A page in its session, and the subscriptions it follows it by."""
-
     tab: Tab
     subscriptions: set[str]
     joining: asyncio.Task[None] | None = None
@@ -148,7 +141,6 @@ def _params(
 def _place(
     manager: SessionManager, params: ConnectionParams
 ) -> tuple[Session, bool] | None:
-    """The session a page is in, or would view, and whether it views it."""
     session = manager.get_session(params.session_id)
     if session is None and (params.kiosk or manager.mode is SessionMode.EDIT):
         session = manager.get_session_by_file_key(params.file_key)
@@ -168,18 +160,15 @@ def _handshake(
     *,
     viewer: bool,
 ) -> list[NotificationMessage]:
-    """What starts an editor on a session that already runs."""
     handshake: list[NotificationMessage] = [
         build_kernel_ready(
             session=session,
-            # The page that edits a notebook no page instantiated does so.
             resumed=viewer or session.instantiated,
             ui_values=session.session_view.ui_values,
             kiosk=viewer,
         )
     ]
     if not viewer and manager.get_session(params.session_id) is None:
-        # The page takes over a session another page left.
         handshake.append(_RESUMED)
     handshake.extend(session.session_view.snapshot_notifications())
     return handshake
@@ -192,7 +181,6 @@ class SessionEvents:
         self.events = Events()
         self._fed: weakref.WeakSet[SessionBridge] = weakref.WeakSet()
         self._loop: asyncio.AbstractEventLoop | None = None
-        # Pages that read no session, whose subscription sends them its state.
         self._unread: set[str] = set()
         self._pages: dict[str, _Page] = {}
         _, definitions = msgspec.json.schema_components([SessionRequest])
@@ -225,7 +213,6 @@ class SessionEvents:
             )
         place = _place(manager, params)
         if place is None or bridge.notebook_for_session(place[0]) is None:
-            # Subscribing starts or joins the session, and sends its state.
             self._unread.add(params.session_id)
             return SessionState(self.session.cursor(), [_RESET])
         self._unread.discard(params.session_id)
@@ -248,7 +235,6 @@ class SessionEvents:
         *,
         viewer: bool,
     ) -> list[dict[str, Any]]:
-        """A session's state, read without yielding to the event loop."""
         notebook = bridge.notebook_for_session(session)
         assert notebook is not None
         include_code = manager.should_send_code_to_frontend()
@@ -267,7 +253,6 @@ class SessionEvents:
         ]
 
     async def _feed(self, request: Request) -> SessionBridge:
-        """The host's bridge, whose event log feeds the `session` event."""
         bridge = (await ensure_host(request.app)).bridge
         self._loop = self._loop or asyncio.get_running_loop()
         if bridge not in self._fed:
@@ -343,11 +328,6 @@ class SessionEvents:
         arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None] | None] | None:
-        """Join the page to its session while it follows it.
-
-        Joining that starts or resumes the session sends the page its new
-        state, since what it read before was of no session or another one.
-        """
         request = _request(context)
         asked = msgspec.convert(arguments, SessionRequest)
         leave = partial(self._leave, asked.session_id, subscription_id)
@@ -399,11 +379,8 @@ class SessionEvents:
 
         before = _place(manager, params)
         if before is not None:
-            # Joining a running session is quick, so the page is in it by
-            # the time its subscription is confirmed.
             await join(before, INVALID_PARAMS)
         else:
-            # Starting one takes a while, and the page hears its progress.
             page.joining = asyncio.create_task(join(before, _CLOSED))
         return leave
 
@@ -445,11 +422,6 @@ class SessionEvents:
         )
 
     def _on_loop(self, call: Callable[..., None], *args: Any) -> None:
-        """Call `call` on the loop that serves the event.
-
-        A session notifies its pages from wherever it runs, which may be
-        another thread or, in tests, another loop.
-        """
         try:
             running = asyncio.get_running_loop()
         except RuntimeError:

@@ -286,8 +286,7 @@ async def _call(
     assert isinstance(request, Request)
     if not request.auth.scopes:
         # Before the arguments are read: `@requires` would refuse the call,
-        # but only once the handler is called with them. The user may be
-        # one the app defined, which need not say it is authenticated.
+        # but only once the handler is called with them.
         return tool_result(
             params.name,
             make_problem("unauthorized", "Authorization header required"),

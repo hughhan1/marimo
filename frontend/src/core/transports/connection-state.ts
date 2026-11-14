@@ -7,11 +7,7 @@ import {
 } from "../notebook/replica";
 import { Logger } from "@/utils/Logger";
 
-/**
- * The status the editor shows once its session refused or ended it.
- *
- * Keep the server's reasons in sync with marimo/_server/codes.py.
- */
+/** The status the editor shows once its session refused or ended it. */
 export function closedStatus(reason: string | undefined): ConnectionStatus & {
   reason: string;
 } {

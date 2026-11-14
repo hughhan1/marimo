@@ -14,7 +14,6 @@ const ARGS: SessionArguments = { session_id: "s1", query_params: "" };
 
 type Follow = Parameters<Session["follow"]>[1];
 
-/** A session whose state and subscriptions a test drives. */
 function fakeSession(states: SessionState[]) {
   const follows: Follow[] = [];
   const pending: ((event: object, eventId: string) => void)[] = [];
@@ -141,10 +140,10 @@ describe("sessionEvents", () => {
     [
       {
         code: -32000,
-        message: "MARIMO_SHUTDOWN",
-        data: { reason: "MARIMO_SHUTDOWN" },
+        message: "MARIMO_KIOSK_NOT_ALLOWED",
+        data: { reason: "MARIMO_KIOSK_NOT_ALLOWED" },
       },
-      "kernel not found",
+      "kiosk mode is not available for this session",
     ],
     [new Error("Lost the connection"), "kernel not found"],
   ])(
