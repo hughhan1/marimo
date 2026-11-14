@@ -138,13 +138,13 @@ describe("sessionEvents", () => {
     [{ code: -32024, message: "Forbidden" }, "not authorized"],
     [
       {
-        code: -32000,
+        code: -32024,
         message: "MARIMO_KIOSK_NOT_ALLOWED",
         data: { reason: "MARIMO_KIOSK_NOT_ALLOWED" },
       },
       "kiosk mode is not available for this session",
     ],
-    [new Error("Lost the connection"), "kernel not found"],
+    [{ code: -32023, message: "NotFound" }, "kernel not found"],
   ])(
     "stops when the session ends or refuses the subscription (%o)",
     async (failure, reason) => {
@@ -161,6 +161,24 @@ describe("sessionEvents", () => {
       });
     },
   );
+
+  it("tries again when reading the state gets no answer", async () => {
+    vi.useFakeTimers();
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+    vi.mocked(fake.session.read).mockRejectedValueOnce(
+      new TypeError("fetch failed"),
+    );
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session),
+      { types: ["ready", "reset"] },
+    );
+    const received = collect(events);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(received).toEqual([reset, ready]);
+    expect(fake.follows).toHaveLength(1);
+    events.close();
+    vi.useRealTimers();
+  });
 
   it("reads the state again after the server skipped changes, and follows from its cursor", async () => {
     const fake = fakeSession([
@@ -209,6 +227,34 @@ describe("sessionEvents", () => {
     fake.send(change, "e2");
     await vi.waitFor(() => expect(received).toHaveLength(4));
     expect(received).toEqual([reset, ready, change, change]);
+    events.close();
+  });
+
+  it("applies nothing more from a kept subscription that skipped changes, and reads its state again", async () => {
+    let focused = false;
+    const view = Object.assign(new EventTarget(), {
+      document: { hasFocus: () => focused } as Document,
+    });
+    const fake = fakeSession([
+      { cursor: "c1", events: [reset, ready] },
+      { cursor: "c9", events: [reset, { ...ready, id: "h-9" }] },
+    ]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session, view),
+      { types: ["ready", "reset", "marimo"] },
+    );
+    const received = collect(events);
+    await vi.waitFor(() => expect(received).toHaveLength(2));
+    const confirm = fake.holdNext();
+    focused = true;
+    view.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    fake.follows[0].onGap();
+    fake.send({ event: "marimo", data: { marimo: { op: "alert" } } }, "e1");
+    confirm();
+    await vi.waitFor(() =>
+      expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]),
+    );
     events.close();
   });
 

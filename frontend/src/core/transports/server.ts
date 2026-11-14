@@ -6,6 +6,8 @@ import { closedStatus } from "./connection-state";
 
 // The draft's Forbidden: the caller may not follow the session.
 const FORBIDDEN = -32024;
+const CONNECTION_CLOSED = -32000;
+const REQUEST_TIMEOUT = -32001;
 
 /** What a page subscribes to its session with, as the server declares it. */
 export type SessionArguments = EventArguments["marimo"]["session"];
@@ -44,11 +46,28 @@ function stopped(reason: string | undefined) {
 
 function reasonOf(error: unknown): string | undefined {
   const failure = error as { code?: unknown; data?: { reason?: unknown } };
-  if (failure?.code === FORBIDDEN) {
-    return "MARIMO_UNAUTHORIZED";
-  }
   const reason = failure?.data?.reason;
-  return typeof reason === "string" ? reason : undefined;
+  if (typeof reason === "string") {
+    return reason;
+  }
+  return failure?.code === FORBIDDEN ? "MARIMO_UNAUTHORIZED" : undefined;
+}
+
+function answered(error: unknown): boolean {
+  const failure = error as {
+    code?: unknown;
+    status?: unknown;
+    result?: unknown;
+  } | null;
+  return (
+    failure?.result !== undefined ||
+    (typeof failure?.code === "number" &&
+      failure.code !== CONNECTION_CLOSED &&
+      failure.code !== REQUEST_TIMEOUT) ||
+    (typeof failure?.status === "number" &&
+      failure.status >= 400 &&
+      failure.status < 500)
+  );
 }
 
 /**
@@ -56,12 +75,13 @@ function reasonOf(error: unknown): string | undefined {
  * from the state's cursor.
  *
  * The client reconnects and resumes from the cursor by itself. The page in
- * the focused window is
- * pushed each change and every other page polls, so of a browser's pages
- * only one holds a connection open. When the server skipped changes, the
- * page reads its state again. A page that switches between push and poll,
- * or reads its state again, keeps its subscription until the next one is
- * confirmed, so it stays in its session throughout.
+ * the focused window is pushed each change and every other page polls, so
+ * of a browser's pages only one holds a connection open. When the server
+ * skipped changes, the page reads its state again. A page that switches
+ * between push and poll, or reads its state again, keeps its subscription
+ * until the next one is confirmed, so it stays in its session throughout.
+ * A failure the server answered ends the transport for good; any other
+ * failure to read or subscribe ends the attempt, which is made again.
  */
 export function sessionEvents(
   args: () => Promise<SessionArguments>,
@@ -74,11 +94,18 @@ export function sessionEvents(
   const delivery = () => (view.document.hasFocus() ? "push" : "poll");
   return async ({ signal }, { open, message }) => {
     const named = await args();
-    const delivered = new Set<string>();
     let held: { turn: AbortController; drained: Promise<unknown> } | undefined;
     try {
       while (!signal.aborted) {
-        const state = await session.read(named, { signal });
+        let state: SessionState;
+        try {
+          state = await session.read(named, { signal });
+        } catch (error) {
+          if (signal.aborted || !answered(error)) {
+            return;
+          }
+          throw stopped(reasonOf(error));
+        }
         if (state.closed) {
           for (const event of state.events) {
             message(event);
@@ -88,12 +115,15 @@ export function sessionEvents(
         let unread: readonly object[] = state.events;
         let cursor = state.cursor;
         let gap = false;
+        let yieldTurn: () => void = () => undefined;
+        let passed = new Set<string>();
         while (!signal.aborted && !gap) {
           const turn = new AbortController();
           const mode = delivery();
           const replaced = Promise.withResolvers<false>();
-          let current = true;
-          let muted = false;
+          yieldTurn = () => replaced.resolve(false);
+          const skip = passed;
+          let recording: Set<string> | undefined;
           const switched = () => {
             if (delivery() !== mode) {
               replaced.resolve(false);
@@ -107,11 +137,8 @@ export function sessionEvents(
               cursor,
               delivery: mode,
               onGap: () => {
-                if (current) {
-                  gap = true;
-                  muted = true;
-                  replaced.resolve(false);
-                }
+                gap = true;
+                yieldTurn();
               },
             });
             open();
@@ -124,28 +151,25 @@ export function sessionEvents(
             unread = [];
             const drained = (async () => {
               for await (const { eventId, data } of events) {
-                if (muted || delivered.has(eventId)) {
+                if (gap || skip.delete(eventId)) {
                   continue;
                 }
-                delivered.add(eventId);
-                if (delivered.size > 1024) {
-                  const [oldest] = delivered;
-                  delivered.delete(oldest);
-                }
+                recording?.add(eventId);
                 message(data);
               }
               return true;
             })();
             const ended = await Promise.race([drained, replaced.promise]);
-            current = false;
             cursor = events.cursor ?? cursor;
             if (!ended) {
+              recording = passed = new Set();
               held = { turn, drained: drained.catch(() => undefined) };
             }
           } catch (error) {
-            if (!signal.aborted) {
-              throw stopped(reasonOf(error));
+            if (signal.aborted || !answered(error)) {
+              return;
             }
+            throw stopped(reasonOf(error));
           } finally {
             view.removeEventListener("focus", switched);
             view.removeEventListener("blur", switched);
