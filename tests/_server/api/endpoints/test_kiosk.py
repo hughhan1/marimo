@@ -1,8 +1,11 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
+import contextlib
+import queue
 from typing import TYPE_CHECKING, Any
 
+from tests._server import session_events
 from tests._server.api.endpoints.ws_helpers import (
     HEADERS as _HEADERS,
     assert_kernel_ready_response,
@@ -17,6 +20,7 @@ from tests._server.mocks import run_cells
 from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
+    import pytest
     from starlette.testclient import TestClient
 
 
@@ -41,6 +45,26 @@ def new_cell(cell_id: str) -> dict[str, Any]:
         "base_etag": None,
         "cell": {"id": cell_id, "code": f"{cell_id} = 1"},
     }
+
+
+def test_a_kiosk_page_under_the_editors_session_id_is_told_alone(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(session_events, "_TIMEOUT", 1.0)
+    with connect_session(
+        client, "/ws?session_id=123", headers=_HEADERS
+    ) as editor:
+        assert_kernel_ready_response(receive_notification(editor))
+        with connect_session(
+            client, "/ws?session_id=123&kiosk=true", headers=_HEADERS
+        ) as kiosk:
+            told = receive_until("consumer-capabilities", kiosk)
+            assert told["data"]["consumer_capabilities"]["edit"] is False
+            received = []
+            with contextlib.suppress(queue.Empty):
+                while True:
+                    received.append(receive_notification(editor)["op"])
+            assert "consumer-capabilities" not in received
 
 
 async def test_connect_kiosk_with_session(client: TestClient) -> None:
@@ -90,8 +114,7 @@ async def test_connect_kiosk_with_session(client: TestClient) -> None:
             assert edited.ok, edited.problem
 
             # Assert kiosk session received the document transaction
-            data = receive_notification(other_websocket)
-            assert data["op"] == "notebook-document-transaction"
+            receive_until("notebook-document-transaction", other_websocket)
 
             # Run a single cell through the host
             response = run_cells(
@@ -174,6 +197,7 @@ def test_takeover_ping_pong_preserves_membership(client: TestClient) -> None:
             client, "/ws?session_id=b", headers=_HEADERS
         ) as tb:
             receive_until("kernel-ready", tb)
+            receive_until("consumer-capabilities", tb)
 
             # Drain both tabs each round so per-tab queues stay aligned: every
             # takeover enqueues one capabilities-changed per tab.

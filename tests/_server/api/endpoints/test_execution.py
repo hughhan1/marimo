@@ -863,6 +863,7 @@ def test_takeover_transfers_edit_without_disconnect(
                 ),
             )
 
+            receive_until("consumer-capabilities", viewer)
             resp = client.post(
                 "/api/kernel/takeover",
                 headers={**WS_HEADERS, "Marimo-Session-Id": "vw1"},

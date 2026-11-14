@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias
 
 import msgspec
 from holon.ext.events import FORBIDDEN, NOT_FOUND, Events
-from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ErrorData
+from mcp.types import INVALID_PARAMS, ErrorData
 from starlette.requests import Request
 
 from marimo import _loggers
@@ -115,7 +115,7 @@ class SessionState(msgspec.Struct, frozen=True):
 class _Change:
     event: dict[str, Any]
     notebook: str | None = None
-    to: str | None = None
+    to: tuple[str, bool] | None = None
     op: str | None = None
 
 
@@ -138,7 +138,7 @@ class _Page:
 
 def _ending(reason: str | None) -> ErrorData:
     if reason is None:
-        return ErrorData(code=INTERNAL_ERROR, message="The session failed")
+        return ErrorData(code=NOT_FOUND, message="The session failed")
     if reason in _FORBIDDEN_REASONS:
         code = FORBIDDEN
     elif reason in _INVALID_REASONS:
@@ -213,9 +213,6 @@ class SessionEvents:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._unread: set[str] = set()
         self._pages: dict[tuple[str, bool], _Page] = {}
-        self._roles: weakref.WeakKeyDictionary[
-            Session, dict[tuple[str, bool], bool]
-        ] = weakref.WeakKeyDictionary()
         _, definitions = msgspec.json.schema_components([SessionRequest])
         (arguments,) = definitions.values()
         self.session: EventType[dict[str, Any], _Change] = self.events.event(
@@ -250,9 +247,6 @@ class SessionEvents:
             return SessionState(self.session.cursor(), [_RESET])
         self._unread.discard(params.session_id)
         session, viewer = place
-        self._roles.setdefault(session, {})[
-            (params.session_id, params.kiosk)
-        ] = viewer
         events = self._snapshot(
             bridge,
             manager,
@@ -330,11 +324,10 @@ class SessionEvents:
         arguments: dict[str, Any],
     ) -> bool:
         change = event.data
+        key = (arguments["session_id"], arguments.get("kiosk", False))
         if change.notebook is None:
-            return bool(change.to == arguments["session_id"])
-        page = self._pages.get(
-            (arguments["session_id"], arguments.get("kiosk", False))
-        )
+            return change.to == key
+        page = self._pages.get(key)
         session = None if page is None else page.tab.session
         bridge: SessionBridge = _request(context).app.state.host_context.bridge
         if session is None or session is not bridge.session_for_notebook(
@@ -373,7 +366,7 @@ class SessionEvents:
             return None
         bridge = await self._feed(request)
         manager = AppState(request).session_manager
-        to_page = partial(self._to_page, asked.session_id)
+        to_page = partial(self._to_page, key)
         tab = Tab(
             bridge=bridge,
             manager=manager,
@@ -388,13 +381,12 @@ class SessionEvents:
                 wrote, reason = await tab.connect(
                     HTTPRequest.from_request(request)
                 )
-            except Exception:
-                LOGGER.exception("A page could not join its session")
-                wrote, reason = [], None
-            else:
                 if reason is None:
                     self._joined(page, before, wrote)
                     return
+            except Exception:
+                LOGGER.exception("A page could not join its session")
+                wrote, reason = [], None
             to_page(wrote)
             tab.leave()
             self._end(page, reason)
@@ -424,14 +416,10 @@ class SessionEvents:
             for event in self._snapshot(
                 tab.bridge, manager, session, wrote, viewer=viewer
             ):
-                self._on_loop(
-                    self.session.emit, _Change(event, to=params.session_id)
-                )
-        elif (joined := tab.session) is not None and self._roles.get(
-            joined, {}
-        ).pop(page.key, tab.viewer) != tab.viewer:
+                self._on_loop(self.session.emit, _Change(event, to=page.key))
+        elif (joined := tab.session) is not None:
             self._to_page(
-                params.session_id,
+                page.key,
                 [
                     ConsumerCapabilitiesNotification(
                         consumer_capabilities=joined.room.get_capabilities(tab)
@@ -450,8 +438,6 @@ class SessionEvents:
             del self._pages[page.key]
         if page.joining is not None:
             await cancel_and_wait(page.joining)
-        if (session := page.tab.session) is not None:
-            self._roles.setdefault(session, {})[page.key] = page.tab.viewer
         page.tab.leave()
 
     def _end(self, page: _Page, reason: str | None) -> None:
@@ -462,14 +448,12 @@ class SessionEvents:
         page.subscriptions.clear()
 
     def _to_page(
-        self, session_id: str, messages: list[NotificationMessage]
+        self, key: tuple[str, bool], messages: list[NotificationMessage]
     ) -> None:
         for message in messages:
             self._on_loop(
                 self.session.emit,
-                _Change(
-                    _wire(notification_event(None, message)), to=session_id
-                ),
+                _Change(_wire(notification_event(None, message)), to=key),
             )
 
     def _close(self, subscription_id: str, reason: str | None) -> None:

@@ -25,6 +25,7 @@ from marimo._messaging.notification import (
     StartupProgressNotification,
 )
 from marimo._messaging.serde import deserialize_kernel_message
+from marimo._server.api import events
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionParams,
 )
@@ -34,7 +35,7 @@ from marimo._server.host.session import Tab
 from marimo._server.main import create_starlette_app
 from marimo._server.session_manager import SessionManager
 from marimo._session.model import ConnectionState, SessionMode
-from marimo._types.ids import SessionId
+from marimo._types.ids import ConsumerId, SessionId
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.api.endpoints.ws_helpers import (
     QUERY_PARAMS_CASES,
@@ -160,20 +161,28 @@ def test_a_page_rejoining_a_session_another_took_over_is_told_it_views_it(
             assert told["data"]["consumer_capabilities"]["edit"] is False
 
 
-def test_a_join_that_fails_ends_the_subscription(
+def test_a_join_that_fails_ends_the_subscription_for_good(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def connect(self: Tab, http_request: Any) -> Any:
-        del self, http_request
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
         raise RuntimeError("broken")
 
-    monkeypatch.setattr(Tab, "connect", connect)
-    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
-        with connect_session(client, WS_URL) as websocket:
-            websocket.receive_text()
-            websocket.receive_text()
-            raise AssertionError()
-    assert exc_info.value.reason == "The session failed"
+    monkeypatch.setattr(events.SessionEvents, "_snapshot", broken)
+    cursor: list[str] = []
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    deadline = time.monotonic() + 20
+    with pytest.raises(SessionClosed) as closed:  # noqa: PT012
+        while True:
+            assert time.monotonic() < deadline
+            with connect_session(client, WS_URL, poll=cursor[0]):
+                pass
+            time.sleep(0.05)
+    assert closed.value.error is not None
+    assert closed.value.error["code"] == NOT_FOUND
+    session = get_session_manager(client).get_session(SessionId("123"))
+    assert session is None or ConsumerId("123") not in session.room.consumers
 
 
 def test_a_page_whose_join_was_refused_can_join_again(
