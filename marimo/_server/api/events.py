@@ -159,6 +159,29 @@ def _place(
     return session, viewer
 
 
+def _handshake(
+    manager: SessionManager,
+    params: ConnectionParams,
+    session: Session,
+    *,
+    viewer: bool,
+) -> list[NotificationMessage]:
+    """What starts an editor on a session that already runs."""
+    handshake: list[NotificationMessage] = [
+        build_kernel_ready(
+            session=session,
+            resumed=True,
+            ui_values=session.session_view.ui_values,
+            kiosk=viewer,
+        )
+    ]
+    if not viewer and manager.get_session(params.session_id) is None:
+        # The page takes over a session another page left.
+        handshake.append(_RESUMED)
+    handshake.extend(session.session_view.snapshot_notifications())
+    return handshake
+
+
 class SessionEvents:
     """The `session` event and the state a page follows it from."""
 
@@ -166,6 +189,8 @@ class SessionEvents:
         self.events = Events()
         self._fed: weakref.WeakSet[SessionBridge] = weakref.WeakSet()
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Pages that read no session, whose subscription sends them its state.
+        self._unread: set[str] = set()
         self.session: EventType[SessionArguments, _Change] = self.events.event(
             "session",
             description="Follow an editor session: its notebook and kernel.",
@@ -194,22 +219,17 @@ class SessionEvents:
             )
         place = _place(manager, params)
         if place is None:
+            # Subscribing starts or joins the session, and sends its state.
+            self._unread.add(params.session_id)
             return SessionState(self.session.cursor(), [])
+        self._unread.discard(params.session_id)
         session, viewer = place
-        handshake: list[NotificationMessage] = [
-            build_kernel_ready(
-                session=session,
-                resumed=True,
-                ui_values=session.session_view.ui_values,
-                kiosk=viewer,
-            )
-        ]
-        if not viewer and manager.get_session(params.session_id) is None:
-            # The page takes over a session another page left.
-            handshake.append(_RESUMED)
-        handshake.extend(session.session_view.snapshot_notifications())
         events = self._snapshot(
-            bridge, manager, session, handshake, viewer=viewer
+            bridge,
+            manager,
+            session,
+            _handshake(manager, params, session, viewer=viewer),
+            viewer=viewer,
         )
         return SessionState(self.session.cursor(), events)
 
@@ -348,8 +368,12 @@ class SessionEvents:
                 self._close(subscription_id, reason, refused)
                 return
             place = _place(manager, params)
-            if place is not None and place != before:
+            unread = params.session_id in self._unread
+            self._unread.discard(params.session_id)
+            if place is not None and (place != before or unread):
                 session, viewer = place
+                if not any(each.name == "kernel-ready" for each in wrote):
+                    wrote = _handshake(manager, params, session, viewer=viewer)
                 for event in self._snapshot(
                     bridge, manager, session, wrote, viewer=viewer
                 ):

@@ -134,10 +134,16 @@ def connect_session(
     client: TestClient,
     url: str,
     headers: dict[str, str] | None = None,
+    *,
+    resume: str | None = None,
+    read_only: list[str] | None = None,
 ) -> Iterator[SessionEvents]:
     """Subscribe to the session a `/ws` URL named, for the block's duration.
 
-    The URL's path before `/ws` is where the app is mounted.
+    The URL's path before `/ws` is where the app is mounted. With `resume`,
+    the subscription resumes from that cursor without reading the state.
+    With `read_only`, the state is read and its cursor appended to it, and
+    nothing is followed.
     """
     parts = urlsplit(url)
     path = f"{parts.path.removesuffix('/ws')}/api/mcp"
@@ -205,7 +211,17 @@ def connect_session(
         )
         return b"".join(answered)
 
-    frames, cursor = session_state(portal.call(read_state))
+    if read_only is not None:
+        _, read = session_state(portal.call(read_state))
+        assert isinstance(read, str)
+        read_only.append(read)
+        yield SessionEvents(chunks, portal, portal.call(anyio.Event), None)
+        return
+    frames, cursor = (
+        ([], resume)
+        if resume is not None
+        else session_state(portal.call(read_state))
+    )
     if isinstance(cursor, SessionClosed):
         if not frames:
             raise WebSocketDisconnect(cursor.code, cursor.reason)
@@ -249,14 +265,19 @@ def connect_session(
             stream.put(_END)
 
     running = portal.start_task_soon(run)
-    # As a page does, the state is read once following it is confirmed.
-    confirmed = stream.get(timeout=_TIMEOUT)
-    if confirmed is not _END and "notifications/events/active" in str(
-        confirmed
+    # As a page does, the state is read once following it is confirmed: by
+    # the stream's first message, or its refusal.
+    opening: list[object] = []
+    while not opening or not any(
+        chunk is _END or "\n\n" in str(chunk).replace("\r", "")
+        for chunk in opening
     ):
+        opening.append(stream.get(timeout=_TIMEOUT))
+    if "notifications/events/active" in "".join(map(str, opening)):
         for frame in frames:
             chunks.put(_as_event(frame))
-    chunks.put(confirmed)
+    for chunk in opening:
+        chunks.put(chunk)
 
     def forward() -> None:
         while (chunk := stream.get()) is not _END:

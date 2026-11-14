@@ -92,6 +92,8 @@ export function sessionEvents(
           }
         };
         document.addEventListener("visibilitychange", switched);
+        let reconnecting = false;
+        let following: { cursor: string | null } | undefined;
         try {
           const events = await session.follow(named, {
             signal: AbortSignal.any([signal, turn.signal]),
@@ -102,12 +104,24 @@ export function sessionEvents(
                 gap = true;
                 turn.abort();
               } else if (status === "reconnecting") {
+                reconnecting = true;
                 lost();
               } else {
                 open();
+                if (reconnecting) {
+                  // Resumed with nothing skipped: what the page holds is
+                  // whole again, as after a snapshot.
+                  reconnecting = false;
+                  message({
+                    event: "ready",
+                    id: following?.cursor ?? cursor,
+                    data: {},
+                  });
+                }
               }
             },
           });
+          following = events;
           for (const event of unread) {
             message(event);
           }

@@ -75,6 +75,21 @@ def test_a_page_from_before_a_restart_follows_its_session(
         assert_kernel_ready_response(receive_notification(websocket))
 
 
+def test_a_page_that_read_no_session_follows_the_one_another_page_started(
+    client: TestClient,
+) -> None:
+    cursor: list[str] = []
+    with connect_session(client, OTHER_WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, WS_URL) as first:
+        assert_kernel_ready_response(receive_notification(first))
+        with connect_session(client, OTHER_WS_URL, resume=cursor[0]) as second:
+            assert_kernel_ready_response(
+                receive_notification(second),
+                create_response({"kiosk": True, "resumed": True}),
+            )
+
+
 def test_without_session(client: TestClient) -> None:
     # The event's arguments require a session id.
     with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012

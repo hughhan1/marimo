@@ -152,17 +152,22 @@ describe("sessionEvents", () => {
     },
   );
 
-  it("shows it is connecting while the client reconnects, and connected once it is back", async () => {
+  it("shows it is connecting while the client reconnects, and whole again once it is back", async () => {
     const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
     const events = new NotebookEvents(
       sessionEvents(async () => ARGS, fake.session),
+      { types: ["ready", "reset"] },
     );
+    const received = collect(events);
     await vi.waitFor(() => expect(events.status).toBe("connected"));
     fake.follows[0].onStatus("reconnecting");
     expect(events.status).toBe("connecting");
     fake.follows[0].onStatus("connected");
     expect(events.status).toBe("connected");
+    expect(received).toHaveLength(3);
+    expect(received.at(-1)).toMatchObject({ event: "ready" });
     expect(fake.session.follow).toHaveBeenCalledTimes(1);
+    expect(fake.session.read).toHaveBeenCalledTimes(1);
     events.close();
   });
 
