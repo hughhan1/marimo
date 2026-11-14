@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from sse_starlette.sse import AppStatus
 
 from marimo._server.api.tools import contract
 from marimo._session.model import SessionMode
@@ -246,11 +247,15 @@ def test_a_notification_is_acknowledged_and_dropped(
 
 
 def test_an_older_client_is_answered_under_the_same_rules(
-    client: TestClient,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The SDK also answers the revisions before 2026-07-28, as one event of
     # a stream. The caller's credential and the reply's shape are marimo's,
-    # so they hold there too.
+    # so they hold there too. A server shut down earlier in this process
+    # sets the SSE library's process-wide exit flag, which would end the
+    # stream at once, as it does when the process exits.
+    monkeypatch.setattr(AppStatus, "should_exit", False)
+
     def reply(response: Any) -> dict[str, Any]:
         _, _, data = response.text.partition("data: ")
         return json.loads(data)  # type: ignore[no-any-return]
