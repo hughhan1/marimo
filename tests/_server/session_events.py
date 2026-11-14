@@ -145,7 +145,8 @@ def connect_session(
     the subscription resumes from that cursor without reading the state.
     With `read_only`, the state is read and its cursor appended to it, and
     nothing is followed. With `poll`, the session is polled once from that
-    cursor, and what the poll answered is all that is received.
+    cursor, and what the poll answered is all that is received; a poll the
+    server answers with an error raises it as `SessionClosed`.
     """
     parts = urlsplit(url)
     path = f"{parts.path.removesuffix('/ws')}/api/mcp"
@@ -238,7 +239,7 @@ def connect_session(
         if "error" in polled:
             ended = session_message(polled)
             assert isinstance(ended, SessionClosed)
-            raise WebSocketDisconnect(ended.code, ended.reason)
+            raise ended
         for event in polled["result"]["events"]:
             chunks.put(_as_event(json.dumps(event["data"])))
         chunks.put(_END)

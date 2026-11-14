@@ -16,13 +16,17 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 import msgspec
-from holon.ext.events import Events
-from mcp.types import INVALID_PARAMS, ErrorData
+from holon.ext.events import FORBIDDEN, NOT_FOUND, Events
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ErrorData
 from starlette.requests import Request
 
+from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
-from marimo._messaging.notification import BannerNotification
+from marimo._messaging.notification import (
+    BannerNotification,
+    ConsumerCapabilitiesNotification,
+)
 from marimo._messaging.serde import deserialize_kernel_message
 from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
@@ -58,8 +62,18 @@ if TYPE_CHECKING:
     from marimo._server.session_manager import SessionManager
     from marimo._session import Session
 
-# The sketch leaves -32000 to -32019 to implementations.
-_CLOSED = -32000
+LOGGER = _loggers.marimo_logger()
+
+_FORBIDDEN_REASONS = frozenset(
+    {
+        WebSocketCloseReason.NOT_ALLOWED,
+        WebSocketCloseReason.UNAUTHORIZED,
+        WebSocketCloseReason.KIOSK_NOT_ALLOWED,
+    }
+)
+_INVALID_REASONS = frozenset(
+    {WebSocketCloseReason.NO_SESSION_ID, WebSocketCloseReason.NO_FILE_KEY}
+)
 
 SessionEvent: TypeAlias = protocol.Event | MarimoEvent
 """One change to a page's session: a host event, or a marimo notification."""
@@ -116,6 +130,18 @@ class _Page:
     tab: Tab
     subscriptions: set[str]
     joining: asyncio.Task[None] | None = None
+
+
+def _ending(reason: str | None) -> ErrorData:
+    if reason is None:
+        return ErrorData(code=INTERNAL_ERROR, message="The session failed")
+    if reason in _FORBIDDEN_REASONS:
+        code = FORBIDDEN
+    elif reason in _INVALID_REASONS:
+        code = INVALID_PARAMS
+    else:
+        code = NOT_FOUND
+    return ErrorData(code=code, message=reason, data={"reason": reason})
 
 
 def _wire(event: RoutedEvent, *, include_code: bool = True) -> dict[str, Any]:
@@ -296,22 +322,17 @@ class SessionEvents:
         change = event.data
         if change.notebook is None:
             return bool(change.to == arguments["session_id"])
-        request = _request(context)
-        session = AppState(request).session_manager.get_session(
-            arguments["session_id"]
-        )
-        bridge: SessionBridge = request.app.state.host_context.bridge
+        page = self._pages.get(arguments["session_id"])
+        session = None if page is None else page.tab.session
+        bridge: SessionBridge = _request(context).app.state.host_context.bridge
         if session is None or session is not bridge.session_for_notebook(
             protocol.NotebookId(change.notebook)
         ):
             return False
-        if change.op is None:
-            return True
-        main = session.room.main_consumer
-        viewer = arguments.get("kiosk", False) or (
-            main is not None and main.consumer_id != arguments["session_id"]
+        assert page is not None
+        return change.op is None or not should_filter_operation(
+            change.op, is_kiosk=page.tab.viewer
         )
-        return not should_filter_operation(change.op, is_kiosk=viewer)
 
     def _transform(
         self,
@@ -330,13 +351,12 @@ class SessionEvents:
     ) -> Callable[[], Awaitable[None] | None] | None:
         request = _request(context)
         asked = msgspec.convert(arguments, SessionRequest)
-        leave = partial(self._leave, asked.session_id, subscription_id)
         if (page := self._pages.get(asked.session_id)) is not None:
             page.subscriptions.add(subscription_id)
-            return leave
+            return partial(self._leave, page, subscription_id)
         params = _params(request, asked)
         if isinstance(params, str):
-            self._close(subscription_id, params, INVALID_PARAMS)
+            self._close(subscription_id, params)
             return None
         bridge = await self._feed(request)
         manager = AppState(request).session_manager
@@ -346,60 +366,85 @@ class SessionEvents:
             manager=manager,
             params=params,
             sent=lambda sent: to_page([deserialize_kernel_message(sent)]),
-            closed=lambda reason: self._on_loop(
-                self._end, asked.session_id, reason
-            ),
+            closed=lambda reason: self._on_loop(self._end, page, reason),
         )
         page = self._pages[asked.session_id] = _Page(tab, {subscription_id})
 
-        async def join(
-            before: tuple[Session, bool] | None, refused: int
-        ) -> None:
-            wrote, reason = await tab.connect(
-                HTTPRequest.from_request(request)
-            )
-            if reason is not None:
-                to_page(wrote)
-                self._end(params.session_id, reason, refused)
-                return
-            place = _place(manager, params)
-            unread = params.session_id in self._unread
-            self._unread.discard(params.session_id)
-            if place is not None and (place != before or unread):
-                session, viewer = place
-                if not any(each.name == "kernel-ready" for each in wrote):
-                    wrote = _handshake(manager, params, session, viewer=viewer)
-                for event in self._snapshot(
-                    bridge, manager, session, wrote, viewer=viewer
-                ):
-                    self._on_loop(
-                        self.session.emit, _Change(event, to=params.session_id)
-                    )
-            tab._check_status_update()
+        async def join(before: tuple[Session, bool] | None) -> None:
+            try:
+                wrote, reason = await tab.connect(
+                    HTTPRequest.from_request(request)
+                )
+            except Exception:
+                LOGGER.exception("A page could not join its session")
+                wrote, reason = [], None
+            else:
+                if reason is None:
+                    self._joined(page, before, wrote)
+                    return
+            to_page(wrote)
+            tab.leave()
+            self._end(page, reason)
 
         before = _place(manager, params)
         if before is not None:
-            await join(before, INVALID_PARAMS)
+            await join(before)
         else:
-            page.joining = asyncio.create_task(join(before, _CLOSED))
-        return leave
+            page.joining = asyncio.create_task(join(before))
+        return partial(self._leave, page, subscription_id)
 
-    async def _leave(self, session_id: str, subscription_id: str) -> None:
-        page = self._pages.get(session_id)
-        if page is None or subscription_id not in page.subscriptions:
+    def _joined(
+        self,
+        page: _Page,
+        before: tuple[Session, bool] | None,
+        wrote: list[NotificationMessage],
+    ) -> None:
+        tab = page.tab
+        manager, params = tab.manager, tab.params
+        place = _place(manager, params)
+        unread = params.session_id in self._unread
+        self._unread.discard(params.session_id)
+        if place is not None and (place != before or unread):
+            session, viewer = place
+            if not any(each.name == "kernel-ready" for each in wrote):
+                wrote = _handshake(manager, params, session, viewer=viewer)
+            for event in self._snapshot(
+                tab.bridge, manager, session, wrote, viewer=viewer
+            ):
+                self._on_loop(
+                    self.session.emit, _Change(event, to=params.session_id)
+                )
+        elif tab.session is not None:
+            self._to_page(
+                params.session_id,
+                [
+                    ConsumerCapabilitiesNotification(
+                        consumer_capabilities=tab.session.room.get_capabilities(
+                            tab
+                        )
+                    )
+                ],
+            )
+        tab._check_status_update()
+
+    async def _leave(self, page: _Page, subscription_id: str) -> None:
+        if subscription_id not in page.subscriptions:
             return
         page.subscriptions.discard(subscription_id)
         if page.subscriptions:
             return
-        del self._pages[session_id]
+        if self._pages.get(page.tab.params.session_id) is page:
+            del self._pages[page.tab.params.session_id]
         if page.joining is not None:
             await cancel_and_wait(page.joining)
         page.tab.leave()
 
-    def _end(self, session_id: str, reason: str, code: int = _CLOSED) -> None:
-        page = self._pages.pop(session_id, None)
-        for subscription_id in page.subscriptions if page else ():
-            self._close(subscription_id, reason, code)
+    def _end(self, page: _Page, reason: str | None) -> None:
+        if self._pages.get(page.tab.params.session_id) is page:
+            del self._pages[page.tab.params.session_id]
+        for subscription_id in page.subscriptions:
+            self._close(subscription_id, reason)
+        page.subscriptions.clear()
 
     def _to_page(
         self, session_id: str, messages: list[NotificationMessage]
@@ -412,14 +457,8 @@ class SessionEvents:
                 ),
             )
 
-    def _close(
-        self, subscription_id: str, reason: str, code: int = _CLOSED
-    ) -> None:
-        self._on_loop(
-            self.session.terminate,
-            subscription_id,
-            ErrorData(code=code, message=reason, data={"reason": reason}),
-        )
+    def _close(self, subscription_id: str, reason: str | None) -> None:
+        self._on_loop(self.session.terminate, subscription_id, _ending(reason))
 
     def _on_loop(self, call: Callable[..., None], *args: Any) -> None:
         try:

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     )
     from marimo._server.host.bridge import SessionBridge
     from marimo._server.session_manager import SessionManager
+    from marimo._session import Session
 
 
 class Tab(SessionHandler):
@@ -82,6 +83,16 @@ class Tab(SessionHandler):
         finally:
             self._writing = None
         return wrote, None
+
+    @property
+    def session(self) -> Session | None:
+        """The session the page joined, until it leaves it."""
+        return self._session
+
+    @property
+    def viewer(self) -> bool:
+        """Whether the page views its session rather than edits it."""
+        return self._session is not None and self._is_viewer(self._session)
 
     def leave(self) -> None:
         """Leave the session, which then waits out its grace period."""

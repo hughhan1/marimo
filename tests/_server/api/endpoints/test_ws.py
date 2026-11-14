@@ -5,11 +5,13 @@ import asyncio
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from holon.ext.events import NOT_FOUND
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -27,6 +29,7 @@ from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionParams,
 )
 from marimo._server.codes import WebSocketCodes
+from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.session import Tab
 from marimo._server.main import create_starlette_app
 from marimo._server.session_manager import SessionManager
@@ -45,7 +48,8 @@ from tests._server.api.endpoints.ws_helpers import (
 )
 from tests._server.conftest import get_kernel_tasks
 from tests._server.mocks import get_session_manager
-from tests._server.session_events import connect_session
+from tests._server.session_events import _portal, connect_session
+from tests.mcp_request import SessionClosed
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -114,6 +118,81 @@ def test_a_page_that_polls_and_streams_in_turn_stays_in_its_session(
         pass
     with connect_session(client, WS_URL, poll=cursor[0]):
         pass
+
+
+def test_a_page_polling_a_session_that_was_shut_down_is_told_it_is_gone(
+    client: TestClient,
+) -> None:
+    cursor: list[str] = []
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
+    manager = get_session_manager(client)
+    deadline = time.monotonic() + 20
+    while manager.get_session(SessionId("123")) is None:
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    _portal(client).call(manager.close_session, SessionId("123"))
+    with pytest.raises(SessionClosed) as closed:
+        with connect_session(client, WS_URL, poll=cursor[0]):
+            pass
+    assert closed.value.error is not None
+    assert closed.value.error["code"] == NOT_FOUND
+    assert closed.value.reason == "MARIMO_SHUTDOWN"
+
+
+def test_a_page_rejoining_a_session_another_took_over_is_told_it_views_it(
+    client: TestClient,
+) -> None:
+    with connect_session(client, WS_URL) as page:
+        assert_kernel_ready_response(receive_notification(page))
+        instantiate(client, "123")
+    cursor: list[str] = []
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, OTHER_WS_URL) as other:
+        assert_kernel_ready_response(
+            receive_notification(other), create_response({"resumed": True})
+        )
+        with connect_session(client, WS_URL, resume=cursor[0]) as page:
+            told = receive_until("consumer-capabilities", page)
+            assert told["data"]["consumer_capabilities"]["edit"] is False
+
+
+def test_a_join_that_fails_ends_the_subscription(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def connect(self: Tab, http_request: Any) -> Any:
+        del self, http_request
+        raise RuntimeError("broken")
+
+    monkeypatch.setattr(Tab, "connect", connect)
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(client, WS_URL) as websocket:
+            websocket.receive_text()
+            websocket.receive_text()
+            raise AssertionError()
+    assert exc_info.value.reason == "The session failed"
+
+
+def test_a_page_whose_join_was_refused_can_join_again(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adopt = SessionBridge.adopt
+
+    async def unavailable(self: SessionBridge, session: Any) -> Any:
+        del self, session
+
+    monkeypatch.setattr(SessionBridge, "adopt", unavailable)
+    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
+        with connect_session(client, WS_URL) as websocket:
+            while True:
+                websocket.receive_text()
+    assert exc_info.value.reason == "Notebook unavailable"
+    monkeypatch.setattr(SessionBridge, "adopt", adopt)
+    with connect_session(client, WS_URL) as websocket:
+        assert_kernel_ready_response(receive_notification(websocket))
 
 
 def test_without_session(client: TestClient) -> None:

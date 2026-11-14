@@ -11,6 +11,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import httpx
+from holon.ext.events import FORBIDDEN
 
 from marimo._server.codes import WebSocketCloseReason, WebSocketCodes
 
@@ -127,23 +128,35 @@ def tool_status(result: dict[str, Any]) -> int:
 
 
 class SessionClosed(Exception):
-    """A session's event stream ended, with the code and reason it gave."""
+    """A session's event stream ended, with the code and reason it gave.
 
-    def __init__(self, code: int, reason: str = "") -> None:
+    `error` is the JSON-RPC error it ended with, if it ended with one.
+    """
+
+    def __init__(
+        self,
+        code: int,
+        reason: str = "",
+        error: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(code, reason)
         self.code = code
         self.reason = reason
+        self.error = error
 
 
 def _closed(error: dict[str, Any]) -> SessionClosed:
-    if error.get("code") == -32024:  # The draft's Forbidden
-        return SessionClosed(
-            WebSocketCodes.UNAUTHORIZED, WebSocketCloseReason.UNAUTHORIZED
-        )
     data = error.get("data") or {}
+    if error.get("code") == FORBIDDEN and "reason" not in data:
+        return SessionClosed(
+            WebSocketCodes.UNAUTHORIZED,
+            WebSocketCloseReason.UNAUTHORIZED,
+            error,
+        )
     return SessionClosed(
         WebSocketCodes.UNEXPECTED_ERROR,
         str(data.get("reason", error.get("message", error.get("detail", "")))),
+        error,
     )
 
 
