@@ -1,48 +1,79 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's session stream as MCP events at `/api/mcp`."""
+"""The editor's session as state plus changes at `/api/mcp`.
+
+A page reads its session's state with `session_state`, which carries the
+`session` event's cursor, and follows the event from that cursor. The
+event carries every change to the page's notebook from the host's event
+log, and what the session sends the page alone.
+"""
 
 from __future__ import annotations
 
 import asyncio
-from contextlib import aclosing
+import weakref
+from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
+import msgspec
 from holon.ext.events import Events
 from mcp.types import INVALID_PARAMS, ErrorData
-from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 
-from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
+from marimo._messaging.notification import BannerNotification
+from marimo._messaging.serde import deserialize_kernel_message
 from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
+from marimo._server.api.endpoints.ws.notification_filter import (
+    should_filter_operation,
+)
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
+    ConnectionParams,
     ConnectionRejection,
     parse_connection_params,
 )
-from marimo._server.host.events import serialize_event
+from marimo._server.api.endpoints.ws.ws_kernel_ready import build_kernel_ready
+from marimo._server.codes import WebSocketCloseReason
+from marimo._server.host.events import (
+    MarimoEvent,
+    notification_event,
+    serialize_event,
+)
 from marimo._server.host.lifespan import ensure_host
-from marimo._server.host.session import Close, SessionEventStream
+from marimo._server.host.session import Tab
+from marimo._session.model import SessionMode
+from marimo._types.ids import ConsumerId
 from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from holon.ext.events import EventType
+    from holon.ext.events import Event, EventType
     from mcp.server.context import ServerRequestContext
 
-LOGGER = _loggers.marimo_logger()
+    from marimo._messaging.notification import NotificationMessage
+    from marimo._server.host.bridge import SessionBridge
+    from marimo._server.session_manager import SessionManager
+    from marimo._session import Session
 
 # The sketch leaves -32000 to -32019 to implementations.
 _CLOSED = -32000
 
+SessionEvent: TypeAlias = protocol.Event | MarimoEvent
+"""One change to a page's session: a host event, or a marimo notification."""
 
-class SessionArguments(BaseModel):
-    """What a page subscribes to its session with."""
+_RESET: dict[str, Any] = {"event": "reset", "data": {}}
+_RESUMED = BannerNotification(
+    title="Reconnected",
+    description="You have reconnected to an existing session.",
+    action="restart",
+)
 
-    model_config = ConfigDict(extra="forbid")
+
+class SessionRequest(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    """The session a page reads and subscribes to."""
 
     session_id: str
     file: str | None = None
@@ -51,85 +82,351 @@ class SessionArguments(BaseModel):
     """The page's own query string, which `mo.query_params()` reads."""
 
 
-class SessionFrame(BaseModel):
-    frame: str
+class SessionState(msgspec.Struct, frozen=True):
+    """A page's session as of `cursor`, the `session` event's position.
+
+    `events` are `session` payloads that build the page: a `reset`, the
+    notebook's host events ending in `ready`, then the notifications that
+    start the editor. They are only a `reset` when the page has no session
+    yet: subscribing starts one and sends its state. `closed` is why the page
+    cannot follow a session at all.
+    """
+
+    cursor: str
+    events: list[dict[str, Any]]
+    closed: str | None = None
 
 
-def events() -> Events:
-    """The editor's MCP events: the `session` event alone."""
-    served = Events()
+@dataclass(frozen=True)
+class _Change:
+    event: dict[str, Any]
+    notebook: str | None = None
+    to: str | None = None
+    op: str | None = None
 
-    def authorize(
-        context: ServerRequestContext[Any, Any], arguments: dict[str, Any]
+
+def _request(context: ServerRequestContext[Any, Any]) -> Request:
+    request = context.request
+    assert isinstance(request, Request)
+    return request
+
+
+@dataclass
+class _Page:
+    tab: Tab
+    subscriptions: set[str]
+    joining: asyncio.Task[None] | None = None
+
+
+def _wire(event: RoutedEvent, *, include_code: bool = True) -> dict[str, Any]:
+    decoded: dict[str, Any] = msgspec.json.decode(
+        serialize_event(event, include_code=include_code)
+    )
+    return decoded
+
+
+def _params(
+    request: Request, arguments: SessionRequest
+) -> ConnectionParams | str:
+    params = parse_connection_params(
+        AppState(request),
+        session_id=arguments.session_id,
+        file=arguments.file,
+        kiosk=arguments.kiosk,
+        query_params=arguments.query_params,
+    )
+    return params.reason if isinstance(params, ConnectionRejection) else params
+
+
+def _place(
+    manager: SessionManager, params: ConnectionParams
+) -> tuple[Session, bool] | None:
+    session = manager.get_session(params.session_id)
+    if session is None and (params.kiosk or manager.mode is SessionMode.EDIT):
+        session = manager.get_session_by_file_key(params.file_key)
+    if session is None:
+        return None
+    main = session.room.main_consumer
+    viewer = params.kiosk or (
+        main is not None and main.consumer_id != ConsumerId(params.session_id)
+    )
+    return session, viewer
+
+
+def _handshake(
+    manager: SessionManager,
+    params: ConnectionParams,
+    session: Session,
+    *,
+    viewer: bool,
+) -> list[NotificationMessage]:
+    handshake: list[NotificationMessage] = [
+        build_kernel_ready(
+            session=session,
+            resumed=viewer or session.instantiated,
+            ui_values=session.session_view.ui_values,
+            kiosk=viewer,
+        )
+    ]
+    if not viewer and manager.get_session(params.session_id) is None:
+        handshake.append(_RESUMED)
+    handshake.extend(session.session_view.snapshot_notifications())
+    return handshake
+
+
+class SessionEvents:
+    """The `session` event and the state a page follows it from."""
+
+    def __init__(self) -> None:
+        self.events = Events()
+        self._fed: weakref.WeakSet[SessionBridge] = weakref.WeakSet()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._unread: set[str] = set()
+        self._pages: dict[str, _Page] = {}
+        _, definitions = msgspec.json.schema_components([SessionRequest])
+        (arguments,) = definitions.values()
+        self.session: EventType[dict[str, Any], _Change] = self.events.event(
+            "session",
+            description="Follow an editor session: its notebook and kernel.",
+            input_schema=arguments,
+            payload_schema=msgspec.json.schema(SessionEvent),
+            authorize=self._authorize,
+            match=self._match,
+            transform=self._transform,
+            on_subscribe=self._on_subscribe,
+        )
+
+    async def state(
+        self, request: Request, arguments: SessionRequest
+    ) -> SessionState:
+        """The page's session, as of the `session` event's cursor."""
+        params = _params(request, arguments)
+        if isinstance(params, str):
+            return SessionState(self.session.cursor(), [], params)
+        bridge = await self._feed(request)
+        manager = AppState(request).session_manager
+        if params.kiosk and manager.mode is not SessionMode.EDIT:
+            return SessionState(
+                self.session.cursor(),
+                [],
+                WebSocketCloseReason.KIOSK_NOT_ALLOWED,
+            )
+        place = _place(manager, params)
+        if place is None or bridge.notebook_for_session(place[0]) is None:
+            self._unread.add(params.session_id)
+            return SessionState(self.session.cursor(), [_RESET])
+        self._unread.discard(params.session_id)
+        session, viewer = place
+        events = self._snapshot(
+            bridge,
+            manager,
+            session,
+            _handshake(manager, params, session, viewer=viewer),
+            viewer=viewer,
+        )
+        return SessionState(self.session.cursor(), events)
+
+    def _snapshot(
+        self,
+        bridge: SessionBridge,
+        manager: SessionManager,
+        session: Session,
+        handshake: list[NotificationMessage],
+        *,
+        viewer: bool,
+    ) -> list[dict[str, Any]]:
+        notebook = bridge.notebook_for_session(session)
+        assert notebook is not None
+        include_code = manager.should_send_code_to_frontend()
+        return [
+            _RESET,
+            *(
+                _wire(event, include_code=include_code)
+                for event in bridge.host.events(None, notebook_id=notebook.id)
+                if not isinstance(event.event, MarimoEvent)
+            ),
+            *(
+                _wire(notification_event(notebook.id, message))
+                for message in handshake
+                if not should_filter_operation(message.name, is_kiosk=viewer)
+            ),
+        ]
+
+    async def _feed(self, request: Request) -> SessionBridge:
+        bridge = (await ensure_host(request.app)).bridge
+        self._loop = self._loop or asyncio.get_running_loop()
+        if bridge not in self._fed:
+            self._fed.add(bridge)
+            include_code = AppState(
+                request
+            ).session_manager.should_send_code_to_frontend()
+
+            def changed(event: RoutedEvent) -> None:
+                op = (
+                    str(event.event.data.marimo.name)
+                    if isinstance(event.event, MarimoEvent)
+                    else None
+                )
+                self._on_loop(
+                    self.session.emit,
+                    _Change(
+                        _wire(event, include_code=include_code),
+                        notebook=event.notebook_id,
+                        op=op,
+                    ),
+                )
+
+            bridge.host.subscribe_notebooks(changed)
+        return bridge
+
+    def _authorize(
+        self,
+        context: ServerRequestContext[Any, Any],
+        arguments: dict[str, Any],
     ) -> bool:
         del arguments
-        assert isinstance(context.request, Request)
-        return "read" in context.request.auth.scopes
+        return "read" in _request(context).auth.scopes
 
-    async def on_subscribe(
+    def _match(
+        self,
+        context: ServerRequestContext[Any, Any],
+        event: Event[_Change],
+        arguments: dict[str, Any],
+    ) -> bool:
+        change = event.data
+        if change.notebook is None:
+            return bool(change.to == arguments["session_id"])
+        request = _request(context)
+        session = AppState(request).session_manager.get_session(
+            arguments["session_id"]
+        )
+        bridge: SessionBridge = request.app.state.host_context.bridge
+        if session is None or session is not bridge.session_for_notebook(
+            protocol.NotebookId(change.notebook)
+        ):
+            return False
+        if change.op is None:
+            return True
+        main = session.room.main_consumer
+        viewer = arguments.get("kiosk", False) or (
+            main is not None and main.consumer_id != arguments["session_id"]
+        )
+        return not should_filter_operation(change.op, is_kiosk=viewer)
+
+    def _transform(
+        self,
+        context: ServerRequestContext[Any, Any],
+        event: Event[_Change],
+        arguments: dict[str, Any],
+    ) -> object:
+        del context, arguments
+        return event.data.event
+
+    async def _on_subscribe(
+        self,
         context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
-    ) -> Callable[[], Awaitable[None]] | None:
-        asked = SessionArguments.model_validate(arguments)
-        connection = context.request
-        assert isinstance(connection, Request)
-        app_state = AppState(connection)
-        params = parse_connection_params(
-            app_state,
-            session_id=asked.session_id,
-            file=asked.file,
-            kiosk=asked.kiosk,
-            query_params=asked.query_params,
-        )
-        if isinstance(params, ConnectionRejection):
-            terminate(subscription_id, INVALID_PARAMS, params.reason)
+    ) -> Callable[[], Awaitable[None] | None] | None:
+        request = _request(context)
+        asked = msgspec.convert(arguments, SessionRequest)
+        leave = partial(self._leave, asked.session_id, subscription_id)
+        if (page := self._pages.get(asked.session_id)) is not None:
+            page.subscriptions.add(subscription_id)
+            return leave
+        params = _params(request, asked)
+        if isinstance(params, str):
+            self._close(subscription_id, params, INVALID_PARAMS)
             return None
-        stream = SessionEventStream(
-            HTTPRequest.from_request(connection),
-            bridge=(await ensure_host(connection.app)).bridge,
-            manager=app_state.session_manager,
+        bridge = await self._feed(request)
+        manager = AppState(request).session_manager
+        to_page = partial(self._to_page, asked.session_id)
+        tab = Tab(
+            bridge=bridge,
+            manager=manager,
             params=params,
+            sent=lambda sent: to_page([deserialize_kernel_message(sent)]),
+            closed=lambda reason: self._on_loop(
+                self._end, asked.session_id, reason
+            ),
         )
-        delivering = asyncio.create_task(deliver(stream, subscription_id))
-        return partial(cancel_and_wait, delivering)
+        page = self._pages[asked.session_id] = _Page(tab, {subscription_id})
 
-    def terminate(subscription_id: str, code: int, reason: str) -> None:
-        session.terminate(
+        async def join(
+            before: tuple[Session, bool] | None, refused: int
+        ) -> None:
+            wrote, reason = await tab.connect(
+                HTTPRequest.from_request(request)
+            )
+            if reason is not None:
+                to_page(wrote)
+                self._end(params.session_id, reason, refused)
+                return
+            place = _place(manager, params)
+            unread = params.session_id in self._unread
+            self._unread.discard(params.session_id)
+            if place is not None and (place != before or unread):
+                session, viewer = place
+                if not any(each.name == "kernel-ready" for each in wrote):
+                    wrote = _handshake(manager, params, session, viewer=viewer)
+                for event in self._snapshot(
+                    bridge, manager, session, wrote, viewer=viewer
+                ):
+                    self._on_loop(
+                        self.session.emit, _Change(event, to=params.session_id)
+                    )
+            tab._check_status_update()
+
+        before = _place(manager, params)
+        if before is not None:
+            await join(before, INVALID_PARAMS)
+        else:
+            page.joining = asyncio.create_task(join(before, _CLOSED))
+        return leave
+
+    async def _leave(self, session_id: str, subscription_id: str) -> None:
+        page = self._pages.get(session_id)
+        if page is None or subscription_id not in page.subscriptions:
+            return
+        page.subscriptions.discard(subscription_id)
+        if page.subscriptions:
+            return
+        del self._pages[session_id]
+        if page.joining is not None:
+            await cancel_and_wait(page.joining)
+        page.tab.leave()
+
+    def _end(self, session_id: str, reason: str, code: int = _CLOSED) -> None:
+        page = self._pages.pop(session_id, None)
+        for subscription_id in page.subscriptions if page else ():
+            self._close(subscription_id, reason, code)
+
+    def _to_page(
+        self, session_id: str, messages: list[NotificationMessage]
+    ) -> None:
+        for message in messages:
+            self._on_loop(
+                self.session.emit,
+                _Change(
+                    _wire(notification_event(None, message)), to=session_id
+                ),
+            )
+
+    def _close(
+        self, subscription_id: str, reason: str, code: int = _CLOSED
+    ) -> None:
+        self._on_loop(
+            self.session.terminate,
             subscription_id,
             ErrorData(code=code, message=reason, data={"reason": reason}),
         )
 
-    def send(text: str, subscription_id: str) -> None:
-        session.emit(SessionFrame(frame=text), subscription_id=subscription_id)
-
-    async def deliver(
-        stream: SessionEventStream, subscription_id: str
-    ) -> None:
-        reset = serialize_event(RoutedEvent(protocol.ResetEvent(data={})))
+    def _on_loop(self, call: Callable[..., None], *args: Any) -> None:
         try:
-            async with aclosing(stream.stream()) as frames:
-                async for frame in frames:
-                    if reset:
-                        send(reset, subscription_id)
-                        reset = ""
-                    if isinstance(frame, Close):
-                        terminate(subscription_id, _CLOSED, frame.reason)
-                        return
-                    send(stream.serialize(frame), subscription_id)
-        except Exception:
-            # A subscription that stopped delivering must not stay open: the
-            # page follows the session again.
-            LOGGER.exception("An editor session's stream failed")
-            terminate(subscription_id, _CLOSED, "The session's stream failed")
-
-    session: EventType[dict[str, Any], SessionFrame] = served.event(
-        "session",
-        description="Follow an editor session: its notebook and kernel.",
-        input_schema=SessionArguments.model_json_schema(),
-        payload_schema=SessionFrame.model_json_schema(),
-        delivery=("push",),
-        authorize=authorize,
-        on_subscribe=on_subscribe,
-    )
-    return served
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if self._loop is None or running is self._loop:
+            call(*args)
+        else:
+            self._loop.call_soon_threadsafe(call, *args)

@@ -147,6 +147,7 @@ def create_starlette_app(
             app_state=app.state,
             timeout_duration_minutes=timeout,
         )
+    app.state.session_events = editor.session_events
     app.state.session_secret = session_secret
     app.state.origin_policy = origin_policy
     return app

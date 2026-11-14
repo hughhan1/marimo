@@ -7,6 +7,7 @@ from tests._server.api.endpoints.ws_helpers import (
     HEADERS as _HEADERS,
     assert_kernel_ready_response,
     create_response,
+    instantiate,
     receive_notification,
     receive_until,
 )
@@ -253,6 +254,7 @@ def test_refresh_resumes_as_editor(client: TestClient) -> None:
         client, "/ws?session_id=ed1", headers=_HEADERS
     ) as editor:
         assert_kernel_ready_response(receive_notification(editor))
+        instantiate(client, "ed1")
     # editor socket closed on block exit -> session is orphaned
 
     with connect_session(

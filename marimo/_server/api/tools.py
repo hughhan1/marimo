@@ -40,7 +40,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
-from marimo._server.api.events import events
+from marimo._server.api.events import SessionEvents
 from marimo._server.errors import handle_error
 
 if TYPE_CHECKING:
@@ -284,7 +284,7 @@ async def _call(
 ) -> types.CallToolResult:
     request = ctx.request
     assert isinstance(request, Request)
-    if not request.user.is_authenticated:
+    if not request.auth.scopes:
         # Before the arguments are read: `@requires` would refuse the call,
         # but only once the handler is called with them.
         return tool_result(
@@ -461,7 +461,8 @@ class EditorMCP(MCPEndpoint):
         server = tool_server(contract, partial(_call, files))
         server.extensions[EXTENSION] = files.settings()
         server.middleware.insert(0, files)
-        events().serve(server)
+        self.session_events = SessionEvents()
+        self.session_events.events.serve(server)
         super().__init__(server)
 
 

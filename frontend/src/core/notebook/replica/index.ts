@@ -4,7 +4,6 @@
 
 export type { NotebookBackend } from "./backend";
 export {
-  type CloseDecision,
   ConnectionClosedReason,
   ConnectionState,
   type ConnectionStatus,
