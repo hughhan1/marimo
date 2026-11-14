@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 import msgspec
-from holon.ext.files import file_input_schema
+from holon.ext.files import ReceivedFile, file_input_schema
 from starlette.authentication import requires
 from starlette.exceptions import HTTPException
 
@@ -85,7 +85,7 @@ class FileUploadRequest(msgspec.Struct, rename="camel"):
     name: str
     # The file, sent in the call or transferred beside it
     file: Annotated[
-        dict[str, Any],
+        ReceivedFile,
         msgspec.Meta(
             extra_json_schema=file_input_schema(max_size=MAX_UPLOAD_BYTES)
         ),
@@ -204,13 +204,8 @@ async def upload_file(
     body: FileUploadRequest,
 ) -> FileCreateResponse:
     """Add a file to the directory `path`, as `name`."""
-    app_state = AppState(request)
     try:
-        info = await file_system.add_file(
-            body.path,
-            body.name,
-            app_state.state.editor_mcp.files.received(body.file),
-        )
+        info = await file_system.add_file(body.path, body.name, body.file)
         return FileCreateResponse(success=True, info=info)
     except Exception as e:
         LOGGER.error(f"Error uploading file: {e}")
