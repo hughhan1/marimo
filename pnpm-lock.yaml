@@ -168,7 +168,6 @@ overrides:
   vite: ^8.3.5
   form-data: '>=4.0.6'
   katex: ^0.19.0
-  holon-sh: 0.0.1-dev.29
 
 patchedDependencies:
   html-to-image@1.11.13: 405d43fd603ed64fdfdd4e3572f22a2b0eab5c8bd36a0dbd88f28ab1f311893f
