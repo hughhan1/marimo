@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 import msgspec
 import msgspec.json
 import msgspec.structs
+from holon.ext.events import Events
 from holon.ext.files import EXTENSION, FileServer, LocalStorage
 from mcp import types
 from mcp.server.lowlevel import Server
@@ -417,6 +418,16 @@ class MCPEndpoint:
 
     def __init__(self, server: Server[Any]) -> None:
         self.server = server
+
+    def close(self) -> None:
+        """End each of its event streams with its final frame.
+
+        A client then opens the stream again from its cursor at once. Call it
+        as the server starts to stop, on the loop that serves the endpoint.
+        """
+        for each in self.server.middleware:
+            if isinstance(each, Events):
+                each.close()
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send

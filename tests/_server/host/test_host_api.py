@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import socket
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import msgspec
 import pytest
+import uvicorn
 from starlette.testclient import TestClient
 
 from marimo._core import backend as be, protocol
@@ -27,6 +31,7 @@ from marimo._server.host.context import HostContext
 from marimo._server.host.events import notification_event
 from marimo._server.main import create_starlette_app
 from marimo._server.models.home import MarimoFile
+from marimo._server.uvicorn_utils import Server
 from marimo._server.workspace import FixedFilesWorkspace, SingleFileWorkspace
 from marimo._session.notebook import AppFileManager
 from tests._core.conftest import ScriptedBackend, make_notebook, runtime_id_of
@@ -497,6 +502,46 @@ async def test_a_stream_the_client_resumes_starts_over_with_reset(
     assert resumed.names() == ["reset", "notebook", "ready"]
     assert resumed.records[1]["data"]["notebook"]["path"] != "removed.py"
     disconnect()
+
+
+async def test_a_server_that_stops_ends_its_streams_with_their_final_frame(
+    harness: Harness,
+) -> None:
+    listening = socket.create_server(("127.0.0.1", 0))
+    port = listening.getsockname()[1]
+    harness.app.state.host_context.port = port
+    server = Server(
+        uvicorn.Config(
+            harness.app,
+            host="127.0.0.1",
+            port=port,
+            lifespan="off",
+            log_level="warning",
+            timeout_graceful_shutdown=1,
+        ),
+        endpoints=harness.app.state.mcp_endpoints,
+    )
+    serving = asyncio.create_task(server.serve(sockets=[listening]))
+    messages: list[dict[str, Any]] = []
+    async with (
+        httpx.AsyncClient(timeout=10) as client,
+        client.stream(
+            "POST",
+            f"http://127.0.0.1:{port}{HOST_API_PATH}/mcp",
+            headers={**stream_headers("catalog"), **AUTH},
+            json=stream_payload("catalog", {}),
+        ) as response,
+    ):
+        async for line in response.aiter_lines():
+            if line.startswith("data:"):
+                messages.append(json.loads(line.removeprefix("data:")))
+                if (
+                    messages[-1].get("params", {}).get("data", {}).get("event")
+                    == "ready"
+                ):
+                    server.should_exit = True
+    await asyncio.wait_for(serving, 10)
+    assert "result" in messages[-1]
 
 
 async def test_a_notebook_stream_attaches_the_client(harness: Harness) -> None:

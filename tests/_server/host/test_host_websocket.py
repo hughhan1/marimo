@@ -18,6 +18,7 @@ from marimo._messaging.notification import (
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.host.middleware import HostApiMiddleware
+from marimo._server.host.tools import mcp_endpoint
 from marimo._server.models.home import MarimoFile
 from marimo._server.workspace import FixedFilesWorkspace
 from marimo._session.notebook import AppFileManager
@@ -69,7 +70,9 @@ async def session_host(
     )
     manager.sessions["existing"] = session
     bridge = SessionBridge(manager)  # type: ignore[arg-type]
-    app = Starlette(middleware=[Middleware(HostApiMiddleware)])
+    app = Starlette(
+        middleware=[Middleware(HostApiMiddleware, endpoint=mcp_endpoint())]
+    )
     app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=PORT)
     await bridge.open()
     try:
