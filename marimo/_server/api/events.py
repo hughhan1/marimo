@@ -170,7 +170,8 @@ def _handshake(
     handshake: list[NotificationMessage] = [
         build_kernel_ready(
             session=session,
-            resumed=True,
+            # The page that edits a notebook no page instantiated does so.
+            resumed=viewer or session.instantiated,
             ui_values=session.session_view.ui_values,
             kiosk=viewer,
         )

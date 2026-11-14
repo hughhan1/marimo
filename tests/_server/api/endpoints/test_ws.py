@@ -39,6 +39,7 @@ from tests._server.api.endpoints.ws_helpers import (
     assert_parse_ready_response,
     create_response,
     headers,
+    instantiate,
     receive_notification,
     receive_until,
 )
@@ -75,6 +76,18 @@ def test_a_page_from_before_a_restart_follows_its_session(
         assert_kernel_ready_response(receive_notification(websocket))
 
 
+def test_a_page_resuming_from_before_a_restart_runs_its_new_session(
+    client: TestClient,
+) -> None:
+    # A cursor from another process names nothing here. Following it starts
+    # a session, and the page lets go of it to read its state again.
+    with connect_session(client, WS_URL, resume="elsewhere.5"):
+        pass
+    with connect_session(client, WS_URL) as websocket:
+        # No page instantiated that session, so this one does.
+        assert_kernel_ready_response(receive_notification(websocket))
+
+
 def test_a_page_that_read_no_session_follows_the_one_another_page_started(
     client: TestClient,
 ) -> None:
@@ -104,6 +117,7 @@ def test_disconnect_and_reconnect(client: TestClient) -> None:
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
+        instantiate(client, "123")
     # Rejoining by the same session id reads the session as it is
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
@@ -115,6 +129,7 @@ def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
+        instantiate(client, "123")
         stable_id = manager.sessions[SessionId("123")].stable_id
         websocket.close()
     # Rejoining by the same session id reads the session as it is
@@ -140,6 +155,7 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
     )
     with connect_session(client, WS_URL) as websocket:
         assert_kernel_ready_response(receive_notification(websocket))
+        instantiate(client, "123")
         view = manager.sessions[SessionId("123")].session_view
         view.add_notification(
             EnvironmentOperationNotification(
@@ -361,11 +377,12 @@ async def test_session_resumption(client: TestClient) -> None:
         assert_kernel_ready_response(data)
 
         # Instantiate to generate some operations
-        client.post(
+        response = client.post(
             "/api/kernel/instantiate",
             headers=headers("123"),
-            json={"objectIds": [], "values": [], "auto_run": True},
+            json={"objectIds": [], "values": [], "autoRun": True},
         )
+        assert response.status_code == 200, response.text
 
         # Flush initial messages
         flush_messages(websocket, at_least=1)
@@ -458,6 +475,9 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
     a_disconnected = False
     try:
         assert_kernel_ready_response(receive_notification(socket_a))
+        if mode is SessionMode.EDIT:
+            # An app's server instantiates it; an editor's page does.
+            instantiate(client, "123")
         assert session_manager.get_session("123") is not None
 
         with patch(
@@ -650,6 +670,7 @@ async def test_rapid_reconnection_cancels_ttl_cleanup(
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
+        instantiate(client, "123")
 
     # Disconnect and immediately reconnect (before TTL expires)
     await asyncio.sleep(0.1)
@@ -667,6 +688,8 @@ async def test_multiple_rapid_reconnections(client: TestClient) -> None:
             assert_kernel_ready_response(
                 data, create_response({"resumed": i > 0})
             )
+            if i == 0:
+                instantiate(client, "123")
 
 
 async def test_websocket_message_queue_delivery(client: TestClient) -> None:
