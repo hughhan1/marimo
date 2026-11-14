@@ -116,6 +116,15 @@ def _request(context: ServerRequestContext[Any, Any]) -> Request:
     return request
 
 
+@dataclass
+class _Page:
+    """A page in its session, and the subscriptions it follows it by."""
+
+    tab: Tab
+    subscriptions: set[str]
+    joining: asyncio.Task[None] | None = None
+
+
 def _wire(event: RoutedEvent, *, include_code: bool = True) -> dict[str, Any]:
     decoded: dict[str, Any] = msgspec.json.decode(
         serialize_event(event, include_code=include_code)
@@ -185,6 +194,7 @@ class SessionEvents:
         self._loop: asyncio.AbstractEventLoop | None = None
         # Pages that read no session, whose subscription sends them its state.
         self._unread: set[str] = set()
+        self._pages: dict[str, _Page] = {}
         _, definitions = msgspec.json.schema_components([SessionRequest])
         (arguments,) = definitions.values()
         self.session: EventType[dict[str, Any], _Change] = self.events.event(
@@ -340,6 +350,10 @@ class SessionEvents:
         """
         request = _request(context)
         asked = msgspec.convert(arguments, SessionRequest)
+        leave = partial(self._leave, asked.session_id, subscription_id)
+        if (page := self._pages.get(asked.session_id)) is not None:
+            page.subscriptions.add(subscription_id)
+            return leave
         params = _params(request, asked)
         if isinstance(params, str):
             self._close(subscription_id, params, INVALID_PARAMS)
@@ -352,8 +366,11 @@ class SessionEvents:
             manager=manager,
             params=params,
             sent=lambda sent: to_page([deserialize_kernel_message(sent)]),
-            closed=partial(self._close, subscription_id),
+            closed=lambda reason: self._on_loop(
+                self._end, asked.session_id, reason
+            ),
         )
+        page = self._pages[asked.session_id] = _Page(tab, {subscription_id})
 
         async def join(
             before: tuple[Session, bool] | None, refused: int
@@ -363,7 +380,7 @@ class SessionEvents:
             )
             if reason is not None:
                 to_page(wrote)
-                self._close(subscription_id, reason, refused)
+                self._end(params.session_id, reason, refused)
                 return
             place = _place(manager, params)
             unread = params.session_id in self._unread
@@ -385,15 +402,27 @@ class SessionEvents:
             # Joining a running session is quick, so the page is in it by
             # the time its subscription is confirmed.
             await join(before, INVALID_PARAMS)
-            return tab.leave
-        # Starting one takes a while, and the page hears its progress.
-        joining = asyncio.create_task(join(before, _CLOSED))
-
-        async def leave() -> None:
-            await cancel_and_wait(joining)
-            tab.leave()
-
+        else:
+            # Starting one takes a while, and the page hears its progress.
+            page.joining = asyncio.create_task(join(before, _CLOSED))
         return leave
+
+    async def _leave(self, session_id: str, subscription_id: str) -> None:
+        page = self._pages.get(session_id)
+        if page is None or subscription_id not in page.subscriptions:
+            return
+        page.subscriptions.discard(subscription_id)
+        if page.subscriptions:
+            return
+        del self._pages[session_id]
+        if page.joining is not None:
+            await cancel_and_wait(page.joining)
+        page.tab.leave()
+
+    def _end(self, session_id: str, reason: str, code: int = _CLOSED) -> None:
+        page = self._pages.pop(session_id, None)
+        for subscription_id in page.subscriptions if page else ():
+            self._close(subscription_id, reason, code)
 
     def _to_page(
         self, session_id: str, messages: list[NotificationMessage]

@@ -103,6 +103,22 @@ def test_a_page_that_read_no_session_follows_the_one_another_page_started(
             )
 
 
+def test_a_page_that_polls_and_streams_in_turn_stays_in_its_session(
+    client: TestClient,
+) -> None:
+    cursor: list[str] = []
+    with connect_session(client, WS_URL) as page:
+        assert_kernel_ready_response(receive_notification(page))
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
+    with connect_session(client, WS_URL, resume=cursor[0]):
+        pass
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
+
+
 def test_without_session(client: TestClient) -> None:
     # The event's arguments require a session id.
     with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012

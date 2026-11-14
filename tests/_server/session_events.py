@@ -18,6 +18,7 @@ import queue
 import threading
 import weakref
 from contextlib import contextmanager
+from functools import partial
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -137,13 +138,15 @@ def connect_session(
     *,
     resume: str | None = None,
     read_only: list[str] | None = None,
+    poll: str | None = None,
 ) -> Iterator[SessionEvents]:
     """Subscribe to the session a `/ws` URL named, for the block's duration.
 
     The URL's path before `/ws` is where the app is mounted. With `resume`,
     the subscription resumes from that cursor without reading the state.
     With `read_only`, the state is read and its cursor appended to it, and
-    nothing is followed.
+    nothing is followed. With `poll`, the session is polled once from that
+    cursor, and what the poll answered is all that is received.
     """
     parts = urlsplit(url)
     path = f"{parts.path.removesuffix('/ws')}/api/mcp"
@@ -193,8 +196,8 @@ def connect_session(
     chunks: queue.Queue[object] = queue.Queue()
     portal = _portal(client)
 
-    async def read_state() -> bytes:
-        body = json.dumps(tool_payload("session_state", arguments)).encode()
+    async def answer(headers: dict[str, str], payload: object) -> bytes:
+        body = json.dumps(payload).encode()
         answered: list[bytes] = []
         requested = False
 
@@ -214,13 +217,34 @@ def connect_session(
             if message["type"] == "http.response.body":
                 answered.append(message.get("body", b""))
 
-        await client.app(
-            scope(request_headers("tools/call", "session_state")),
-            receive,
-            send,
-        )
+        await client.app(scope(headers), receive, send)
         return b"".join(answered)
 
+    read_state = partial(
+        answer,
+        request_headers("tools/call", "session_state"),
+        tool_payload("session_state", arguments),
+    )
+    if poll is not None:
+        polled = json.loads(
+            portal.call(
+                answer,
+                request_headers("events/poll", "session"),
+                {
+                    **stream_payload("session", arguments, poll),
+                    "method": "events/poll",
+                },
+            )
+        )
+        if "error" in polled:
+            ended = session_message(polled)
+            assert isinstance(ended, SessionClosed)
+            raise WebSocketDisconnect(ended.code, ended.reason)
+        for event in polled["result"]["events"]:
+            chunks.put(_as_event(json.dumps(event["data"])))
+        chunks.put(_END)
+        yield SessionEvents(chunks, portal, portal.call(anyio.Event), None)
+        return
     if read_only is not None:
         _, read = session_state(portal.call(read_state))
         assert isinstance(read, str)
