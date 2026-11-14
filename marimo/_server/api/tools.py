@@ -281,9 +281,10 @@ async def _call(
 ) -> types.CallToolResult:
     request = ctx.request
     assert isinstance(request, Request)
-    if not request.user.is_authenticated:
+    if not request.auth.scopes:
         # Before the arguments are read: `@requires` would refuse the call,
-        # but only once the handler is called with them.
+        # but only once the handler is called with them. The user may be
+        # one the app defined, which need not say it is authenticated.
         return tool_result(
             params.name,
             make_problem("unauthorized", "Authorization header required"),
