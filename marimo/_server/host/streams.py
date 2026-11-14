@@ -18,13 +18,13 @@ import msgspec
 from holon.ext.events import Events
 from mcp.types import ErrorData
 from pydantic import PlainValidator, TypeAdapter, WithJsonSchema
+from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.errors import HostError
 from marimo._core.operations import problem, problem_for
 from marimo._core.protocol_tools import EVENTS
-from marimo._server.api.events import request_var
 from marimo._server.api.tools import dedented
 from marimo._server.host.events import serialize_event
 from marimo._server.host.notebook_api import _context
@@ -33,8 +33,8 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterator
 
-    from holon.context import RequestContext
     from holon.ext.events import EventType
+    from mcp.server.context import ServerRequestContext
 
     from marimo._core.stream import RoutedEvent
     from marimo._server.host.bridge import SessionBridge
@@ -216,12 +216,12 @@ def host_events() -> Events:
         )
 
     async def on_catalog(
-        context: RequestContext,
+        context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        host = _context(request_var.get())
+        assert isinstance(context.request, Request)
+        host = _context(context.request)
         try:
             asked = _decode(arguments, protocol.CatalogEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
@@ -240,12 +240,12 @@ def host_events() -> Events:
         )
 
     async def on_notebook(
-        context: RequestContext,
+        context: ServerRequestContext[Any, Any],
         arguments: dict[str, Any],
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        host = _context(request_var.get())
+        assert isinstance(context.request, Request)
+        host = _context(context.request)
         try:
             asked = _decode(arguments, protocol.NotebookEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)

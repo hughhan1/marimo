@@ -589,7 +589,6 @@ async def test_connections_share_starting_notebook(
     mock_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from starlette.requests import HTTPConnection
 
     from marimo._server.api.endpoints.ws.ws_connection_validator import (
         ConnectionParams,
@@ -627,7 +626,7 @@ async def test_connections_share_starting_notebook(
                 kiosk=False,
                 auto_instantiate=False,
             ),
-            connection=HTTPConnection({"type": "http", "query_string": b""}),
+            http_request=MagicMock(),
         )
 
     first_connector = connector("first")
@@ -663,7 +662,6 @@ async def test_refresh_reuses_pending_startup(
     replacement_id: str,
     finish_disconnected: bool,
 ) -> None:
-    from starlette.requests import HTTPConnection
 
     from marimo._messaging.notification import (
         EnvironmentState,
@@ -722,7 +720,7 @@ async def test_refresh_reuses_pending_startup(
                 kiosk=False,
                 auto_instantiate=False,
             ),
-            connection=HTTPConnection({"type": "http", "query_string": b""}),
+            http_request=MagicMock(),
         )
 
     first = connector("first")
