@@ -30,7 +30,6 @@ function fakeSession(states: SessionState[]) {
     follow: vi.fn(async (_args, options) => {
       follows.push(options);
       await gate;
-      options.onStatus("connected");
       if (failure !== undefined) {
         throw failure;
       }
@@ -163,25 +162,6 @@ describe("sessionEvents", () => {
     },
   );
 
-  it("shows it is connecting while the client reconnects, and whole again once it is back", async () => {
-    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, fake.session),
-      { types: ["ready", "reset"] },
-    );
-    const received = collect(events);
-    await vi.waitFor(() => expect(events.status).toBe("connected"));
-    fake.follows[0].onStatus("reconnecting");
-    expect(events.status).toBe("connecting");
-    fake.follows[0].onStatus("connected");
-    expect(events.status).toBe("connected");
-    expect(received).toHaveLength(3);
-    expect(received.at(-1)).toMatchObject({ event: "ready" });
-    expect(fake.session.follow).toHaveBeenCalledTimes(1);
-    expect(fake.session.read).toHaveBeenCalledTimes(1);
-    events.close();
-  });
-
   it("reads the state again after the server skipped changes, and follows from its cursor", async () => {
     const fake = fakeSession([
       { cursor: "c1", events: [reset, ready] },
@@ -195,7 +175,7 @@ describe("sessionEvents", () => {
     );
     const received = collect(events);
     await vi.waitFor(() => expect(fake.follows).toHaveLength(1));
-    fake.follows[0].onStatus("gap");
+    fake.follows[0].onGap();
     await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
     expect(fake.follows[0].signal.aborted).toBe(true);
     expect(fake.follows[1].cursor).toBe("c9");

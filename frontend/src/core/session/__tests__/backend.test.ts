@@ -152,7 +152,7 @@ describe("createEditorBackend", () => {
     expect(() => backend.notebook("n1")).toThrow("has not started");
 
     const attempt = { cursor: null, signal: new AbortController().signal };
-    const handlers = { open: vi.fn(), lost: vi.fn(), message: vi.fn() };
+    const handlers = { open: vi.fn(), message: vi.fn() };
     await backend.transport(attempt, handlers);
     await backend.transport(attempt, handlers);
     expect(wasm.create).toHaveBeenCalledOnce();
@@ -169,7 +169,7 @@ describe("createEditorBackend", () => {
     await expect(
       createEditorBackend(options).transport(
         { cursor: null, signal: new AbortController().signal },
-        { open: vi.fn(), lost: vi.fn(), message: vi.fn() },
+        { open: vi.fn(), message: vi.fn() },
       ),
     ).rejects.toBeInstanceOf(StreamStopped);
   });

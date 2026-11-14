@@ -215,7 +215,7 @@ describe("static notebook backend", () => {
     const message = vi.fn();
     await backend.transport(
       { cursor: null, signal: before.signal },
-      { open, lost: vi.fn(), message },
+      { open, message },
     );
     expect(open).not.toHaveBeenCalled();
     expect(message).not.toHaveBeenCalled();
@@ -228,7 +228,7 @@ describe("static notebook backend", () => {
     message.mockImplementation(() => during.abort());
     await backend.transport(
       { cursor: null, signal: during.signal },
-      { open, lost: vi.fn(), message },
+      { open, message },
     );
     expect(message).toHaveBeenCalledOnce();
   });
@@ -288,7 +288,7 @@ describe("starting from an embedded snapshot", () => {
 
     await startWithSnapshot(snapshot(), live).transport(
       { cursor: null, signal: controller.signal },
-      { open: vi.fn(), lost: vi.fn(), message },
+      { open: vi.fn(), message },
     );
 
     expect(message).toHaveBeenCalledOnce();

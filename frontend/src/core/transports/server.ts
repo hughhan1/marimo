@@ -16,8 +16,6 @@ export type SessionEvent = EventData["marimo"]["session"];
 /** A page's session as of a cursor of its `session` event. */
 export type SessionState = Outputs["marimo"]["session_state"];
 
-type Status = "connected" | "reconnecting" | "gap";
-
 /** How a page reads its session, and follows it from a cursor. */
 export interface Session {
   read(
@@ -30,7 +28,7 @@ export interface Session {
       signal: AbortSignal;
       cursor: string;
       delivery: "push" | "poll";
-      onStatus: (status: Status) => void;
+      onGap: () => void;
     },
   ): Promise<
     AsyncIterable<{ eventId: string; data: SessionEvent }> & {
@@ -57,8 +55,8 @@ function reasonOf(error: unknown): string | undefined {
  * Follow a marimo session: read its state, then follow its `session` event
  * from the state's cursor.
  *
- * The client reconnects and resumes from the cursor by itself, and the page
- * shows that it is connecting meanwhile. The page in the focused window is
+ * The client reconnects and resumes from the cursor by itself. The page in
+ * the focused window is
  * pushed each change and every other page polls, so of a browser's pages
  * only one holds a connection open. When the server skipped changes, the
  * page reads its state again. A page that switches between push and poll,
@@ -74,7 +72,7 @@ export function sessionEvents(
   > = globalThis.window,
 ): NotebookTransport {
   const delivery = () => (view.document.hasFocus() ? "push" : "poll");
-  return async ({ signal }, { open, lost, message }) => {
+  return async ({ signal }, { open, message }) => {
     const named = await args();
     const delivered = new Set<string>();
     let held: { turn: AbortController; drained: Promise<unknown> } | undefined;
@@ -103,38 +101,20 @@ export function sessionEvents(
           };
           view.addEventListener("focus", switched);
           view.addEventListener("blur", switched);
-          let reconnecting = false;
-          let following: { cursor: string | null } | undefined;
           try {
             const events = await session.follow(named, {
               signal: AbortSignal.any([signal, turn.signal]),
               cursor,
               delivery: mode,
-              onStatus: (status) => {
-                if (!current) {
-                  return;
-                }
-                if (status === "gap") {
+              onGap: () => {
+                if (current) {
                   gap = true;
                   muted = true;
                   replaced.resolve(false);
-                } else if (status === "reconnecting") {
-                  reconnecting = true;
-                  lost();
-                } else {
-                  open();
-                  if (reconnecting) {
-                    reconnecting = false;
-                    message({
-                      event: "ready",
-                      id: following?.cursor ?? cursor,
-                      data: {},
-                    });
-                  }
                 }
               },
             });
-            following = events;
+            open();
             held?.turn.abort();
             await held?.drained;
             held = undefined;

@@ -396,7 +396,7 @@ describe("IslandsPyodideBridge", () => {
 
     it("forwards the managed session's host events to the notebook stream", async () => {
       await initializeSingleApp();
-      const handlers = { open: vi.fn(), lost: vi.fn(), message: vi.fn() };
+      const handlers = { open: vi.fn(), message: vi.fn() };
       void bridge.notebookBackend.transport(
         { signal: new AbortController().signal, cursor: null },
         handlers,
@@ -413,7 +413,7 @@ describe("IslandsPyodideBridge", () => {
 
     it("resets the notebook stream when the managed session is replaced or stopped", async () => {
       await initializeSingleApp();
-      const handlers = { open: vi.fn(), lost: vi.fn(), message: vi.fn() };
+      const handlers = { open: vi.fn(), message: vi.fn() };
       void bridge.notebookBackend.transport(
         { signal: new AbortController().signal, cursor: null },
         handlers,

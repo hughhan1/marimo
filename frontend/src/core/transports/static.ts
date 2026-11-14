@@ -107,7 +107,6 @@ export function startWithSnapshot(
             discard();
             handlers.open();
           },
-          lost: handlers.lost,
           message: (frame) => {
             discard();
             handlers.message(frame);

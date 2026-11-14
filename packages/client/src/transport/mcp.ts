@@ -48,9 +48,10 @@ function stopped(error: unknown): StreamStopped | undefined {
  * Follow one of a host's events at its MCP `endpoint`.
  *
  * Each attempt subscribes with `args` and the attempt's cursor, and reports
- * each event the subscription carries. A subscription the host refuses, or
- * ends with a problem, stops the stream. One whose connection is lost ends
- * the attempt, and the stream subscribes again from its cursor.
+ * each event the subscription carries. The subscription reconnects by itself
+ * with the same arguments. One the host refuses, or ends with a problem,
+ * stops the stream; one that cannot be made ends the attempt, and the stream
+ * subscribes again from its cursor.
  */
 export function subscribe(
   endpoint: URL,
@@ -61,27 +62,18 @@ export function subscribe(
   let client: RuntimeClient | undefined;
   return async ({ cursor, signal }, { open, message }) => {
     client ??= host(endpoint, options);
-    const lost = new AbortController();
     try {
       const events = await client.ext.events.subscribe(
         name,
         { ...args, ...(cursor === null ? {} : { cursor }) },
-        {
-          signal: AbortSignal.any([signal, lost.signal]),
-          delivery: "push",
-          onStatus: (status) => {
-            if (status === "reconnecting") {
-              lost.abort();
-            }
-          },
-        },
+        { signal, delivery: "push" },
       );
       open();
       for await (const { data } of events) {
         message(data);
       }
     } catch (error) {
-      if (signal.aborted || lost.signal.aborted) {
+      if (signal.aborted) {
         return;
       }
       const stop = stopped(error);

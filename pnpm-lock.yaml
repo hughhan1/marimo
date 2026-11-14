@@ -168,6 +168,7 @@ overrides:
   vite: ^8.3.5
   form-data: '>=4.0.6'
   katex: ^0.19.0
+  holon-sh: 0.0.1-dev.29
 
 patchedDependencies:
   html-to-image@1.11.13: 405d43fd603ed64fdfdd4e3572f22a2b0eab5c8bd36a0dbd88f28ab1f311893f
@@ -736,8 +737,8 @@ importers:
   packages/client:
     dependencies:
       holon-sh:
-        specifier: 0.0.1-dev.19
-        version: 0.0.1-dev.19
+        specifier: 0.0.1-dev.29
+        version: 0.0.1-dev.29
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -6562,9 +6563,10 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  holon-sh@0.0.1-dev.19:
-    resolution: {integrity: sha512-B4rYKHW32CRMMeqnBuy04kQ0oAP+PWy3Lnzo+XsvSddDq3uEEEJxhE0jCd6reulzgFgsAh/8nKLZY3NCT9ExJA==}
+  holon-sh@0.0.1-dev.29:
+    resolution: {integrity: sha512-+dDkbQsuOAreQpTLysOXQ26FPZXl9+i3y9Nmj+nMxq6pTv078u4+Jp+x18Je8dPugpSYt4SymW27xwgcMlXt1Q==}
     engines: {node: '>=22'}
+    hasBin: true
     peerDependencies:
       '@modelcontextprotocol/server': ^2.3.1
     peerDependenciesMeta:
@@ -15984,7 +15986,7 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  holon-sh@0.0.1-dev.19:
+  holon-sh@0.0.1-dev.29:
     dependencies:
       '@modelcontextprotocol/client': 2.4.0
       ipaddr.js: 2.5.0
@@ -16013,7 +16015,7 @@ snapshots:
   holon-ui@0.0.1-dev.7(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
     dependencies:
       '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
-      holon-sh: 0.0.1-dev.19
+      holon-sh: 0.0.1-dev.29
     transitivePeerDependencies:
       - '@modelcontextprotocol/server'
 

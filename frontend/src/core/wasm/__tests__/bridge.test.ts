@@ -246,7 +246,7 @@ it("cancels a pending notebook subscription before its RPC response", async () =
     const backend = await PyodideBridge.INSTANCE.createNotebookBackend();
     const following = backend.transport(
       { cursor: null, signal: controller.signal },
-      { open: vi.fn(), lost: vi.fn(), message: vi.fn() },
+      { open: vi.fn(), message: vi.fn() },
     );
     await vi.waitFor(() =>
       expect(mockNotebookSubscribe).toHaveBeenCalledOnce(),
