@@ -108,7 +108,6 @@ async def get_export_availability(
     request: Request,
 ) -> ExportAvailabilityResponse:
     """Report which export formats the server can produce."""
-    del request
     return await _get_export_availability()
 
 

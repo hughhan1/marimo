@@ -161,8 +161,9 @@ export function host(
             },
           });
         }
+        const _meta = { "io.modelcontextprotocol/subscriptionId": message.id };
         const frames = [
-          notification("active", { cursor: null }),
+          notification("active", { cursor: null, _meta }),
           ...answered.events.map((data, index) =>
             notification("event", {
               name: received.name,
@@ -170,6 +171,7 @@ export function host(
               timestamp: "2026-11-12T00:00:00Z",
               data,
               cursor: null,
+              _meta,
             }),
           ),
         ];

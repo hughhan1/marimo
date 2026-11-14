@@ -70,5 +70,4 @@ async def delete_secret(
     *, request: Request, body: DeleteSecretRequest
 ) -> BaseResponse:
     """Delete a secret; not implemented yet."""
-    del request, body
     raise HTTPException(status_code=501, detail="Not implemented")
