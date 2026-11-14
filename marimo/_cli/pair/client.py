@@ -409,7 +409,7 @@ def open_events(
     stream = open_response(
         method="POST",
         url=_endpoint_url(url, "/mcp"),
-        headers=_mcp_headers("events/stream", name, token, stream=True),
+        headers=_mcp_headers("events/stream", name, token),
         body=_mcp_body("events/stream", name, arguments),
         read_timeout=read_timeout,
     )
@@ -514,15 +514,11 @@ def resolve_host(url: str, *, root: Path | None = None) -> HostEndpoint:
 _PROTOCOL_VERSION = "2026-07-28"
 
 
-def _mcp_headers(
-    method: str, name: str, token: str | None, *, stream: bool = False
-) -> dict[str, str]:
+def _mcp_headers(method: str, name: str, token: str | None) -> dict[str, str]:
     """The headers of an MCP request, which mirror its method and name."""
     headers = {
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream"
-        if stream
-        else "application/json",
+        "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": _PROTOCOL_VERSION,
         "Mcp-Method": method,
         "Mcp-Name": name,

@@ -158,6 +158,5 @@ def mcp_endpoint() -> MCPEndpoint:
         )
 
     server = tool_server(lambda: definitions(catalog=True), call_tool)
-    served = host_events()
-    served.serve(server)
-    return MCPEndpoint(server, served)
+    host_events().serve(server)
+    return MCPEndpoint(server)

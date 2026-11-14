@@ -29,10 +29,9 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
 
-    from starlette.requests import Request
-
     from marimo._core.notebook import Notebook
     from marimo._messaging.types import KernelMessage
+    from marimo._runtime.commands import HTTPRequest
     from marimo._server.api.endpoints.ws.ws_connection_validator import (
         ConnectionParams,
     )
@@ -54,7 +53,7 @@ class SessionEventStream(SessionHandler):
 
     def __init__(
         self,
-        connection: Request,
+        http_request: HTTPRequest,
         *,
         bridge: SessionBridge,
         manager: SessionManager,
@@ -65,7 +64,7 @@ class SessionEventStream(SessionHandler):
             params=params,
             mode=manager.mode,
         )
-        self.connection = connection
+        self.http_request = http_request
         self._stream_finished = False
         self.notebook: Notebook | None = None
         self.bridge = bridge
@@ -117,7 +116,7 @@ class SessionEventStream(SessionHandler):
     ) -> AsyncGenerator[RoutedEvent | Close, None]:
         """Broker the session and deliver its host events until it ends."""
         try:
-            async with self._connection_lifetime(self.connection) as startup:
+            async with self._connection_lifetime(self.http_request) as startup:
 
                 async def connect_and_listen() -> None:
                     try:
