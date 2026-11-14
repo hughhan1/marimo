@@ -16,6 +16,7 @@ from starlette.requests import Request
 from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
+from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionRejection,
@@ -84,7 +85,7 @@ def events() -> Events:
             terminate(subscription_id, INVALID_PARAMS, params.reason)
             return None
         stream = SessionEventStream(
-            connection,
+            HTTPRequest.from_request(connection),
             bridge=(await ensure_host(connection.app)).bridge,
             manager=app_state.session_manager,
             params=params,
