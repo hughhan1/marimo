@@ -5,17 +5,18 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import aclosing
-from contextvars import ContextVar
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from holon.ext.events import Events
 from mcp.types import INVALID_PARAMS, ErrorData
 from pydantic import BaseModel, ConfigDict
+from starlette.requests import Request
 
 from marimo import _loggers
 from marimo._core import protocol
 from marimo._core.stream import RoutedEvent
+from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionRejection,
@@ -29,13 +30,10 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from holon.context import RequestContext
     from holon.ext.events import EventType
-    from starlette.requests import Request
+    from mcp.server.context import ServerRequestContext
 
 LOGGER = _loggers.marimo_logger()
-
-request_var: ContextVar[Request] = ContextVar("marimo.events.request")
 
 # The sketch leaves -32000 to -32019 to implementations.
 _CLOSED = -32000
@@ -62,18 +60,19 @@ def events() -> Events:
     served = Events()
 
     def authorize(
-        context: RequestContext, arguments: SessionArguments
+        context: ServerRequestContext[Any, Any], arguments: SessionArguments
     ) -> bool:
-        del context, arguments
-        return "read" in request_var.get().auth.scopes
+        del arguments
+        assert isinstance(context.request, Request)
+        return "read" in context.request.auth.scopes
 
     async def on_subscribe(
-        context: RequestContext,
+        context: ServerRequestContext[Any, Any],
         arguments: SessionArguments,
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
-        del context
-        connection = request_var.get()
+        connection = context.request
+        assert isinstance(connection, Request)
         app_state = AppState(connection)
         params = parse_connection_params(
             app_state,
@@ -86,7 +85,7 @@ def events() -> Events:
             terminate(subscription_id, INVALID_PARAMS, params.reason)
             return None
         stream = SessionEventStream(
-            connection,
+            HTTPRequest.from_request(connection),
             bridge=(await ensure_host(connection.app)).bridge,
             manager=app_state.session_manager,
             params=params,

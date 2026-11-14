@@ -32,11 +32,10 @@ from marimo._utils.asyncio_utils import cancel_and_wait
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from starlette.requests import HTTPConnection
-
     from marimo._config.cli_state import MarimoCLIState
     from marimo._messaging.types import KernelMessage
     from marimo._plugins.core.web_component import JSONType
+    from marimo._runtime.commands import HTTPRequest
     from marimo._server.api.endpoints.ws.ws_connection_validator import (
         ConnectionParams,
     )
@@ -93,10 +92,10 @@ class SessionHandler(SessionConsumer, abc.ABC):
 
     @asynccontextmanager
     async def _connection_lifetime(
-        self, connection: HTTPConnection
+        self, http_request: HTTPRequest
     ) -> AsyncIterator[asyncio.Task[None]]:
         """Own attachment through startup, progress delivery, and streaming."""
-        startup = asyncio.create_task(self._connect_session(connection))
+        startup = asyncio.create_task(self._connect_session(http_request))
         try:
             yield startup
         finally:
@@ -105,7 +104,7 @@ class SessionHandler(SessionConsumer, abc.ABC):
             finally:
                 self._on_disconnect()
 
-    async def _connect_session(self, connection: HTTPConnection) -> None:
+    async def _connect_session(self, http_request: HTTPRequest) -> None:
         """Connect this handler to a session (new, resume, reconnect, ...).
 
         Raises:
@@ -118,7 +117,7 @@ class SessionHandler(SessionConsumer, abc.ABC):
                 manager=self.manager,
                 handler=self,
                 params=self.params,
-                connection=connection,
+                http_request=http_request,
             ).connect()
         )
         disconnected = asyncio.create_task(self._wait_for_disconnect())

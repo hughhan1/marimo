@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 from marimo._session.consumer_policy import initial_capabilities
 
 if TYPE_CHECKING:
-    from starlette.requests import HTTPConnection
-
+    from marimo._runtime.commands import HTTPRequest
     from marimo._server.api.endpoints.ws.session_handler import SessionHandler
     from marimo._server.api.endpoints.ws.ws_connection_validator import (
         ConnectionParams,
@@ -36,12 +35,12 @@ class SessionConnector:
         manager: SessionManager,
         handler: SessionHandler,
         params: ConnectionParams,
-        connection: HTTPConnection,
+        http_request: HTTPRequest,
     ):
         self.manager = manager
         self.handler = handler
         self.params = params
-        self.connection = connection
+        self.http_request = http_request
 
     async def connect(self) -> None:
         """Establish a session connection.
@@ -211,13 +210,11 @@ class SessionConnector:
 
     def _auto_instantiate(self, session: Session) -> None:
         """Auto-instantiate the session (used in run mode)."""
-        from marimo._runtime.commands import HTTPRequest
-
         session.instantiate(
             InstantiateNotebookRequest(
                 object_ids=[],
                 values=[],
                 auto_run=True,
             ),
-            http_request=HTTPRequest.from_request(self.connection),
+            http_request=self.http_request,
         )

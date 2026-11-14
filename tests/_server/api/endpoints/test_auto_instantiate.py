@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from marimo._messaging.notification import KernelReadyNotification
 from marimo._session.model import SessionMode
@@ -129,7 +129,7 @@ class TestAutoInstantiateHTTPRequest:
     """Tests for HTTP request propagation during auto-instantiate."""
 
     def test_auto_instantiate_passes_http_request(self) -> None:
-        """Verify _auto_instantiate passes HTTPRequest from the connection.
+        """Verify _auto_instantiate passes the page's HTTPRequest.
 
         This verifies the fix for the issue where mo.app_meta().request
         returned None in run mode because _auto_instantiate was passing
@@ -146,16 +146,11 @@ class TestAutoInstantiateHTTPRequest:
             manager=MagicMock(),
             handler=MagicMock(),
             params=MagicMock(),
-            connection=MagicMock(),
+            http_request=mock_http_request,
         )
 
-        with patch(
-            "marimo._runtime.commands.HTTPRequest.from_request",
-            return_value=mock_http_request,
-        ) as mock_from_request:
-            connector._auto_instantiate(mock_session)
+        connector._auto_instantiate(mock_session)
 
-        mock_from_request.assert_called_once_with(connector.connection)
         assert (
             mock_session.instantiate.call_args.kwargs["http_request"]
             is mock_http_request
