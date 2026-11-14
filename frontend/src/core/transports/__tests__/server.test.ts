@@ -1,27 +1,83 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { NotebookEvents, StreamStopped } from "@marimo-team/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ConnectionClosedReason } from "../../notebook/replica";
+import { closedStatus } from "../connection-state";
 import {
+  type Session,
   type SessionArguments,
-  type SubscribeSession,
+  type SessionEvent,
+  type SessionState,
   sessionEvents,
 } from "../server";
 
 const ARGS: SessionArguments = { session_id: "s1", query_params: "" };
 
-/** A subscription that yields these frames, then waits. */
-async function* following(...frames: object[]) {
-  for (const frame of frames) {
-    yield { data: { frame: JSON.stringify(frame) } };
-  }
-  await new Promise(() => undefined);
-}
+type Follow = Parameters<Session["follow"]>[1];
 
-/** A subscription that fails at once. */
-function failing(error: unknown): AsyncIterable<{ data: never }> {
+function fakeSession(states: SessionState[]) {
+  const follows: Follow[] = [];
+  const pending: ((event: object, eventId: string) => void)[] = [];
+  let failure: unknown;
+  let gate: Promise<unknown> | undefined;
+  const session: Session = {
+    read: vi.fn(async () => {
+      const state = states.shift();
+      if (state === undefined) {
+        throw new Error("no state left");
+      }
+      return state;
+    }),
+    follow: vi.fn(async (_args, options) => {
+      follows.push(options);
+      await gate;
+      if (failure !== undefined) {
+        throw failure;
+      }
+      const queue: { eventId: string; data: SessionEvent }[] = [];
+      let wake = () => undefined as void;
+      pending.push((event, eventId) => {
+        queue.push({ eventId, data: event as SessionEvent });
+        wake();
+      });
+      return {
+        cursor: options.cursor,
+        async *[Symbol.asyncIterator]() {
+          while (!options.signal.aborted) {
+            const event = queue.shift();
+            if (event === undefined) {
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+                options.signal.addEventListener("abort", () => resolve(), {
+                  once: true,
+                });
+              });
+            } else {
+              yield event;
+            }
+          }
+        },
+      };
+    }),
+  };
+  let sent = 0;
   return {
-    [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
+    session,
+    follows,
+    send: (event: object, eventId = `e${++sent}`) =>
+      pending.at(-1)?.(event, eventId),
+    failWith: (error: unknown) => {
+      failure = error;
+    },
+    holdNext: () => {
+      const held = Promise.withResolvers<undefined>();
+      gate = held.promise;
+      return () => {
+        gate = undefined;
+        held.resolve(undefined);
+      };
+    },
   };
 }
 
@@ -31,97 +87,143 @@ function collect(events: NotebookEvents<string>) {
   return received;
 }
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+const ready = { event: "ready", id: "h-1", data: {} };
+const reset = { event: "reset", data: {} };
 
 describe("sessionEvents", () => {
-  it("subscribes with the session arguments and delivers protocol events", async () => {
-    const subscribe = vi.fn<SubscribeSession>(async () =>
-      following({ event: "reset", data: {} }),
-    );
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
-      { types: ["reset"] },
-    );
-    const received = collect(events);
-    await vi.waitFor(() => expect(received).toHaveLength(1));
-    expect(subscribe.mock.calls[0][0]).toEqual(ARGS);
-    expect(received).toEqual([{ event: "reset", data: {} }]);
-    events.close();
-  });
-
-  it("releases a held slot when a subscription attempt fails", async () => {
-    let held: AbortSignal | undefined;
-    const slots = {
-      hold: async (signal: AbortSignal) => {
-        held = signal;
-        return signal;
-      },
+  it("stops with the status of the reason a session refused the page, after its last words", async () => {
+    const error = {
+      event: "marimo",
+      data: { marimo: { op: "kernel-startup-error", error: "boom" } },
     };
-    const transport = sessionEvents(
-      async () => ARGS,
-      async () => {
-        throw new Error("offline");
-      },
-      slots,
-    );
-    await transport(
-      { cursor: null, signal: new AbortController().signal },
-      { open: vi.fn(), message: vi.fn() },
-    );
-    expect(held?.aborted).toBe(true);
-  });
-
-  it("stops when the session terminates the subscription with a final close", async () => {
-    const ended = Object.assign(new Error("ended"), {
-      code: -32000,
-      data: { reason: "MARIMO_UNAUTHORIZED" },
+    const fake = fakeSession([]);
+    vi.mocked(fake.session.read).mockResolvedValueOnce({
+      cursor: "c1",
+      events: [error],
+      closed: "MARIMO_KERNEL_STARTUP_ERROR",
     });
     const events = new NotebookEvents(
-      sessionEvents(
-        async () => ARGS,
-        async () => failing(ended),
-      ),
-    );
-    const error = await events.closed.catch((error: unknown) => error);
-    expect(error).toBeInstanceOf(StreamStopped);
-    expect((error as StreamStopped).cause).toMatchInlineSnapshot(`
+      sessionEvents(async () => ARGS, fake.session),
       {
-        "code": "KERNEL_DISCONNECTED",
-        "reason": "not authorized",
-        "state": "CLOSED",
-      }
-    `);
+        types: ["marimo"],
+      },
+    );
+    const received = collect(events);
+    const stopped = await events.closed.catch((error: unknown) => error);
+    expect(received).toEqual([error]);
+    expect(stopped).toBeInstanceOf(StreamStopped);
+    expect((stopped as StreamStopped).cause).toMatchObject({
+      code: ConnectionClosedReason.KERNEL_STARTUP_ERROR,
+    });
   });
 
-  it.each([undefined, null, "refused"])(
-    "stops when the caller may not follow the session (data: %s)",
-    async (data) => {
+  it.each([
+    [{ code: -32024, message: "Forbidden" }, "MARIMO_UNAUTHORIZED"],
+    [
+      {
+        code: -32024,
+        message: "MARIMO_KIOSK_NOT_ALLOWED",
+        data: { reason: "MARIMO_KIOSK_NOT_ALLOWED" },
+      },
+      "MARIMO_KIOSK_NOT_ALLOWED",
+    ],
+    [{ code: -32023, message: "NotFound" }, undefined],
+  ])(
+    "stops when the session ends or refuses the subscription (%o)",
+    async (failure, reason) => {
+      const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+      fake.failWith(failure);
       const events = new NotebookEvents(
-        sessionEvents(
-          async () => ARGS,
-          async () => {
-            throw Object.assign(new Error("Forbidden"), { code: -32024, data });
-          },
-        ),
+        sessionEvents(async () => ARGS, fake.session),
       );
-      await expect(events.closed).rejects.toBeInstanceOf(StreamStopped);
+      const stopped = await events.closed.catch((error: unknown) => error);
+      expect(stopped).toBeInstanceOf(StreamStopped);
+      expect((stopped as StreamStopped).cause).toEqual(closedStatus(reason));
     },
   );
 
-  it("subscribes again after a failure that says nothing final", async () => {
+  it("tries again when reading the state gets no answer", async () => {
     vi.useFakeTimers();
-    const subscribe = vi.fn<SubscribeSession>(async () => {
-      throw new Error("fetch failed");
-    });
-    const events = new NotebookEvents(
-      sessionEvents(async () => ARGS, subscribe),
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+    vi.mocked(fake.session.read).mockRejectedValueOnce(
+      new TypeError("fetch failed"),
     );
-    await vi.waitFor(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(subscribe.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session),
+      { types: ["ready", "reset"] },
+    );
+    const received = collect(events);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(received).toEqual([reset, ready]);
+    events.close();
+    vi.useRealTimers();
+  });
+
+  it("pushes to the focused window and polls otherwise, following until the next subscription is confirmed and passing on each change once", async () => {
+    let focused = false;
+    const view = Object.assign(new EventTarget(), {
+      document: { hasFocus: () => focused } as Document,
     });
+    const fake = fakeSession([{ cursor: "c1", events: [reset, ready] }]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session, view),
+      { types: ["ready", "reset", "marimo"] },
+    );
+    const received = collect(events);
+    await vi.waitFor(() => expect(received).toHaveLength(2));
+    expect(events.status).toBe("connected");
+    const confirm = fake.holdNext();
+    focused = true;
+    view.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    focused = false;
+    view.dispatchEvent(new Event("blur"));
+    const change = { event: "marimo", data: { marimo: { op: "alert" } } };
+    fake.send(change, "e1");
+    await vi.waitFor(() => expect(received).toHaveLength(3));
+    confirm();
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(3));
+    expect(fake.follows[0].signal.aborted).toBe(true);
+    fake.send(change, "e1");
+    fake.send(change, "e2");
+    await vi.waitFor(() => expect(received).toHaveLength(4));
+    expect(received).toEqual([reset, ready, change, change]);
+    expect(
+      fake.follows.map(({ delivery, cursor }) => [delivery, cursor]),
+    ).toEqual([
+      ["poll", "c1"],
+      ["push", "c1"],
+      ["poll", "c1"],
+    ]);
+    events.close();
+  });
+
+  it("applies nothing more from a kept subscription that skipped changes, and follows again from a fresh state", async () => {
+    let focused = false;
+    const view = Object.assign(new EventTarget(), {
+      document: { hasFocus: () => focused } as Document,
+    });
+    const fake = fakeSession([
+      { cursor: "c1", events: [reset, ready] },
+      { cursor: "c9", events: [reset, { ...ready, id: "h-9" }] },
+    ]);
+    const events = new NotebookEvents(
+      sessionEvents(async () => ARGS, fake.session, view),
+      { types: ["ready", "reset", "marimo"] },
+    );
+    const received = collect(events);
+    await vi.waitFor(() => expect(received).toHaveLength(2));
+    const confirm = fake.holdNext();
+    focused = true;
+    view.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(fake.follows).toHaveLength(2));
+    fake.follows[0].onGap();
+    fake.send({ event: "marimo", data: { marimo: { op: "alert" } } }, "e1");
+    confirm();
+    await vi.waitFor(() =>
+      expect(received).toEqual([reset, ready, reset, { ...ready, id: "h-9" }]),
+    );
+    expect(fake.follows.at(-1)?.cursor).toBe("c9");
     events.close();
   });
 });

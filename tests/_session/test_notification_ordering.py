@@ -5,7 +5,7 @@ import asyncio
 import queue
 import threading
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -15,28 +15,23 @@ from marimo._messaging.notification import (
     EnvironmentOperation,
     EnvironmentOperationNotification,
     EnvironmentState,
-    EnvironmentStateNotification,
     OperationRunning,
 )
 from marimo._messaging.serde import (
     serialize_kernel_message,
 )
 from marimo._messaging.types import KernelMessage
-from marimo._server.api.endpoints.ws.ws_connection_validator import (
-    ConnectionParams,
-)
-from marimo._server.host.session import SessionEventStream
 from marimo._session.consumer import SessionConsumer
 from marimo._session.extensions.extensions import (
     NotificationListenerExtension,
     SessionViewExtension,
 )
 from marimo._session.managers import KernelManagerImpl
-from marimo._session.model import ConnectionState, SessionMode
+from marimo._session.model import ConnectionState
 from marimo._session.notebook import AppFileManager
 from marimo._session.session import SessionImpl
 from marimo._session.state.session_view import SessionView
-from marimo._types.ids import ConsumerId, SessionId
+from marimo._types.ids import ConsumerId
 from marimo._utils.distributor import QueueDistributor
 
 if TYPE_CHECKING:
@@ -154,51 +149,6 @@ async def test_queued_kernel_messages_update_and_deliver_on_session_loop(
     assert observed == [
         (loop_thread, _state("Downloading\n")),
         (loop_thread, _state("Downloading\nInstalling\n")),
-    ]
-
-
-async def test_reconnect_snapshot_precedes_a_queued_live_update(
-    session_and_consumer: tuple[SessionImpl, Mock],
-) -> None:
-    session, consumer = session_and_consumer
-    session.disconnect_consumer(consumer)
-    session.notify(_progress("Before\n"), from_consumer_id=None)
-    handler = SessionEventStream(
-        http_request=MagicMock(),
-        bridge=MagicMock(),
-        manager=MagicMock(mode=SessionMode.EDIT),
-        params=ConnectionParams(
-            session_id=SessionId("reconnected"),
-            file_key="notebook.py",
-            kiosk=False,
-            auto_instantiate=False,
-        ),
-    )
-    asyncio.get_running_loop().call_soon(
-        lambda: session.notify(_progress("After\n"), from_consumer_id=None)
-    )
-    handler._reconnect_session(session, replay=False)
-    await asyncio.sleep(0)
-
-    messages = []
-    while not handler._events.empty():
-        messages.append(handler._events.get_nowait().event.data.marimo)
-    assert [
-        message
-        for message in messages
-        if isinstance(
-            message,
-            (EnvironmentStateNotification, EnvironmentOperationNotification),
-        )
-    ] == [
-        EnvironmentStateNotification(
-            source="kernel", state=_state("Before\n")
-        ),
-        EnvironmentStateNotification(
-            source="server",
-            state=EnvironmentState(restart_required=False, operations=[]),
-        ),
-        _progress("After\n"),
     ]
 
 

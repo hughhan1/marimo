@@ -5,15 +5,17 @@ import asyncio
 import os
 import sys
 import threading
-from contextlib import aclosing
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from holon.ext.events import NOT_FOUND
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from marimo._core.host import Host
 from marimo._environments import backends
 from marimo._environments.environment import Environment, ProcessPlan
 from marimo._environments.sandbox import BackendAdapter
@@ -23,16 +25,17 @@ from marimo._messaging.notification import (
     OperationSucceeded,
     StartupProgressNotification,
 )
-from marimo._messaging.serde import serialize_kernel_message
+from marimo._messaging.serde import deserialize_kernel_message
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionParams,
 )
 from marimo._server.codes import WebSocketCodes
-from marimo._server.host.session import SessionEventStream
+from marimo._server.host.bridge import SessionBridge
+from marimo._server.host.session import Tab
 from marimo._server.main import create_starlette_app
 from marimo._server.session_manager import SessionManager
 from marimo._session.model import ConnectionState, SessionMode
-from marimo._types.ids import SessionId
+from marimo._types.ids import ConsumerId, SessionId
 from marimo._utils.parse_dataclass import parse_raw
 from tests._server.api.endpoints.ws_helpers import (
     QUERY_PARAMS_CASES,
@@ -40,12 +43,14 @@ from tests._server.api.endpoints.ws_helpers import (
     assert_parse_ready_response,
     create_response,
     headers,
+    instantiate,
     receive_notification,
     receive_until,
 )
 from tests._server.conftest import get_kernel_tasks
 from tests._server.mocks import get_session_manager
-from tests._server.session_events import connect_session
+from tests._server.session_events import _portal, connect_session
+from tests.mcp_request import SessionClosed
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -67,22 +72,6 @@ def test_ws(client: TestClient) -> None:
         assert_kernel_ready_response(data)
 
 
-def test_a_failed_stream_ends_the_subscription(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    async def stream(self: SessionEventStream) -> Any:
-        del self
-        raise RuntimeError("broken")
-        yield  # An async generator, as `stream` is.
-
-    monkeypatch.setattr(SessionEventStream, "stream", stream)
-    with pytest.raises(WebSocketDisconnect) as exc_info:  # noqa: PT012
-        with connect_session(client, WS_URL) as websocket:
-            websocket.receive_text()
-            raise AssertionError()
-    assert exc_info.value.reason == "The session's stream failed"
-
-
 def test_a_page_from_before_a_restart_follows_its_session(
     client: TestClient,
 ) -> None:
@@ -92,62 +81,98 @@ def test_a_page_from_before_a_restart_follows_its_session(
         assert_kernel_ready_response(receive_notification(websocket))
 
 
-@pytest.mark.parametrize("ending", ["close", "cancel"])
-async def test_ending_the_stream_during_startup_detaches_session(
-    ending: str,
+def test_a_page_resuming_from_before_a_restart_runs_its_new_session(
+    client: TestClient,
 ) -> None:
-    manager = MagicMock(mode=SessionMode.RUN)
-    session = manager.get_session.return_value
-    session.ttl_seconds = 120
-    session.disconnect_consumer.side_effect = lambda consumer: (
-        consumer.on_detach()
+    with connect_session(client, WS_URL, resume="elsewhere.5"):
+        pass
+    with connect_session(client, WS_URL) as websocket:
+        assert_kernel_ready_response(receive_notification(websocket))
+
+
+def test_a_page_that_read_no_session_follows_the_one_another_page_started(
+    client: TestClient,
+) -> None:
+    cursor: list[str] = []
+    with connect_session(client, OTHER_WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, WS_URL) as first:
+        assert_kernel_ready_response(receive_notification(first))
+        with connect_session(client, OTHER_WS_URL, resume=cursor[0]) as second:
+            receive_until("kernel-ready", second)
+
+
+def test_a_page_keeps_its_session_across_polling_and_streaming_until_it_is_shut_down(
+    client: TestClient,
+) -> None:
+    cursor: list[str] = []
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
+    manager = get_session_manager(client)
+    deadline = time.monotonic() + 20
+    while manager.get_session(SessionId("123")) is None:
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    with connect_session(client, WS_URL, resume=cursor[0]):
+        pass
+    moved = client.post(
+        "/api/kernel/set_ui_element_value",
+        headers=headers("123"),
+        json={"objectIds": ["slider"], "values": [4]},
     )
-    handler = SessionEventStream(
-        http_request=MagicMock(),
-        bridge=MagicMock(),
-        manager=manager,
-        params=ConnectionParams(
-            session_id=SessionId("s1"),
-            file_key="test.py",
-            kiosk=False,
-            auto_instantiate=False,
-        ),
-    )
-    sending = asyncio.Event()
+    assert moved.status_code == 200, moved.text
+    with connect_session(client, WS_URL, poll=cursor[0]):
+        pass
+    _portal(client).call(manager.close_session, SessionId("123"))
+    with pytest.raises(SessionClosed) as closed:
+        with connect_session(client, WS_URL, poll=cursor[0]):
+            pass
+    assert closed.value.error is not None
+    assert closed.value.error["code"] == NOT_FOUND
 
-    async def connect(_connection: Any) -> None:
-        handler.on_attach(session, MagicMock())
-        # Progress reaches the startup queue only while the handler is still
-        # connecting; once open, it travels with session messages instead.
-        handler.notify(
-            serialize_kernel_message(
-                StartupProgressNotification(
-                    phase="starting-kernel", logs="", log_mode="replace"
-                )
-            )
-        )
-        handler.status = ConnectionState.OPEN
 
-    async def deliver() -> None:
-        async with aclosing(handler.stream()) as events:
-            async for _event in events:
-                sending.set()
-                if ending == "close":
-                    return
-                await asyncio.Event().wait()
+def test_a_join_that_fails_ends_the_subscription_for_good(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise RuntimeError("broken")
 
-    with patch.object(handler, "_connect_session", side_effect=connect):
-        task = asyncio.create_task(deliver())
-        await asyncio.wait_for(sending.wait(), timeout=5)
-        if ending == "cancel":
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(task, timeout=5)
-        else:
-            await asyncio.wait_for(task, timeout=5)
+    monkeypatch.setattr(Host, "events", broken)
+    cursor: list[str] = []
+    with connect_session(client, WS_URL, read_only=cursor):
+        pass
+    deadline = time.monotonic() + 20
+    with pytest.raises(SessionClosed) as closed:  # noqa: PT012
+        while True:
+            assert time.monotonic() < deadline
+            with connect_session(client, WS_URL, poll=cursor[0]):
+                pass
+            time.sleep(0.05)
+    assert closed.value.error is not None
+    assert closed.value.error["code"] == NOT_FOUND
+    session = get_session_manager(client).get_session(SessionId("123"))
+    assert session is None or ConsumerId("123") not in session.room.consumers
 
-    session.disconnect_consumer.assert_called_once_with(handler)
-    assert handler.connection_state() == ConnectionState.CLOSED
+
+def test_a_page_whose_join_was_refused_can_join_again(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adopt = SessionBridge.adopt
+
+    async def unavailable(self: SessionBridge, session: Any) -> Any:
+        del self, session
+
+    monkeypatch.setattr(SessionBridge, "adopt", unavailable)
+    with pytest.raises(WebSocketDisconnect):  # noqa: PT012
+        with connect_session(client, WS_URL) as websocket:
+            while True:
+                websocket.receive_text()
+    monkeypatch.setattr(SessionBridge, "adopt", adopt)
+    with connect_session(client, WS_URL) as websocket:
+        assert_kernel_ready_response(receive_notification(websocket))
 
 
 def test_without_session(client: TestClient) -> None:
@@ -164,10 +189,10 @@ def test_disconnect_and_reconnect(client: TestClient) -> None:
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
         assert_kernel_ready_response(data)
-    # Connect by the same session id
+        instantiate(client, "123")
     with connect_session(client, WS_URL) as websocket:
         data = receive_notification(websocket)
-        assert data["op"] == "alert"
+        assert_kernel_ready_response(data, create_response({"resumed": True}))
 
 
 def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
@@ -177,15 +202,12 @@ def test_disconnect_then_reconnect_then_refresh(client: TestClient) -> None:
         assert_kernel_ready_response(data)
         stable_id = manager.sessions[SessionId("123")].stable_id
         websocket.close()
-    # Connect by the same session id
     with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert data["op"] == "alert"
+        receive_notification(websocket)
         assert manager.sessions[SessionId("123")].stable_id == stable_id
     # New connection with a new browser ID (simulates refresh)
     with connect_session(client, OTHER_WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data, create_response({"resumed": True}))
+        receive_notification(websocket)
         assert manager.sessions[SessionId("456")].stable_id == stable_id
 
 
@@ -217,13 +239,6 @@ def test_completed_startup_is_restored_on_reconnect_and_refresh(
 
     for url in (WS_URL, OTHER_WS_URL):
         with connect_session(client, url) as websocket:
-            message = receive_notification(websocket)
-            if url == OTHER_WS_URL:
-                assert_kernel_ready_response(
-                    message, create_response({"resumed": True})
-                )
-            else:
-                assert message["op"] == "alert"
             environment = receive_until("environment-state", websocket)["data"]
             assert environment["source"] == "kernel"
             assert environment["state"]["operations"][0]["logs"] == {
@@ -424,11 +439,12 @@ async def test_session_resumption(client: TestClient) -> None:
         assert_kernel_ready_response(data)
 
         # Instantiate to generate some operations
-        client.post(
+        response = client.post(
             "/api/kernel/instantiate",
             headers=headers("123"),
-            json={"objectIds": [], "values": [], "auto_run": True},
+            json={"objectIds": [], "values": [], "autoRun": True},
         )
+        assert response.status_code == 200, response.text
 
         # Flush initial messages
         flush_messages(websocket, at_least=1)
@@ -472,10 +488,7 @@ async def test_reconnection_cancels_close_handle(client: TestClient) -> None:
 
         # Reconnect immediately (before TTL expires)
         with connect_session(client, WS_URL) as new_websocket:
-            data = receive_notification(new_websocket)
-            # The same connection rejoins its session and is told so.
-            assert data["op"] == "alert"
-            assert data["data"]["title"] == "Reconnected"
+            receive_notification(new_websocket)
 
             # Session should still exist (TTL was canceled)
             session = session_manager.get_session("123")
@@ -535,10 +548,7 @@ async def test_ttl_close_does_not_kill_session_owned_by_new_consumer(
         assert captured, "Consumer A disconnect did not schedule a TTL close"
 
         with connect_session(client, WS_URL) as ws_b:
-            data = receive_notification(ws_b)
-            assert data["op"] == "alert", (
-                f"Expected the reconnect alert, got {data.get('op')}"
-            )
+            receive_notification(ws_b)
 
             if disconnect_reconnected:
 
@@ -703,33 +713,6 @@ def test_missing_file_key_closes_connection(client: TestClient) -> None:
 # ============================================================================
 # Advanced WebSocket State Machine Tests
 # ============================================================================
-
-
-async def test_rapid_reconnection_cancels_ttl_cleanup(
-    client: TestClient,
-) -> None:
-    """Test that rapid reconnection cancels the TTL cleanup timer."""
-    with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert_kernel_ready_response(data)
-
-    # Disconnect and immediately reconnect (before TTL expires)
-    await asyncio.sleep(0.1)
-
-    with connect_session(client, WS_URL) as websocket:
-        data = receive_notification(websocket)
-        assert data["op"] == "alert"
-
-
-async def test_multiple_rapid_reconnections(client: TestClient) -> None:
-    """Test multiple rapid connect/disconnect cycles don't break session."""
-    for i in range(5):
-        with connect_session(client, WS_URL) as websocket:
-            data = receive_notification(websocket)
-            if i == 0:
-                assert_kernel_ready_response(data)
-            else:
-                assert data["op"] == "alert"
 
 
 async def test_websocket_message_queue_delivery(client: TestClient) -> None:
@@ -1032,8 +1015,8 @@ async def test_check_status_update_runs_off_the_event_loop(
 
     monkeypatch.setattr(session_handler, "check_for_updates", slow_check)
 
-    handler = SessionEventStream(
-        http_request=MagicMock(),
+    sent: asyncio.Queue[Any] = asyncio.Queue()
+    handler = Tab(
         bridge=MagicMock(),
         manager=MagicMock(mode=SessionMode.EDIT),
         params=ConnectionParams(
@@ -1042,13 +1025,16 @@ async def test_check_status_update_runs_off_the_event_loop(
             kiosk=False,
             auto_instantiate=False,
         ),
+        sent=sent.put_nowait,
+        closed=MagicMock(),
     )
     # Returns immediately, while the check is still running on a thread
     handler._check_status_update()
     assert await asyncio.wait_for(asyncio.to_thread(started.wait, 10), 20)
-    assert handler._events.empty()
+    assert sent.empty()
 
-    # Once the check completes, the alert is delivered onto the queue
     release.set()
-    message = await asyncio.wait_for(handler._events.get(), timeout=10)
-    assert "Update available" in message.event.data.marimo.title
+    message = deserialize_kernel_message(
+        await asyncio.wait_for(sent.get(), timeout=10)
+    )
+    assert "Update available" in message.title

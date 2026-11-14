@@ -51,7 +51,7 @@ import { connectionAtom, startupProgressAtom } from "../../network/connection";
 import { generateSessionId } from "../../kernel/session";
 import { RuntimeManager } from "../../runtime/runtime";
 import { WebSocketClosedReason, ConnectionState } from "../types";
-import { classifyCloseEvent } from "../../transports/connection-state";
+import { closedStatus } from "../../transports/connection-state";
 import { createEditorBackend } from "../backend";
 import {
   fakeBackend,
@@ -130,7 +130,7 @@ function connection(fake: FakeTransport) {
     close: (reason: string) =>
       current().stop(
         new StreamStopped(reason, {
-          cause: classifyCloseEvent({ reason }).status,
+          cause: closedStatus(reason),
         }),
       ),
   };

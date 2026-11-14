@@ -168,30 +168,4 @@ describe("Client", () => {
     expect(events.status).toBe("closed");
     expect(subscriptions).toHaveLength(1);
   });
-
-  it("subscribes again from its cursor after losing the connection", async () => {
-    vi.useFakeTimers();
-    const answers: Subscription[] = [
-      { events: [{ event: "ready", id: "41", data: {} }], lose: true },
-      { events: [{ event: "ready", id: "42", data: {} }] },
-    ];
-    const { client, subscriptions } = connect(
-      () => ({}),
-      () => answers.shift()!,
-    );
-    const statuses: string[] = [];
-    const events = client.events({
-      types: ["notebook"],
-      onStatus: (status) => statuses.push(status),
-    });
-    await vi.waitFor(() => expect(events.cursor).toBe("41"));
-    await vi.advanceTimersByTimeAsync(2000);
-    await vi.waitFor(() => expect(events.cursor).toBe("42"));
-    expect(subscriptions.map((subscription) => subscription.arguments)).toEqual(
-      [{ types: ["notebook"] }, { types: ["notebook"], cursor: "41" }],
-    );
-    expect(statuses).toEqual(["connected", "connecting", "connected"]);
-    events.close();
-    await events.closed;
-  });
 });

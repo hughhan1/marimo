@@ -23,6 +23,33 @@ export class StreamStopped extends Error {
   public override readonly name = "StreamStopped";
 }
 
+const CONNECTION_CLOSED = -32000;
+const REQUEST_TIMEOUT = -32001;
+
+/**
+ * Whether a failure is the server's answer, which trying again would repeat:
+ * an error it sent, a refusal with an HTTP 4xx status, or a tool's error
+ * result. A closed connection or a timeout is not an answer.
+ */
+export function answered(error: unknown): boolean {
+  const failure = error as {
+    code?: unknown;
+    status?: unknown;
+    result?: unknown;
+    data?: { problem?: unknown };
+  } | null;
+  return (
+    failure?.result !== undefined ||
+    failure?.data?.problem !== undefined ||
+    (typeof failure?.code === "number" &&
+      failure.code !== CONNECTION_CLOSED &&
+      failure.code !== REQUEST_TIMEOUT) ||
+    (typeof failure?.status === "number" &&
+      failure.status >= 400 &&
+      failure.status < 500)
+  );
+}
+
 /** Where one connection of a host stream starts. */
 export interface Attempt {
   /** Where to resume, or null to start with a snapshot. */

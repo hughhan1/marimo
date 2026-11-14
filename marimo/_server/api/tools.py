@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 import msgspec
 import msgspec.json
 import msgspec.structs
+from holon.ext.events import Events
 from holon.ext.files import EXTENSION, FileServer, LocalStorage
 from mcp import types
 from mcp.server.lowlevel import Server
@@ -40,7 +41,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
-from marimo._server.api.events import events
+from marimo._server.api.events import SessionEvents
 from marimo._server.errors import handle_error
 
 if TYPE_CHECKING:
@@ -284,7 +285,7 @@ async def _call(
 ) -> types.CallToolResult:
     request = ctx.request
     assert isinstance(request, Request)
-    if not request.user.is_authenticated:
+    if not request.auth.scopes:
         # Before the arguments are read: `@requires` would refuse the call,
         # but only once the handler is called with them.
         return tool_result(
@@ -418,6 +419,16 @@ class MCPEndpoint:
     def __init__(self, server: Server[Any]) -> None:
         self.server = server
 
+    def close(self) -> None:
+        """End each of its event streams with its final frame.
+
+        A client then opens the stream again from its cursor at once. Call it
+        as the server starts to stop, on the loop that serves the endpoint.
+        """
+        for each in self.server.middleware:
+            if isinstance(each, Events):
+                each.close()
+
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
@@ -461,7 +472,8 @@ class EditorMCP(MCPEndpoint):
         server = tool_server(contract, partial(_call, files))
         server.extensions[EXTENSION] = files.settings()
         server.middleware.insert(0, files)
-        events().serve(server)
+        self.session_events = SessionEvents()
+        self.session_events.events.serve(server)
         super().__init__(server)
 
 

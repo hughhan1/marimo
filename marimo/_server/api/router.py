@@ -20,6 +20,7 @@ from marimo._server.api.endpoints import (  # noqa: F401
     packages,
     pair,
     secrets,
+    session,
     sql,
     storage,
 )

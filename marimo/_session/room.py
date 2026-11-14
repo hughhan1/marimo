@@ -165,7 +165,10 @@ class Room:
         """Broadcast a notification to all consumers except the one specified."""
         for state in self.consumers.values():
             consumer = state.consumer
-            if consumer.consumer_id == except_consumer:
+            if (
+                consumer.consumer_id == except_consumer
+                or not consumer.receives_broadcasts
+            ):
                 continue
             if consumer.connection_state() == ConnectionState.OPEN:
                 consumer.notify(notification)

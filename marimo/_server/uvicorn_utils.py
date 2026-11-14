@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import signal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 
 from marimo import _loggers
+
+if TYPE_CHECKING:
+    import socket
+    from collections.abc import Sequence
+
+    from marimo._server.api.tools import MCPEndpoint
 
 LOGGER = _loggers.marimo_logger()
 
@@ -30,6 +36,28 @@ def initialize_signals() -> None:
             del frame
 
         signal.signal(signal.SIGINT, noop)
+
+
+class Server(uvicorn.Server):
+    """A uvicorn server that closes its MCP event streams as it stops.
+
+    Each stream ends with its final frame before the server stops waiting
+    for its connections, so a client reconnects at once rather than after
+    its stream went quiet.
+    """
+
+    def __init__(
+        self, config: uvicorn.Config, *, endpoints: Sequence[MCPEndpoint]
+    ) -> None:
+        super().__init__(config)
+        self.endpoints = endpoints
+
+    async def shutdown(
+        self, sockets: list[socket.socket] | None = None
+    ) -> None:
+        for endpoint in self.endpoints:
+            endpoint.close()
+        await super().shutdown(sockets)
 
 
 def close_uvicorn(server: uvicorn.Server) -> None:

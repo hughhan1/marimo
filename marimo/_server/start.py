@@ -31,7 +31,7 @@ from marimo._server.utils import (
     initialize_asyncio,
     initialize_fd_limit,
 )
-from marimo._server.uvicorn_utils import initialize_signals
+from marimo._server.uvicorn_utils import Server, initialize_signals
 from marimo._server.workspace import (
     DirectoryWorkspace,
     NotebookWorkspace,
@@ -428,7 +428,7 @@ def start(
     # does, so force asyncio.
     loop_policy = edit_loop_policy if mode == SessionMode.EDIT else "auto"
 
-    server = uvicorn.Server(
+    server = Server(
         uvicorn.Config(
             app,
             port=port,
@@ -449,7 +449,8 @@ def start(
             # loop can take an arbitrary string but mypy is complaining
             # expecting it to be a Literal
             loop=loop_policy,  # type:ignore[arg-type]
-        )
+        ),
+        endpoints=app.state.mcp_endpoints,
     )
     app.state.server = server
 

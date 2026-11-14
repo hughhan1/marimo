@@ -31,6 +31,7 @@ from marimo._server.api.router import build_routes
 from marimo._server.api.tools import EditorMCP
 from marimo._server.errors import handle_error
 from marimo._server.host.middleware import HostApiMiddleware
+from marimo._server.host.tools import mcp_endpoint
 from marimo._server.lsp import LspServer
 from marimo._server.registry import MIDDLEWARE_REGISTRY
 from marimo._utils.http import (
@@ -70,10 +71,11 @@ def create_starlette_app(
     )
     session_secret = server_config.session_secret or SESSION_SECRET
     origin_policy = OriginPolicy(allow_origins or (), host)
+    host_mcp = mcp_endpoint()
     final_middlewares: list[Middleware] = [
         Middleware(WebSocketOriginMiddleware, policy=origin_policy),
         # Handle host API requests before the editor's middleware.
-        Middleware(HostApiMiddleware, base_url=base_url),
+        Middleware(HostApiMiddleware, endpoint=host_mcp, base_url=base_url),
     ]
 
     if allow_origins is None:
@@ -147,6 +149,8 @@ def create_starlette_app(
             app_state=app.state,
             timeout_duration_minutes=timeout,
         )
+    app.state.session_events = editor.session_events
+    app.state.mcp_endpoints = (editor, host_mcp)
     app.state.session_secret = session_secret
     app.state.origin_policy = origin_policy
     return app

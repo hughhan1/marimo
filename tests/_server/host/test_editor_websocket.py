@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from inline_snapshot import snapshot
 from starlette.websockets import WebSocketDisconnect
 
 from marimo._server.host.bridge import SessionBridge
@@ -36,22 +35,6 @@ def receive_notification(websocket: SessionEvents, op: str) -> dict[str, Any]:
         assert "op" not in event
         if event["event"] == "marimo" and event["data"]["marimo"]["op"] == op:
             return event["data"]["marimo"]
-
-
-def assert_reconnect_alert(websocket: SessionEvents) -> None:
-    assert websocket.receive_json() == snapshot(
-        {
-            "event": "marimo",
-            "data": {
-                "marimo": {
-                    "op": "alert",
-                    "title": "Reconnected",
-                    "description": "You have reconnected to an existing session.",
-                    "variant": None,
-                }
-            },
-        }
-    )
 
 
 def completed(event: dict[str, Any], run_id: str) -> bool:
@@ -104,7 +87,7 @@ def test_untitled_editor_runs_reconnects_and_restarts_its_runtime(
                 receive_completed_run(ws, response.data["id"])
             with connect_session(client, url) as ws:
                 snapshot = socket_snapshot(ws)
-                assert_reconnect_alert(ws)
+                assert receive_notification(ws, "kernel-ready")["resumed"]
                 assert (
                     next(
                         e["data"]["notebook"]["id"]

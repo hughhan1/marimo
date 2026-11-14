@@ -20,6 +20,9 @@ class SessionConsumer(ABC, SessionExtension):
     connection types.
     """
 
+    receives_broadcasts: bool = True
+    """Whether the room sends this consumer what the session broadcasts."""
+
     @property
     @abstractmethod
     def consumer_id(self) -> ConsumerId: ...

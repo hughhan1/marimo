@@ -142,6 +142,8 @@ class Session(Protocol):
     session_view: SessionView
     ttl_seconds: int
     connection_generation: int
+    instantiated: bool
+    """Whether the notebook was instantiated, so its cells have run or may."""
     scratchpad_lock: asyncio.Lock
     room: Room
 

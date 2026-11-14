@@ -30,16 +30,20 @@ if TYPE_CHECKING:
     from starlette.routing import BaseRoute
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+    from marimo._server.api.tools import MCPEndpoint
+
 LOGGER = _loggers.marimo_logger()
 
 
 class HostApiMiddleware:
     """Authenticate and route host API requests."""
 
-    def __init__(self, app: ASGIApp, *, base_url: str = "") -> None:
+    def __init__(
+        self, app: ASGIApp, *, endpoint: MCPEndpoint, base_url: str = ""
+    ) -> None:
         self.app = app
         self.prefix = base_url + HOST_API_PATH
-        self.host_app = build_app()
+        self.host_app = build_app(endpoint)
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
