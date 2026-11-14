@@ -204,7 +204,6 @@ async def upload_file(
     body: FileUploadRequest,
 ) -> FileCreateResponse:
     """Add a file to the directory `path`, as `name`."""
-    del request
     try:
         info = await file_system.add_file(body.path, body.name, body.file)
         return FileCreateResponse(success=True, info=info)
