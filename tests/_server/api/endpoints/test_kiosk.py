@@ -50,7 +50,6 @@ def new_cell(cell_id: str) -> dict[str, Any]:
 def test_a_kiosk_page_under_the_editors_session_id_is_told_alone(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(session_events, "_TIMEOUT", 1.0)
     with connect_session(
         client, "/ws?session_id=123", headers=_HEADERS
     ) as editor:
@@ -60,6 +59,7 @@ def test_a_kiosk_page_under_the_editors_session_id_is_told_alone(
         ) as kiosk:
             told = receive_until("consumer-capabilities", kiosk)
             assert told["data"]["consumer_capabilities"]["edit"] is False
+            monkeypatch.setattr(session_events, "_TIMEOUT", 1.0)
             received = []
             with contextlib.suppress(queue.Empty):
                 while True:

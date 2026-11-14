@@ -15,6 +15,7 @@ from holon.ext.events import NOT_FOUND
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from marimo._core.host import Host
 from marimo._environments import backends
 from marimo._environments.environment import Environment, ProcessPlan
 from marimo._environments.sandbox import BackendAdapter
@@ -25,7 +26,6 @@ from marimo._messaging.notification import (
     StartupProgressNotification,
 )
 from marimo._messaging.serde import deserialize_kernel_message
-from marimo._server.api import events
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     ConnectionParams,
 )
@@ -168,7 +168,7 @@ def test_a_join_that_fails_ends_the_subscription_for_good(
         del args, kwargs
         raise RuntimeError("broken")
 
-    monkeypatch.setattr(events.SessionEvents, "_snapshot", broken)
+    monkeypatch.setattr(Host, "events", broken)
     cursor: list[str] = []
     with connect_session(client, WS_URL, read_only=cursor):
         pass
