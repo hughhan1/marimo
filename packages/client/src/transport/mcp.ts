@@ -61,18 +61,27 @@ export function subscribe(
   let client: RuntimeClient | undefined;
   return async ({ cursor, signal }, { open, message }) => {
     client ??= host(endpoint, options);
+    const lost = new AbortController();
     try {
       const events = await client.ext.events.subscribe(
         name,
         { ...args, ...(cursor === null ? {} : { cursor }) },
-        { signal, delivery: "push", reconnect: false },
+        {
+          signal: AbortSignal.any([signal, lost.signal]),
+          delivery: "push",
+          onStatus: (status) => {
+            if (status === "reconnecting") {
+              lost.abort();
+            }
+          },
+        },
       );
       open();
       for await (const { data } of events) {
         message(data);
       }
     } catch (error) {
-      if (signal.aborted) {
+      if (signal.aborted || lost.signal.aborted) {
         return;
       }
       const stop = stopped(error);
