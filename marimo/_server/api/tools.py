@@ -40,7 +40,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
-from marimo._server.api.events import events, request_var
+from marimo._server.api.events import events
 from marimo._server.errors import handle_error
 
 if TYPE_CHECKING:
@@ -446,13 +446,8 @@ class MCPEndpoint:
         )
         # Made here, since the events endpoint hands tools a copy of the scope.
         tasks = scope.setdefault(_AFTER_REPLY, [])
-        # Event hooks read the request, which the SDK does not hand them.
-        token = request_var.set(request)
-        try:
-            async with manager.run():
-                await self.events.asgi(manager)(scope, receive, send)
-        finally:
-            request_var.reset(token)
+        async with manager.run():
+            await self.events.asgi(manager)(scope, receive, send)
         for task in tasks:
             await task()
 
