@@ -111,7 +111,7 @@ class AuthBackend(AuthenticationBackend):
 
 
 class WebSocketOriginMiddleware:
-    """Apply the server's origin policy to WebSocket handshakes."""
+    """Apply the server's origin policy to WebSocket handshakes and MCP calls."""
 
     def __init__(
         self,
@@ -191,19 +191,23 @@ class WebSocketOriginMiddleware:
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
-        if scope["type"] != "websocket":
+        if scope["type"] == "websocket":
+            connection: WebSocket | Request = WebSocket(scope, receive, send)
+            scheme = "https" if scope["scheme"] == "wss" else "http"
+        elif scope["type"] == "http" and scope["path"].endswith("/api/mcp"):
+            connection = Request(scope, receive)
+            scheme = scope["scheme"]
+        else:
             return await self.app(scope, receive, send)
 
-        websocket = WebSocket(scope, receive, send)
-        origins = websocket.headers.getlist("origin")
+        origins = connection.headers.getlist("origin")
         # Non-browser clients may omit Origin.
         if not origins:
             return await self.app(scope, receive, send)
 
         origin = self._parse_origin(origins[0]) if len(origins) == 1 else None
-        scheme = "https" if scope["scheme"] == "wss" else "http"
         server_origin = self._parse_origin(
-            f"{scheme}://{websocket.headers.get('host', '')}"
+            f"{scheme}://{connection.headers.get('host', '')}"
         )
         if origin is not None and (
             (
@@ -215,9 +219,14 @@ class WebSocketOriginMiddleware:
         ):
             return await self.app(scope, receive, send)
 
-        await websocket.close(
-            code=WebSocketCodes.FORBIDDEN, reason="Origin not allowed"
-        )
+        if isinstance(connection, WebSocket):
+            await connection.close(
+                code=WebSocketCodes.FORBIDDEN, reason="Origin not allowed"
+            )
+        else:
+            await Response("Origin not allowed", status_code=403)(
+                scope, receive, send
+            )
 
 
 class SkewProtectionMiddleware:

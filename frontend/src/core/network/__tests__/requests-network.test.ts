@@ -26,6 +26,23 @@ vi.mock("../api", async () => {
   };
 });
 
+const calls = vi.hoisted(() => new Map<string, ReturnType<typeof vi.fn>>());
+const tool = vi.hoisted(() => (name: string) => {
+  if (!calls.has(name)) {
+    calls.set(
+      name,
+      vi.fn(() => Promise.resolve({})),
+    );
+  }
+  return calls.get(name)!;
+});
+vi.mock("../holon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../holon")>()),
+  callMarimo: async <T>(
+    call: (tools: Record<string, ReturnType<typeof tool>>) => Promise<T>,
+  ) => call(new Proxy({}, { get: (_, name: string) => tool(name) })),
+}));
+
 vi.mock("../connection", () => ({
   isConnectedAtom: { read: vi.fn(() => true) },
   waitForConnectionOpen: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +55,7 @@ describe("createNetworkRequests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    calls.clear();
     capturedCalls = new Map();
 
     // Create mock client that captures all calls
@@ -121,45 +139,35 @@ describe("createNetworkRequests", () => {
       expect(mockClient.GET).toHaveBeenCalledWith("/api/environment");
     });
 
-    it("getFileRoots should GET /api/files/roots", async () => {
+    it("getFileRoots should call files_roots", async () => {
       const requests = createNetworkRequests();
       await requests.getFileRoots();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/files/roots");
+      expect(tool("files_roots")).toHaveBeenCalledWith({});
     });
 
-    it("getExportAvailability should GET /api/export/availability", async () => {
+    it("getExportAvailability should call export_availability", async () => {
       const requests = createNetworkRequests();
       await requests.getExportAvailability();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/export/availability");
+      expect(tool("export_availability")).toHaveBeenCalledWith({});
     });
 
     it("installExportRequirements should POST the export format", async () => {
       const requests = createNetworkRequests();
       await requests.installExportRequirements({ format: "pdf" });
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/export/requirements/install",
-        expect.objectContaining({
-          body: { format: "pdf" },
-          params: expect.anything(),
-        }),
-      );
+      expect(tool("export_requirements_install")).toHaveBeenCalledWith({
+        format: "pdf",
+      });
     });
 
-    it("discoverDataSources should POST to the discovery endpoint", async () => {
+    it("discoverDataSources should call datasources_discover", async () => {
       const requests = createNetworkRequests();
       const request = { requestId: "discovery-request" } as any;
       await requests.discoverDataSources(request);
 
-      expect(mockClient.POST).toHaveBeenCalledWith(
-        "/api/datasources/discover",
-        expect.objectContaining({
-          body: request,
-          params: expect.anything(),
-        }),
-      );
+      expect(tool("datasources_discover")).toHaveBeenCalledWith(request);
     });
 
     it("getPackageList should not require a kernel connection", async () => {
@@ -169,7 +177,7 @@ describe("createNetworkRequests", () => {
       const requests = createNetworkRequests();
       await requests.getPackageList();
 
-      expect(mockClient.GET).toHaveBeenCalledWith("/api/packages/list");
+      expect(tool("packages_list")).toHaveBeenCalledWith({});
       expect(waitForConnectionOpenIfNotebook).toHaveBeenCalled();
       expect(waitForConnectionOpen).not.toHaveBeenCalled();
     });

@@ -182,6 +182,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260324.1
         version: 7.0.0-dev.20260324.1
+      holon-types:
+        specifier: 0.0.1-dev.48
+        version: 0.0.1-dev.48
       oxfmt:
         specifier: ^0.74.0
         version: 0.74.0
@@ -434,6 +437,9 @@ importers:
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
+      holon-ui:
+        specifier: 0.0.1-dev.18
+        version: 0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7))
       htm:
         specifier: ^3.1.1
         version: 3.1.1
@@ -2034,6 +2040,32 @@ packages:
 
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
+
+  '@modelcontextprotocol/client@2.4.0':
+    resolution: {integrity: sha512-LgrD2OphHuG12vfKFKz6SOnq7bKHQmhGJIAYdD+MZBn2npHEyry6uD8zvktodtl5CQM85MO0anUyD9JwmUmxww==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/core@2.4.0':
+    resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/ext-apps@2.0.4':
+    resolution: {integrity: sha512-B+PcbuGiaf0e5I3uy4iO5tS3Abo+5w8JvZFzHMzQdq9yVwP836zJkw2+KCGOQ0r4TM1fuQi4JdnbuWjkS4aBvg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@modelcontextprotocol/client': ^2.0.0
+      '@modelcontextprotocol/core': ^2.0.0
+      '@modelcontextprotocol/server': ^2.0.0
+      react: ^19.3.1
+      react-dom: ^19.3.1
+      zod: ^4.2.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
 
   '@modelcontextprotocol/sdk@1.17.2':
     resolution: {integrity: sha512-EFLRNXR/ixpXQWu6/3Cu30ndDFIFNaqUXcTqsGebujeMan9FzhAaFFswLRiFj61rgygDRr8WO1N+UijjgRxX9g==}
@@ -6504,6 +6536,46 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
+  holon-sh@0.0.1-dev.34:
+    resolution: {integrity: sha512-2j/ut2dPh7F/yaNlgbzGjm3FaCukCPkLq1s4L2tmhWn8s6qHL6ziy7CodJTfGhhBrvmY/IP5HMDk1mzJr6aJEQ==}
+    engines: {node: '>=22'}
+    hasBin: true
+    peerDependencies:
+      '@modelcontextprotocol/server': ^2.3.1
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
+
+  holon-types-darwin-arm64@0.0.1-dev.48:
+    resolution: {integrity: sha512-CRpb/QD0svtyzqhFsnmiWQD3L0KEMDAPBz0V0wefu7ySMYY9DwHJ3+OpfrbroqSk50HM8FfYCe3PVtA62jnjvQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  holon-types-darwin-x64@0.0.1-dev.48:
+    resolution: {integrity: sha512-jzAsjzTAWg4CWK8amkD1rF+JOzLG8sp81DREEEfF4FHNlCDw1D2rjfYwY5iI4wnywVZWcwHLKsXrougWAXbHOw==}
+    cpu: [x64]
+    os: [darwin]
+
+  holon-types-linux-arm64@0.0.1-dev.48:
+    resolution: {integrity: sha512-wW7SKiDQHlnZcyl+mHGwPUgqT3pltpAEFjDz8bYqPMY9vw6Ua0FRPRkql8pbv57erkPqxbXUPCoL58Yh+VHtzw==}
+    cpu: [arm64]
+    os: [linux]
+
+  holon-types-linux-x64@0.0.1-dev.48:
+    resolution: {integrity: sha512-LwNWoqwJhrPD6tHSyBYHUfM60ghtZ1hEbvwIqrXqBqjQW4gIh7zet8hmSdC0f+++XK7MIw63acrJBpyAWcKXCA==}
+    cpu: [x64]
+    os: [linux]
+
+  holon-types@0.0.1-dev.48:
+    resolution: {integrity: sha512-nNSmOYm1ujTJkxLBBj0mX3tZUv/wlE+0KbMch+kWOPhGu0mKrL3bz3AD1IsbdTjsXoD+9mP/vkusxFU3Z6r+8A==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  holon-ui@0.0.1-dev.18:
+    resolution: {integrity: sha512-bDGdwS7vcj1c2bjgtVeptlI9Q3V6zmTBu11ru8na6QnVRTAl6pEEjx+RPj0yk+NfG8giZzHdNi3/lzdXPWOocg==}
+    peerDependencies:
+      '@modelcontextprotocol/ext-apps': ^2.0.0
+
   hookified@1.13.0:
     resolution: {integrity: sha512-6sPYUY8olshgM/1LDNW4QZQN0IqgKhtl/1C8koNZBJrKLBk3AZl6chQtNwpNztvfiApHMEwMHek5rv993PRbWw==}
 
@@ -6667,6 +6739,10 @@ packages:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
     engines: {node: '>= 0.10'}
 
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
+
   is-alphabetical@2.0.1:
     resolution: {integrity: sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ==}
 
@@ -6824,6 +6900,9 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
+
+  jose@6.2.14:
+    resolution: {integrity: sha512-3JasLuki1NRLQvY4wCoC37KZk4qxoBx2k2aFqLxT84IezqW0bkJKnNtxnZj/Fu1xsQivoc/lytxaRHJoGLjJ1A==}
 
   jotai-scope@0.12.2:
     resolution: {integrity: sha512-E8iVkHS6Ox3kF+eBqq6zM32mj3Fxm6Ks2OlrTG/F2G6vOn4qpW/jJHq81/O72r7NwQ14K80wJTa16icuR7ppFg==}
@@ -7443,6 +7522,11 @@ packages:
   mime-types@3.0.2:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
+
+  mime@4.1.2:
+    resolution: {integrity: sha512-ikRzZ2RwbUVDyL9SsU0f2Phcmav4yq5r8faH5ZZKHtOZrMBLnrQOrj0uvqZ5R1uQnj+RO7Wcklw/lAf81mP9LQ==}
+    engines: {node: '>=16'}
+    hasBin: true
 
   min-indent@1.0.1:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
@@ -11287,6 +11371,30 @@ snapshots:
   '@mermaid-js/parser@1.2.1':
     dependencies:
       '@chevrotain/types': 11.1.2
+
+  '@modelcontextprotocol/client@2.4.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.4.0
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      jose: 6.2.14
+      pkce-challenge: 5.0.1
+      zod: 4.6.7
+
+  '@modelcontextprotocol/core@2.4.0':
+    dependencies:
+      zod: 4.6.7
+
+  '@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)':
+    dependencies:
+      '@modelcontextprotocol/client': 2.4.0
+      '@modelcontextprotocol/core': 2.4.0
+      '@standard-schema/spec': 1.1.0
+      zod: 4.6.7
+    optionalDependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   '@modelcontextprotocol/sdk@1.17.2(supports-color@10.0.0)':
     dependencies:
@@ -15837,6 +15945,40 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
+  holon-sh@0.0.1-dev.34:
+    dependencies:
+      '@modelcontextprotocol/client': 2.4.0
+      ipaddr.js: 2.5.0
+      mime: 4.1.2
+      undici: 7.29.1
+
+  holon-types-darwin-arm64@0.0.1-dev.48:
+    optional: true
+
+  holon-types-darwin-x64@0.0.1-dev.48:
+    optional: true
+
+  holon-types-linux-arm64@0.0.1-dev.48:
+    optional: true
+
+  holon-types-linux-x64@0.0.1-dev.48:
+    optional: true
+
+  holon-types@0.0.1-dev.48:
+    optionalDependencies:
+      holon-types-darwin-arm64: 0.0.1-dev.48
+      holon-types-darwin-x64: 0.0.1-dev.48
+      holon-types-linux-arm64: 0.0.1-dev.48
+      holon-types-linux-x64: 0.0.1-dev.48
+
+  holon-ui@0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
+    dependencies:
+      '@modelcontextprotocol/client': 2.4.0
+      '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
+      holon-sh: 0.0.1-dev.34
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/server'
+
   hookified@1.13.0: {}
 
   hosted-git-info@2.8.9: {}
@@ -15983,6 +16125,8 @@ snapshots:
 
   ipaddr.js@1.9.1: {}
 
+  ipaddr.js@2.5.0: {}
+
   is-alphabetical@2.0.1: {}
 
   is-alphanumerical@2.0.1:
@@ -16094,6 +16238,8 @@ snapshots:
       '@pkgjs/parseargs': 0.11.0
 
   jiti@2.7.0: {}
+
+  jose@6.2.14: {}
 
   jotai-scope@0.12.2(jotai@2.20.3(@babel/core@7.29.0(supports-color@10.0.0))(@babel/template@7.28.6)(@types/react@19.3.0)(react@19.3.1))(react@19.3.1):
     dependencies:
@@ -16914,6 +17060,8 @@ snapshots:
   mime-types@3.0.2:
     dependencies:
       mime-db: 1.54.0
+
+  mime@4.1.2: {}
 
   min-indent@1.0.1: {}
 

@@ -6,11 +6,18 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from starlette.authentication import requires
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import StreamingResponse
 
 from marimo import _loggers
-from marimo._runtime.commands import HTTPRequest, UpdateUIElementCommand
+from marimo._runtime.commands import (
+    DebugCellCommand,
+    ExecuteScratchpadCommand,
+    HTTPRequest,
+    SetBreakpointsCommand,
+    UpdateUIElementCommand,
+)
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import tool
 from marimo._server.api.utils import (
     dispatch_control_request,
     enforce_consumer_capability,
@@ -18,7 +25,6 @@ from marimo._server.api.utils import (
     parse_request,
 )
 from marimo._server.models.models import (
-    BaseResponse,
     DebugCellRequest,
     ExecuteScratchpadRequest,
     InvokeFunctionRequest,
@@ -41,6 +47,7 @@ from marimo._session.requests import (
 from marimo._session.types import KernelState
 from marimo._types.ids import ConsumerId
 from marimo._utils.asyncio_utils import cancel_and_wait
+from marimo._utils.http import HTTPException
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -53,34 +60,14 @@ LOGGER = _loggers.marimo_logger()
 router = APIRouter()
 
 
-@router.post("/set_ui_element_value")
-@requires("read")
+@tool("kernel_set_ui_element_value", requires="read")
 async def set_ui_element_values(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/UpdateUIElementValuesRequest"
-    responses:
-        200:
-            description: Set UI element values
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+    body: UpdateUIElementValuesRequest,
+) -> SuccessResponse:
+    """Set UI elements' values, which runs the cells that read them."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=UpdateUIElementValuesRequest)
     command = UpdateUIElementCommand(
         object_ids=body.object_ids,
         values=body.values,
@@ -96,64 +83,24 @@ async def set_ui_element_values(
     return SuccessResponse()
 
 
-@router.post("/set_model_value")
-@requires("read")
+@tool("kernel_set_model_value", requires="read")
 async def set_model_values(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ModelRequest"
-    responses:
-        200:
-            description: Set model value
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, ModelRequest)
+    body: ModelRequest,
+) -> SuccessResponse:
+    """Send a model message to the kernel's widget."""
+    return await dispatch_control_request(request, body)
 
 
-@router.post("/instantiate")
-@requires("edit")
+@tool("kernel_instantiate", requires="edit")
 async def instantiate(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/InstantiateNotebookRequest"
-    responses:
-        200:
-            description: Instantiate a component. Only allowed in edit mode;
-                in run mode, instantiation happens server-side automatically.
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+    body: InstantiateNotebookRequest,
+) -> SuccessResponse:
+    """Start the notebook with its UI elements' initial values."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=InstantiateNotebookRequest)
     app_state.require_current_session().instantiate(
         body,
         http_request=HTTPRequest.from_request(request),
@@ -162,59 +109,22 @@ async def instantiate(
     return SuccessResponse()
 
 
-@router.post("/function_call")
-@requires("read")
+@tool("kernel_function_call", requires="read")
 async def function_call(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/InvokeFunctionRequest"
-    responses:
-        200:
-            description: Invoke an RPC
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, InvokeFunctionRequest)
+    body: InvokeFunctionRequest,
+) -> SuccessResponse:
+    """Call a function a UI element registered with the kernel."""
+    return await dispatch_control_request(request, body)
 
 
-@router.get("/status")
-@requires("edit")
+@tool("kernel_status", requires="edit")
 async def kernel_status(
     *,
     request: Request,
 ) -> KernelStatusResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Report whether the kernel is currently executing.
-                `running` means at least one cell is queued or running;
-                `idle` means the kernel is alive but not executing; `stopped`
-                means the kernel process is not running.
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/KernelStatusResponse"
-    """
+    """Report whether the kernel is stopped, idle or running cells."""
     app_state = AppState(request)
     session = app_state.require_current_session()
 
@@ -237,20 +147,6 @@ async def execute_code(
     *,
     request: Request,
 ) -> StreamingResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ExecuteScratchpadRequest"
-    responses:
-        200:
-            description: Execute code in the kernel, streaming results as SSE.
-            content:
-                text/event-stream:
-                    schema:
-                        type: string
-    """
     from marimo._runtime.commands import ExecuteScratchpadCommand
     from marimo._server.scratchpad import (
         ScratchCellListener,
@@ -343,114 +239,58 @@ async def execute_code(
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
-@router.post("/scratchpad/run")
-@requires("edit")
+@tool("kernel_scratchpad_run", requires="edit")
 async def run_scratchpad(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ExecuteScratchpadRequest"
-    responses:
-        200:
-            description: Run the scratchpad
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, ExecuteScratchpadRequest)
+    body: ExecuteScratchpadRequest,
+) -> SuccessResponse:
+    """Run code in the scratchpad, outside the notebook's cells."""
+    return await dispatch_control_request(
+        request,
+        ExecuteScratchpadCommand(
+            code=body.code, request=HTTPRequest.from_request(request)
+        ),
+    )
 
 
-@router.post("/pdb/pm")
-@requires("edit")
+@tool("kernel_pdb_pm", requires="edit")
 async def run_post_mortem(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/DebugCellRequest"
-    responses:
-        200:
-            description: Run a post mortem on the most recent failed cell.
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, DebugCellRequest)
+    body: DebugCellRequest,
+) -> SuccessResponse:
+    """Start a post-mortem debugger on a cell's last error."""
+    return await dispatch_control_request(
+        request,
+        DebugCellCommand(
+            cell_id=body.cell_id, request=HTTPRequest.from_request(request)
+        ),
+    )
 
 
-@router.post("/pdb/breakpoints")
-@requires("edit")
+@tool("kernel_pdb_breakpoints", requires="edit")
 async def set_breakpoints(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/SetBreakpointsRequest"
-    responses:
-        200:
-            description: Set the live debugger's breakpoints for the session.
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    return await dispatch_control_request(request, SetBreakpointsRequest)
+    body: SetBreakpointsRequest,
+) -> SuccessResponse:
+    """Set the debugger's breakpoints in a cell."""
+    return await dispatch_control_request(
+        request,
+        SetBreakpointsCommand(
+            breakpoints=body.breakpoints,
+            request=HTTPRequest.from_request(request),
+        ),
+    )
 
 
-@router.post("/restart_session")
-@requires("edit")
+@tool("kernel_restart_session", requires="edit")
 async def restart_session(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Restart the current session without affecting other sessions.
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+) -> SuccessResponse:
+    """Close the session so the client's reload starts a fresh kernel."""
     app_state = AppState(request)
     session_manager = app_state.session_manager
 
@@ -462,27 +302,12 @@ async def restart_session(
     return SuccessResponse()
 
 
-@router.post("/shutdown")
-@requires("edit")
+@tool("kernel_shutdown", requires="edit")
 async def shutdown(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: false
-    responses:
-        200:
-            description: Shutdown the kernel
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+) -> SuccessResponse:
+    """Shut down the session, and the server when it was the last one."""
     LOGGER.debug("Received shutdown request")
     app_state = AppState(request)
     session_manager = app_state.session_manager
@@ -513,65 +338,43 @@ async def shutdown(
     return SuccessResponse()
 
 
-@router.post("/takeover")
-@requires("edit")
+@tool("kernel_takeover", requires="edit")
 async def takeover_endpoint(
     *,
     request: Request,
-) -> JSONResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Successfully closed existing sessions
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        properties:
-                            status:
-                                type: string
-    """
+) -> SuccessResponse:
+    """Make the calling client the notebook's editor."""
     app_state = AppState(request)
 
     session_id = app_state.get_current_session_id()
     if session_id is None:
         LOGGER.error("Missing Marimo-Session-Id header")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Cannot take over session."},
+        raise HTTPException(
+            status_code=400, detail="Cannot take over session."
         )
     caller_id = ConsumerId(session_id)
 
     session = app_state.get_current_session()
     if not session:
         LOGGER.error("No current session found")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Cannot take over session."},
+        raise HTTPException(
+            status_code=400, detail="Cannot take over session."
         )
 
     caller = session.room.get_consumer(caller_id)
     if not caller:
         LOGGER.error("No consumer found for caller ID %s", caller_id)
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Cannot take over session."},
+        raise HTTPException(
+            status_code=400, detail="Cannot take over session."
         )
 
     takeover_decision = can_take_over_editing(session, caller_id)
     if takeover_decision != TakeoverDecision.ALLOW:
         LOGGER.debug("Takeover denied by policy for consumer %s", caller_id)
-        return JSONResponse(
-            status_code=403,
-            content={"error": "Not allowed to take over session."},
+        raise HTTPException(
+            status_code=403, detail="Not allowed to take over session."
         )
 
     session.room.promote_consumer_to_main(caller)
 
-    return JSONResponse(status_code=200, content={"status": "ok"})
+    return SuccessResponse()

@@ -15,6 +15,7 @@
   "endOfLine": "lf",
   "ignorePatterns": [
     "*.md",
+    "**/generated/**",
     "frontend/**/*.html",
     "*.json",
     "*.jsonc",

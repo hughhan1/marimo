@@ -159,7 +159,10 @@ class AppState(AppStateBase):
         """Get the current session or raise an error."""
         session_id = self.get_current_session_id()
         if session_id is None:
-            raise ValueError("Missing Marimo-Session-Id header")
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Missing Marimo-Session-Id header",
+            )
         return session_id
 
     def get_current_session(self) -> Session | None:

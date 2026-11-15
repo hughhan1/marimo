@@ -1,5 +1,6 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 import type { components, paths } from "@marimo-team/marimo-api";
+import type { Inputs, Outputs } from "#holon-ui";
 
 export type schemas = components["schemas"];
 export type AiCompletionRequest = schemas["AiCompletionRequest"];
@@ -74,7 +75,7 @@ export type SyncSandboxResponse = schemas["SyncSandboxResponse"];
 export type PackageOperationResponse = schemas["PackageOperationResponse"];
 export type InstantiateNotebookRequest = schemas["InstantiateNotebookRequest"];
 export type MarimoConfig = schemas["MarimoConfig"];
-export type MarimoFile = schemas["MarimoFile"];
+export type MarimoFile = Outputs["marimo"]["home_tutorial_open"];
 export type ListSecretKeysRequest = schemas["ListSecretKeysRequest"];
 export type CreateSecretRequest = schemas["CreateSecretRequest"];
 export type PreviewDatasetColumnRequest =
@@ -89,7 +90,7 @@ export type ValidateSQLRequest = schemas["ValidateSQLRequest"];
 export type DebugCellRequest = schemas["DebugCellRequest"];
 export type SetBreakpointsRequest = schemas["SetBreakpointsRequest"];
 export type ReadCodeResponse = schemas["ReadCodeResponse"];
-export type RecentFilesResponse = schemas["RecentFilesResponse"];
+export type RecentFilesResponse = Outputs["marimo"]["home_recent_files"];
 export type RenameNotebookRequest = schemas["RenameNotebookRequest"];
 export type ExecuteScratchpadRequest = schemas["ExecuteScratchpadRequest"];
 export type SaveAppConfigurationRequest =
@@ -112,7 +113,7 @@ export interface FileCreateInput {
 export type UpdateUIElementRequest = schemas["UpdateUIElementRequest"];
 export type ModelRequest = schemas["ModelRequest"];
 export type UpdateUserConfigRequest = schemas["UpdateUserConfigRequest"];
-export type ShutdownSessionRequest = schemas["ShutdownSessionRequest"];
+export type ShutdownSessionRequest = Inputs["marimo"]["home_shutdown_session"];
 export type Snippet = schemas["Snippet"];
 export type SnippetSection = schemas["SnippetSection"];
 export type Snippets = schemas["Snippets"];
@@ -125,7 +126,8 @@ export type EnvironmentInfo =
   paths["/api/environment"]["get"]["responses"]["200"]["content"]["application/json"];
 export type WorkspaceFilesRequest = schemas["WorkspaceFilesRequest"];
 export type WorkspaceFilesResponse = schemas["WorkspaceFilesResponse"];
-export type RunningNotebooksResponse = schemas["RunningNotebooksResponse"];
+export type RunningNotebooksResponse =
+  Outputs["marimo"]["home_running_notebooks"];
 export type OpenTutorialRequest = schemas["OpenTutorialRequest"];
 export type TutorialId = OpenTutorialRequest["tutorialId"];
 export type InvokeAiToolRequest = schemas["InvokeAiToolRequest"];

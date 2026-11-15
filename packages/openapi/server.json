@@ -1,0 +1,5 @@
+{
+  "name": "io.marimo/editor",
+  "version": "0.0.0",
+  "description": "The marimo editor's API, as MCP tools"
+}

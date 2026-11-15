@@ -5,11 +5,6 @@ from typing import TYPE_CHECKING, Literal
 
 from starlette.authentication import requires
 from starlette.exceptions import HTTPException
-from starlette.responses import (
-    PlainTextResponse,
-    Response,
-    StreamingResponse,
-)
 
 from marimo import _loggers
 from marimo._ai._pydantic_ai_utils import create_simple_prompt, generate_id
@@ -39,6 +34,7 @@ from marimo._server.ai.providers import (
 from marimo._server.ai.tools.tool_manager import get_tool_manager
 from marimo._server.ai.tracing import SpanInfo
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import tool
 from marimo._server.api.utils import parse_request
 from marimo._server.models.completion import (
     AiCompletionRequest,
@@ -52,14 +48,16 @@ from marimo._server.models.models import (
     MCPRefreshResponse,
     MCPStatusResponse,
     ProviderModel,
+    ProviderModelsRequest,
     ProviderModelsResponse,
+    TextResponse,
 )
-from marimo._server.responses import StructResponse
 from marimo._server.router import APIRouter
 from marimo._utils.http import HTTPStatus
 
 if TYPE_CHECKING:
     from starlette.requests import Request
+    from starlette.responses import StreamingResponse
 
 # Taken from pydantic_ai.ui import SSE_CONTENT_TYPE
 SSE_CONTENT_TYPE = "text/event-stream"
@@ -115,26 +113,11 @@ def get_provider_config(model: str, config: MarimoConfig) -> AnyProviderConfig:
     )
 
 
-@router.get("/models/{provider_name}")
-@requires("edit")
-async def list_provider_models(*, request: Request) -> Response:
-    """
-    description: List models for a supported provider without modifying configuration.
-    parameters:
-      - in: path
-        name: provider_name
-        schema:
-          type: string
-        required: true
-        description: Provider identifier, such as `openrouter` or a custom-provider name.
-    responses:
-      200:
-        description: Available models for the provider.
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ProviderModelsResponse"
-    """
+@tool("ai_models", requires="edit")
+async def list_provider_models(
+    *, request: Request, body: ProviderModelsRequest
+) -> ProviderModelsResponse:
+    """List models for a supported provider without modifying configuration."""
     import asyncio
     import json
     import ssl
@@ -150,7 +133,7 @@ async def list_provider_models(*, request: Request) -> Response:
     app_state.require_current_session()
     config = app_state.app_config_manager.get_config(hide_secrets=False)
     ai_config = get_ai_config(config)
-    provider_name = request.path_params["provider_name"]
+    provider_name = body.provider_name
 
     def secret_resolver(key: str) -> str | None:
         return get_secret_value(key, config)
@@ -280,18 +263,12 @@ async def list_provider_models(*, request: Request) -> Response:
             "id": model_id,
             "name": name if isinstance(name, str) and name else model_id,
         }
-    response = StructResponse(
-        ProviderModelsResponse(
-            models=[
-                ProviderModel(**model)
-                for model in sorted(
-                    models.values(), key=lambda model: model["id"]
-                )
-            ]
-        )
+    return ProviderModelsResponse(
+        models=[
+            ProviderModel(**model)
+            for model in sorted(models.values(), key=lambda model: model["id"])
+        ]
     )
-    response.headers["Cache-Control"] = "no-store"
-    return response
 
 
 @router.post("/completion")
@@ -300,29 +277,6 @@ async def ai_completion(
     *,
     request: Request,
 ) -> StreamingResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        description: The request body for AI completion
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/AiCompletionRequest"
-    responses:
-        200:
-            description: Get AI completion for a prompt
-            content:
-                application/json:
-                    schema:
-                        type: object
-                        additionalProperties: true
-    """
     app_state = AppState(request)
     app_state.require_current_session()
     session_id = app_state.require_current_session_id()
@@ -393,21 +347,6 @@ async def ai_chat(
     *,
     request: Request,
 ) -> StreamingResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        description: The request body for AI chat
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ChatRequest"
-    """
     app_state = AppState(request)
     session = app_state.require_current_session()
     session_id = app_state.require_current_session_id()
@@ -473,41 +412,17 @@ async def ai_chat(
     )
 
 
-@router.post("/inline_completion")
-@requires("edit")
+@tool("ai_inline_completion", allow_unknown_keys=True, requires="edit")
 async def ai_inline_completion(
     *,
     request: Request,
-) -> PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        description: The request body for AI inline completion
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/AiInlineCompletionRequest"
-    responses:
-        200:
-            description: Get AI inline completion for code
-            content:
-                text/plain:
-                    schema:
-                        type: string
-    """
+    body: AiInlineCompletionRequest,
+) -> TextResponse:
+    """Complete the code between a prefix and a suffix."""
     app_state = AppState(request)
     app_state.require_current_session()
     session_id = app_state.require_current_session_id()
     config = app_state.app_config_manager.get_config(hide_secrets=False)
-    body = await parse_request(
-        request, cls=AiInlineCompletionRequest, allow_unknown_keys=True
-    )
     # Use FIM (Fill-In-Middle) format for inline completion
     prompt = f"{FIM_PREFIX_TAG}{body.prefix}{FIM_SUFFIX_TAG}{body.suffix}{FIM_MIDDLE_TAG}"
     system_prompt = get_inline_system_prompt(language=body.language)
@@ -552,44 +467,18 @@ async def ai_inline_completion(
     # Filter out `<|file_separator|>` which is sometimes returned FIM models
     content = content.replace("<|file_separator|>", "")
 
-    return PlainTextResponse(
-        content=content,
-        media_type="text/plain",
-    )
+    return TextResponse(text=content)
 
 
-@router.post("/invoke_tool")
-@requires("edit")
+@tool("ai_invoke_tool", requires="edit")
 async def invoke_tool(
     *,
     request: Request,
-) -> Response:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        description: The request body for tool invocation
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/InvokeAiToolRequest"
-    responses:
-        200:
-            description: Tool invocation result
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/InvokeAiToolResponse"
-    """
+    body: InvokeAiToolRequest,
+) -> InvokeAiToolResponse:
+    """Invoke one of the AI assistant's tools with its arguments."""
     app_state = AppState(request)
     app_state.require_current_session()
-
-    body = await parse_request(request, cls=InvokeAiToolRequest)
 
     try:
         # Invoke the tool
@@ -597,44 +486,30 @@ async def invoke_tool(
             body.tool_name, body.arguments
         )
 
-        return StructResponse(
-            InvokeAiToolResponse(
-                success=result.error is None,
-                tool_name=result.tool_name,
-                result=result.result,
-                error=result.error,
-            )
+        return InvokeAiToolResponse(
+            success=result.error is None,
+            tool_name=result.tool_name,
+            result=result.result,
+            error=result.error,
         )
 
     except Exception as e:
         LOGGER.error("Error invoking AI tool %s: %s", body.tool_name, e)
         # Return error response instead of letting it crash
-        return StructResponse(
-            InvokeAiToolResponse(
-                success=False,
-                tool_name=body.tool_name,
-                result=None,
-                error=f"Tool invocation failed: {e!s}",
-            )
+        return InvokeAiToolResponse(
+            success=False,
+            tool_name=body.tool_name,
+            result=None,
+            error=f"Tool invocation failed: {e!s}",
         )
 
 
-@router.get("/mcp/status")
-@requires("edit")
+@tool("ai_mcp_status", requires="edit")
 async def mcp_status(
     *,
     request: Request,
-) -> Response:
-    """
-    responses:
-        200:
-            description: Get MCP server status
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/MCPStatusResponse"
-    """
-    del request
+) -> MCPStatusResponse:
+    """Report the connection status of the configured MCP servers."""
     try:
         # Try to get MCP client
         mcp_client = get_mcp_client()
@@ -682,55 +557,34 @@ async def mcp_status(
             overall_status = "error"
             error = "No MCP servers connected"
 
-        return StructResponse(
-            MCPStatusResponse(
-                status=overall_status,
-                error=error,
-                servers=servers,
-            )
+        return MCPStatusResponse(
+            status=overall_status,
+            error=error,
+            servers=servers,
         )
 
     except ModuleNotFoundError:
         # MCP dependencies not installed
-        return StructResponse(
-            MCPStatusResponse(
-                status="error",
-                error="Missing dependencies. Install with: pip install marimo[mcp]",
-                servers={},
-            )
+        return MCPStatusResponse(
+            status="error",
+            error="Missing dependencies. Install with: pip install marimo[mcp]",
+            servers={},
         )
     except Exception as e:
         LOGGER.error(f"Error getting MCP status: {e}")
-        return StructResponse(
-            MCPStatusResponse(
-                status="error",
-                error=str(e),
-                servers={},
-            )
+        return MCPStatusResponse(
+            status="error",
+            error=str(e),
+            servers={},
         )
 
 
-@router.post("/mcp/refresh")
-@requires("edit")
+@tool("ai_mcp_refresh", requires="edit")
 async def mcp_refresh(
     *,
     request: Request,
-) -> Response:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Refresh MCP server configuration
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/MCPRefreshResponse"
-    """
+) -> MCPRefreshResponse:
+    """Reconnect the MCP servers from the current configuration."""
     app_state = AppState(request)
     app_state.require_current_session()
 
@@ -743,12 +597,10 @@ async def mcp_refresh(
         mcp_config = config.mcp
 
         if mcp_config is None:
-            return StructResponse(
-                MCPRefreshResponse(
-                    success=False,
-                    error="MCP configuration is not set",
-                    servers={},
-                )
+            return MCPRefreshResponse(
+                success=False,
+                error="MCP configuration is not set",
+                servers={},
             )
 
         # Reconfigure the client with the current configuration
@@ -776,29 +628,23 @@ async def mcp_refresh(
                 f"Some servers failed to connect: {', '.join(failed_servers)}"
             )
 
-        return StructResponse(
-            MCPRefreshResponse(
-                success=success,
-                error=error,
-                servers=servers,
-            )
+        return MCPRefreshResponse(
+            success=success,
+            error=error,
+            servers=servers,
         )
 
     except ModuleNotFoundError:
         # MCP dependencies not installed
-        return StructResponse(
-            MCPRefreshResponse(
-                success=False,
-                error="Missing dependencies. Install with: pip install marimo[mcp]",
-                servers={},
-            )
+        return MCPRefreshResponse(
+            success=False,
+            error="Missing dependencies. Install with: pip install marimo[mcp]",
+            servers={},
         )
     except Exception as e:
         LOGGER.error(f"Error refreshing MCP: {e}")
-        return StructResponse(
-            MCPRefreshResponse(
-                success=False,
-                error=str(e),
-                servers={},
-            )
+        return MCPRefreshResponse(
+            success=False,
+            error=str(e),
+            servers={},
         )

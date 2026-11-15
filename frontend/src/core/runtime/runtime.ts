@@ -175,6 +175,16 @@ export class RuntimeManager {
   }
 
   /**
+   * The editor's MCP endpoint, which serves its tools.
+   */
+  public getMcpURL(): URL {
+    return new URL(
+      this.formatHttpURL({ path: "/api/mcp" }).pathname,
+      this.httpURL.origin,
+    );
+  }
+
+  /**
    * The WebSocket URL of the terminal.
    */
   public getTerminalWsURL(size?: { rows: number; cols: number }): URL {

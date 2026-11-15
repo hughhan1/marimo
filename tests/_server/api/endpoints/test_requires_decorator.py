@@ -119,11 +119,16 @@ class TestRequiresDecorator:
                 ):
                     continue
                 for decorator in node.decorator_list:
-                    if (
-                        isinstance(decorator, ast.Call)
-                        and isinstance(decorator.func, ast.Attribute)
-                        and decorator.func.attr == "post"
+                    if isinstance(decorator, ast.Call) and (
+                        (
+                            isinstance(decorator.func, ast.Attribute)
+                            and decorator.func.attr == "post"
+                        )
+                        or (
+                            isinstance(decorator.func, ast.Name)
+                            and decorator.func.id == "tool"
+                        )
                     ):
                         count += 1
-        # We know there are many POST endpoints
-        assert count > 30, f"Expected 30+ POST endpoints, found {count}"
+        # We know there are many POST endpoints and tools
+        assert count > 30, f"Expected 30+ endpoints, found {count}"

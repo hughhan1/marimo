@@ -22,7 +22,10 @@ from marimo._server.session_manager import SessionManager
 from marimo._server.utils import initialize_asyncio
 from marimo._session.queue import ProcessLike
 from marimo._session.session import SessionImpl
+from tests._server import mcp_client
 from tests._server.mocks import get_mock_session_manager
+
+mcp_client.install()
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
