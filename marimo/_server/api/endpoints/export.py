@@ -5,11 +5,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from starlette.authentication import requires
-from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 from starlette.responses import (
     HTMLResponse,
-    JSONResponse,
     PlainTextResponse,
     Response,
 )
@@ -41,9 +39,10 @@ from marimo._export.requests import (
     ScriptExportRequest,
 )
 from marimo._export.serialization import serialize_notebook_snapshot
-from marimo._messaging.msgspec_encoder import asdict
 from marimo._runtime.commands import InstallPackagesCommand
 from marimo._schemas.export import (
+    AutoExportAsIPYNBRequest,
+    AutoExportAsMarkdownRequest,
     ExportAsHTMLRequest,
     ExportAsIPYNBRequest,
     ExportAsMarkdownRequest,
@@ -66,6 +65,7 @@ from marimo._schemas.export_options import (
     ServerExportFormat,
 )
 from marimo._server.api.deps import AppState
+from marimo._server.api.tools import after_reply, tool
 from marimo._server.api.utils import (
     enforce_consumer_capability,
     install_packages_on_server,
@@ -114,52 +114,23 @@ async def _get_export_availability() -> ExportAvailabilityResponse:
     )
 
 
-@router.get("/availability")
-@requires("read")
+@tool("export_availability", requires="read")
 async def get_export_availability(
     *,
     request: Request,
 ) -> ExportAvailabilityResponse:
-    """
-    responses:
-        200:
-            description: Readiness for server-backed exports
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/ExportAvailabilityResponse"
-    """
-    del request
+    """Report which export formats the server can produce."""
     return await _get_export_availability()
 
 
-@router.post("/requirements/install")
-@requires("edit")
+@tool("export_requirements_install", requires="edit")
 async def install_export_requirements(
+    *,
     request: Request,
+    body: InstallExportRequirementsRequest,
 ) -> ExportAvailabilityResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/InstallExportRequirementsRequest"
-    responses:
-        200:
-            description: Updated readiness for server-backed exports
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/ExportAvailabilityResponse"
-    """
+    """Install what an export format needs on the server."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=InstallExportRequirementsRequest)
     config = app_state.app_config_manager.get_config()
     command = InstallPackagesCommand(
         manager=config.package_management.manager,
@@ -270,36 +241,14 @@ async def export_as_html(
     )
 
 
-@router.post("/auto_export/html")
-@requires("edit")
+@tool("export_auto_export_html", requires="edit")
 async def auto_export_as_html(
     *,
     request: Request,
-) -> JSONResponse | PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/ExportAsHTMLRequest"
-    responses:
-        200:
-            description: Export the notebook as HTML
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-        400:
-            description: File must be saved before downloading
-    """
+    body: ExportAsHTMLRequest,
+) -> SuccessResponse:
+    """Snapshot the notebook as HTML beside it, unless already up to date."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=ExportAsHTMLRequest)
     session = app_state.require_current_session()
 
     session_view = session.session_view
@@ -317,12 +266,12 @@ async def auto_export_as_html(
     # If we have already exported to HTML, don't do it again
     if not session_view.needs_auto_export_html(layout):
         LOGGER.debug("Already auto-exported to HTML")
-        return PlainTextResponse(status_code=HTTPStatus.NOT_MODIFIED)
+        return SuccessResponse()
 
     # If session_view is empty (no outputs), don't export
     if session_view.is_empty():
         LOGGER.info("No outputs to export")
-        return PlainTextResponse(status_code=HTTPStatus.NOT_MODIFIED)
+        return SuccessResponse()
 
     filename = session.app_file_manager.filename
     generation = session_view.auto_export_generation
@@ -358,10 +307,8 @@ async def auto_export_as_html(
         if committed:
             session_view.mark_auto_export_html(layout, generation=generation)
 
-    return JSONResponse(
-        content=asdict(SuccessResponse()),
-        background=BackgroundTask(_background_export),
-    )
+    after_reply(request, _background_export)
+    return SuccessResponse()
 
 
 @router.post("/script")
@@ -538,34 +485,14 @@ async def export_as_ipynb(
     )
 
 
-@router.post("/auto_export/markdown")
-@requires("edit")
+@tool("export_auto_export_markdown", requires="edit")
 async def auto_export_as_markdown(
     *,
     request: Request,
-) -> JSONResponse | PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/AutoExportAsMarkdownRequest"
-    responses:
-        200:
-            description: Export the notebook as a markdown
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-        400:
-            description: File must be saved before downloading
-    """
+    body: AutoExportAsMarkdownRequest,
+) -> SuccessResponse:
+    """Snapshot the notebook as Markdown beside it, unless already up to date."""
+    del body
     app_state = AppState(request)
     session = app_state.require_current_session()
     session_view = session.session_view
@@ -579,7 +506,7 @@ async def auto_export_as_markdown(
     # If we have already exported to Markdown, don't do it again
     if not session_view.needs_export("md"):
         LOGGER.debug("Already auto-exported to Markdown")
-        return PlainTextResponse(status_code=HTTPStatus.NOT_MODIFIED)
+        return SuccessResponse()
 
     filename = session.app_file_manager.filename
     generation = session_view.auto_export_generation
@@ -607,40 +534,18 @@ async def auto_export_as_markdown(
         if committed:
             session_view.mark_auto_export_md(generation=generation)
 
-    return JSONResponse(
-        content=asdict(SuccessResponse()),
-        background=BackgroundTask(_background_export),
-    )
+    after_reply(request, _background_export)
+    return SuccessResponse()
 
 
-@router.post("/auto_export/ipynb")
-@requires("edit")
+@tool("export_auto_export_ipynb", requires="edit")
 async def auto_export_as_ipynb(
     *,
     request: Request,
-) -> JSONResponse | PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/AutoExportAsIPYNBRequest"
-    responses:
-        200:
-            description: Export the notebook as IPYNB
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-        400:
-            description: File must be saved before downloading
-    """
+    body: AutoExportAsIPYNBRequest,
+) -> SuccessResponse:
+    """Snapshot the notebook as a Jupyter notebook beside it, unless up to date."""
+    del body
     app_state = AppState(request)
     session = app_state.require_current_session()
     session_view = session.session_view
@@ -654,7 +559,7 @@ async def auto_export_as_ipynb(
     # If we have already exported to IPYNB, don't do it again
     if not session_view.needs_export("ipynb"):
         LOGGER.debug("Already auto-exported to IPYNB")
-        return PlainTextResponse(status_code=HTTPStatus.NOT_MODIFIED)
+        return SuccessResponse()
 
     # Check server dependencies before scheduling the background task.
     missing_packages = get_missing_export_packages("ipynb")
@@ -676,7 +581,7 @@ async def auto_export_as_ipynb(
             )
             session_view.notified_server_packages.update(unnotified_packages)
         session_view.mark_auto_export_ipynb()
-        return PlainTextResponse(status_code=HTTPStatus.NOT_MODIFIED)
+        return SuccessResponse()
 
     filename = session.app_file_manager.filename
     generation = session_view.auto_export_generation
@@ -705,10 +610,8 @@ async def auto_export_as_ipynb(
         if committed:
             session_view.mark_auto_export_ipynb(generation=generation)
 
-    return JSONResponse(
-        content=asdict(SuccessResponse()),
-        background=BackgroundTask(_background_export),
-    )
+    after_reply(request, _background_export)
+    return SuccessResponse()
 
 
 @router.post("/pdf")
@@ -767,36 +670,13 @@ async def export_as_pdf(*, request: Request) -> Response:
     )
 
 
-@router.post("/update_cell_outputs")
-@requires("edit")
+@tool("export_update_cell_outputs", requires="edit")
 async def update_cell_outputs(
-    *, request: Request
-) -> JSONResponse | PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/UpdateCellOutputsRequest"
-    responses:
-        200:
-            description: Update the cell outputs
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-        400:
-            description: File must be saved before downloading
-    """
+    *, request: Request, body: UpdateCellOutputsRequest
+) -> SuccessResponse:
+    """Record cells' rendered outputs for the next export."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=UpdateCellOutputsRequest)
     session = app_state.require_current_session()
     session.session_view.update_cell_outputs(body.cell_ids_to_output)
 
-    return JSONResponse(content=asdict(SuccessResponse()))
+    return SuccessResponse()

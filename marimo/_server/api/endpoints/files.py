@@ -4,28 +4,23 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from starlette.authentication import requires
 from starlette.exceptions import HTTPException
-from starlette.responses import PlainTextResponse
 
 from marimo import _loggers
 from marimo._runtime.commands import RenameNotebookCommand
 from marimo._server.api.deps import AppState
-from marimo._server.api.utils import (
-    enforce_consumer_capability,
-    parse_request,
-)
+from marimo._server.api.tools import tool
+from marimo._server.api.utils import enforce_consumer_capability
 from marimo._server.files.path_validator import PathValidator
 from marimo._server.models.models import (
-    BaseResponse,
     CopyNotebookRequest,
     ReadCodeResponse,
     RenameNotebookRequest,
     SaveAppConfigurationRequest,
     SaveLayoutRequest,
     SuccessResponse,
+    TextResponse,
 )
-from marimo._server.router import APIRouter
 from marimo._types.ids import ConsumerId
 from marimo._utils.async_path import abspath
 from marimo._utils.http import HTTPStatus
@@ -35,35 +30,13 @@ if TYPE_CHECKING:
 
 LOGGER = _loggers.marimo_logger()
 
-# Router for file endpoints
-router = APIRouter()
 
-
-@router.post("/read_code")
-@requires("read")
+@tool("kernel_read_code", requires="read")
 async def read_code(
     *,
     request: Request,
 ) -> ReadCodeResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    responses:
-        200:
-            description: Read the code from the server
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/ReadCodeResponse"
-        400:
-            description: File must be saved before downloading
-        403:
-            description: Code is not available in run mode
-    """
+    """Read the notebook file's contents."""
     app_state = AppState(request)
 
     # Check if code should be visible (edit mode or include_code=True)
@@ -86,33 +59,13 @@ async def read_code(
     return ReadCodeResponse(contents=contents)
 
 
-@router.post("/rename")
-@requires("edit")
+@tool("kernel_rename", requires="edit")
 async def rename_file(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/RenameNotebookRequest"
-    responses:
-        200:
-            description: Rename the current app
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
-    body = await parse_request(request, cls=RenameNotebookRequest)
+    body: RenameNotebookRequest,
+) -> SuccessResponse:
+    """Rename or move the notebook file."""
     app_state = AppState(request)
     directory = app_state.session_manager.workspace.directory
 
@@ -146,68 +99,28 @@ async def rename_file(
     return SuccessResponse()
 
 
-@router.post("/save_layout")
-@requires("edit")
+@tool("kernel_save_layout", requires="edit")
 async def save_layout(
     *,
     request: Request,
-) -> BaseResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/SaveLayoutRequest"
-    responses:
-        200:
-            description: Write the notebook's layout file and point its app config at it
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SuccessResponse"
-    """
+    body: SaveLayoutRequest,
+) -> SuccessResponse:
+    """Save the notebook's layout beside it."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=SaveLayoutRequest)
     app_state.require_current_session().app_file_manager.save_layout(
         body.layout
     )
     return SuccessResponse()
 
 
-@router.post("/copy")
-@requires("edit")
+@tool("kernel_copy", requires="edit")
 async def copy(
     *,
     request: Request,
-) -> PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/CopyNotebookRequest"
-    responses:
-        200:
-            description: Copy notebook
-            content:
-                text/plain:
-                    schema:
-                        type: string
-    """
+    body: CopyNotebookRequest,
+) -> TextResponse:
+    """Copy the notebook file and return the copy's contents."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=CopyNotebookRequest)
 
     # Resolve relative filenames against the workspace's directory
     directory = app_state.session_manager.workspace.directory
@@ -230,40 +143,18 @@ async def copy(
             )
 
     session = app_state.require_current_session()
-    contents = session.app_file_manager.copy(body)
-
-    return PlainTextResponse(content=contents)
+    return TextResponse(text=session.app_file_manager.copy(body))
 
 
-@router.post("/save_app_config")
-@requires("edit")
+@tool("kernel_save_app_config", requires="edit")
 async def save_app_config(
     *,
     request: Request,
-) -> PlainTextResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/SaveAppConfigurationRequest"
-    responses:
-        200:
-            description: Save the app configuration
-            content:
-                text/plain:
-                    schema:
-                        type: string
-    """
+    body: SaveAppConfigurationRequest,
+) -> TextResponse:
+    """Save the app's configuration into the notebook file and return the file."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=SaveAppConfigurationRequest)
     session = app_state.require_current_session()
-    contents = session.app_file_manager.save_app_config(body.config)
-
-    return PlainTextResponse(content=contents)
+    return TextResponse(
+        text=session.app_file_manager.save_app_config(body.config)
+    )

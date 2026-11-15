@@ -12,7 +12,8 @@ from starlette.responses import FileResponse
 from marimo import _loggers
 from marimo._convert.common.filename import make_download_headers
 from marimo._server.api.deps import AppState
-from marimo._server.api.utils import parse_multipart_request, parse_request
+from marimo._server.api.tools import tool
+from marimo._server.api.utils import parse_multipart_request
 from marimo._server.files.os_file_system import (
     OSFileSystem,
     UploadTooLargeError,
@@ -79,18 +80,9 @@ router = APIRouter()
 file_system = OSFileSystem()
 
 
-@router.get("/roots")
-@requires("edit")
+@tool("files_roots", requires="edit")
 def file_roots(*, request: Request) -> FileRootsResponse:
-    """
-    responses:
-        200:
-            description: List roots shown in the file browser
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileRootsResponse"
-    """
+    """List the directories the file browser may start from."""
     app_state = AppState(request)
     primary_root = (
         app_state.session_manager.workspace.directory or file_system.get_root()
@@ -101,28 +93,14 @@ def file_roots(*, request: Request) -> FileRootsResponse:
     )
 
 
-@router.post("/list_files")
-@requires("edit")
+@tool("files_list_files", requires="edit")
 async def list_files(
     *,
     request: Request,
+    body: FileListRequest,
 ) -> FileListResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileListRequest"
-    responses:
-        200:
-            description: List files and directories in a given path
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileListResponse"
-    """
+    """List the files in a directory, the workspace's by default."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FileListRequest)
     # Use workspace's directory as default, fall back to cwd.
     # NB. This isn't a security boundary; the workspace is just the initial view
     # for the browser.
@@ -132,27 +110,13 @@ async def list_files(
     return FileListResponse(files=files, root=root)
 
 
-@router.post("/file_details")
-@requires("edit")
+@tool("files_file_details", requires="edit")
 async def file_details(
     *,
     request: Request,
+    body: FileDetailsRequest,
 ) -> FileDetailsResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileDetailsRequest"
-    responses:
-        200:
-            description: Get details of a specific file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileDetailsResponse"
-    """
-    body = await parse_request(request, cls=FileDetailsRequest)
+    """Describe a file and read its contents, bounded when asked."""
     if body.max_bytes is not None and body.max_bytes < 0:
         raise HTTPException(
             status_code=400,
@@ -270,27 +234,13 @@ async def create_file_or_directory(
         return FileCreateResponse(success=False, message=str(e))
 
 
-@router.post("/delete")
-@requires("edit")
+@tool("files_delete", requires="edit")
 async def delete_file_or_directory(
     *,
     request: Request,
+    body: FileDeleteRequest,
 ) -> FileDeleteResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileDeleteRequest"
-    responses:
-        200:
-            description: Delete a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileDeleteResponse"
-    """
-    body = await parse_request(request, cls=FileDeleteRequest)
+    """Delete a file or directory."""
     try:
         file_system.get_info(body.path)
         success = file_system.delete_file_or_directory(body.path)
@@ -300,27 +250,13 @@ async def delete_file_or_directory(
         return FileDeleteResponse(success=False, message=str(e))
 
 
-@router.post("/copy")
-@requires("edit")
+@tool("files_copy", requires="edit")
 async def copy_file_or_directory(
     *,
     request: Request,
+    body: FileCopyRequest,
 ) -> FileCopyResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileCopyRequest"
-    responses:
-        200:
-            description: Copy a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileCopyResponse"
-    """
-    body = await parse_request(request, cls=FileCopyRequest)
+    """Copy a file or directory to a new path."""
     try:
         file_system.get_info(body.path)
         info = file_system.copy_file_or_directory(body.path, body.new_path)
@@ -330,27 +266,13 @@ async def copy_file_or_directory(
         return FileCopyResponse(success=False, message=str(e))
 
 
-@router.post("/move")
-@requires("edit")
+@tool("files_move", requires="edit")
 async def move_file_or_directory(
     *,
     request: Request,
+    body: FileMoveRequest,
 ) -> FileMoveResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileMoveRequest"
-    responses:
-        200:
-            description: Move a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileMoveResponse"
-    """
-    body = await parse_request(request, cls=FileMoveRequest)
+    """Move a file or directory to a new path."""
     try:
         file_system.get_info(body.path)
         info = file_system.move_file_or_directory(body.path, body.new_path)
@@ -360,28 +282,14 @@ async def move_file_or_directory(
         return FileMoveResponse(success=False, message=str(e))
 
 
-@router.post("/update")
-@requires("edit")
+@tool("files_update", requires="edit")
 async def update_file(
     *,
     request: Request,
+    body: FileUpdateRequest,
 ) -> FileUpdateResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileUpdateRequest"
-    responses:
-        200:
-            description: Update a file or directory
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileUpdateResponse"
-    """
+    """Replace a file's contents and reload any notebook it backs."""
     app_state = AppState(request)
-    body = await parse_request(request, cls=FileUpdateRequest)
     try:
         file_system.get_info(body.path)
         info = file_system.update_file(body.path, body.contents)
@@ -396,27 +304,13 @@ async def update_file(
         return FileUpdateResponse(success=False, message=str(e))
 
 
-@router.post("/open")
-@requires("edit")
+@tool("files_open", requires="edit")
 async def open_file(
     *,
     request: Request,
+    body: FileOpenRequest,
 ) -> BaseResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileOpenRequest"
-    responses:
-        200:
-            description: Open a file in the system editor
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/BaseResponse"
-    """
-    body = await parse_request(request, cls=FileOpenRequest)
+    """Open a file in the user's editor."""
     try:
         file_system.get_info(body.path)
         success = file_system.open_in_editor(body.path, body.line_number)
@@ -426,27 +320,13 @@ async def open_file(
         return ErrorResponse(success=False, message=str(e))
 
 
-@router.post("/search")
-@requires("edit")
+@tool("files_search", requires="edit")
 async def search_files(
     *,
     request: Request,
+    body: FileSearchRequest,
 ) -> FileSearchResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/FileSearchRequest"
-    responses:
-        200:
-            description: Search for files and directories matching a query
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/FileSearchResponse"
-    """
-    body = await parse_request(request, cls=FileSearchRequest)
+    """Search for files and directories by name."""
     files = await asyncio.to_thread(
         file_system.search,
         query=body.query,

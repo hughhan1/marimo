@@ -12,6 +12,7 @@ import {
   waitForConnectionOpenIfNotebook,
 } from "./connection";
 import { withDevAssetUrl } from "./export-asset-url";
+import { callMarimo } from "./holon";
 import type { EditRequests, RunRequests } from "./types";
 
 /**
@@ -27,7 +28,7 @@ function multipartInit(formData: FormData) {
   };
 }
 
-const { handleExportResponse, handleResponse, handleResponseReturnNull } = API;
+const { handleExportResponse, handleResponse } = API;
 
 export function createNetworkRequests(): EditRequests & RunRequests {
   const getClient = once(() => {
@@ -48,203 +49,123 @@ export function createNetworkRequests(): EditRequests & RunRequests {
 
   return {
     sendComponentValues: (request) => {
-      return getClient()
-        .POST("/api/kernel/set_ui_element_value", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.kernel_set_ui_element_value(request),
+      ).then(() => null);
     },
     sendModelValue: (request) => {
-      return getClient()
-        .POST("/api/kernel/set_model_value", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_set_model_value(request)).then(
+        () => null,
+      );
     },
     sendRestart: () => {
-      return getClient()
-        .POST("/api/kernel/restart_session", {
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_restart_session({})).then(
+        () => null,
+      );
     },
     sendRename: (request) => {
-      return getClient()
-        .POST("/api/kernel/rename", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_rename(request)).then(
+        () => null,
+      );
     },
     sendCopy: (request) => {
-      return getClient()
-        .POST("/api/kernel/copy", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_copy(request)).then(() => null);
     },
     sendFormat: (request) => {
-      return getClient()
-        .POST("/api/kernel/format", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.kernel_format(request));
     },
     sendShutdown: () => {
-      return getClient()
-        .POST("/api/kernel/shutdown")
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_shutdown({})).then(() => null);
     },
     sendRunScratchpad: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/scratchpad/run", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_scratchpad_run(request)).then(
+        () => null,
+      );
     },
     sendInstantiate: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/instantiate", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_instantiate(request)).then(
+        () => null,
+      );
     },
     sendCodeCompletionRequest: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/code_autocomplete", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.kernel_code_autocomplete(request),
+      ).then(() => null);
     },
     saveUserConfig: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_user_config", {
-          body: request,
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_save_user_config(request)).then(
+        () => null,
+      );
     },
     saveLayout: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_layout", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_save_layout(request)).then(
+        () => null,
+      );
     },
     saveAppConfig: (request) => {
-      return getClient()
-        .POST("/api/kernel/save_app_config", {
-          body: request,
-          parseAs: "text",
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_save_app_config(request)).then(
+        () => null,
+      );
     },
     sendFunctionRequest: (request) => {
-      return getClient()
-        .POST("/api/kernel/function_call", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_function_call(request)).then(
+        () => null,
+      );
     },
     sendInstallMissingPackages: (request) => {
-      return getClient()
-        .POST("/api/kernel/install_missing_packages", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.kernel_install_missing_packages(request),
+      ).then(() => null);
     },
     readCode: async () => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/kernel/read_code", {
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.kernel_read_code({}));
     },
     readSnippets: async () => {
       await waitForConnectionOpen();
-      return getClient()
-        .GET("/api/documentation/snippets", {
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.documentation_snippets({}));
     },
     previewDatasetColumn: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_column", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.datasources_preview_column(request),
+      ).then(() => null);
     },
     previewSQLTable: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_table", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.datasources_preview_sql_table(request),
+      ).then(() => null);
     },
     previewSQLTableList: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_table_list", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.datasources_preview_sql_table_list(request),
+      ).then(() => null);
     },
     previewSQLSchemaList: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_sql_schema_list", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.datasources_preview_sql_schema_list(request),
+      ).then(() => null);
     },
     previewDataSourceConnection: (request) => {
-      return getClient()
-        .POST("/api/datasources/preview_datasource_connection", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.datasources_preview_datasource_connection(request),
+      ).then(() => null);
     },
     discoverDataSources: (request) => {
-      return getClient()
-        .POST("/api/datasources/discover", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.datasources_discover(request)).then(
+        () => null,
+      );
     },
     validateSQL: (request) => {
-      return getClient()
-        .POST("/api/sql/validate", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.sql_validate(request)).then(
+        () => null,
+      );
     },
     openFile: async (request) => {
       await waitForConnectionOpen();
-      await getClient()
-        .POST("/api/files/open", {
-          body: request,
-        })
-        .then(handleResponseReturnNull);
+      await callMarimo((tools) => tools.files_open(request)).then(() => null);
       return null;
     },
     getUsageStats: async () => {
@@ -255,40 +176,26 @@ export function createNetworkRequests(): EditRequests & RunRequests {
       return getClient().GET("/api/environment").then(handleResponse);
     },
     sendPdb: (request) => {
-      return getClient()
-        .POST("/api/kernel/pdb/pm", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_pdb_pm(request)).then(
+        () => null,
+      );
     },
     sendSetBreakpoints: (request) => {
-      return getClient()
-        .POST("/api/kernel/pdb/breakpoints", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.kernel_pdb_breakpoints(request)).then(
+        () => null,
+      );
     },
     getFileRoots: async () => {
       await waitForConnectionOpen();
-      return getClient().GET("/api/files/roots").then(handleResponse);
+      return callMarimo((tools) => tools.files_roots({}));
     },
     sendListFiles: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/list_files", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_list_files(request));
     },
     sendSearchFiles: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/search", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_search(request));
     },
     sendCreateFileOrFolder: async (request) => {
       await waitForConnectionOpen();
@@ -304,81 +211,42 @@ export function createNetworkRequests(): EditRequests & RunRequests {
         .then(handleResponse);
     },
     sendDeleteFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/delete", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_delete(request));
     },
     sendCopyFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/copy", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_copy(request));
     },
     sendRenameFileOrFolder: async (request) => {
-      return getClient()
-        .POST("/api/files/move", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_move(request));
     },
     sendUpdateFile: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/update", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_update(request));
     },
     sendFileDetails: async (request) => {
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/files/file_details", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.files_file_details(request));
     },
     openTutorial: (request) => {
-      return getClient()
-        .POST("/api/home/tutorial/open", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.home_tutorial_open(request));
     },
     getRecentFiles: () => {
-      return getClient().POST("/api/home/recent_files").then(handleResponse);
+      return callMarimo((tools) => tools.home_recent_files({}));
     },
     getWorkspaceFiles: (request) => {
-      return getClient()
-        .POST("/api/home/workspace_files", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.home_workspace_files(request));
     },
     getRunningNotebooks: () => {
-      return getClient()
-        .POST("/api/home/running_notebooks")
-        .then(handleResponse);
+      return callMarimo((tools) => tools.home_running_notebooks({}));
     },
     shutdownSession: (request) => {
-      return getClient()
-        .POST("/api/home/shutdown_session", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.home_shutdown_session(request));
     },
     getExportAvailability: () => {
-      return getClient().GET("/api/export/availability").then(handleResponse);
+      return callMarimo((tools) => tools.export_availability({}));
     },
     installExportRequirements: (request) => {
-      return getClient()
-        .POST("/api/export/requirements/install", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.export_requirements_install(request));
     },
     exportAsHTML: async (request) => {
       return getClient()
@@ -446,130 +314,77 @@ export function createNetworkRequests(): EditRequests & RunRequests {
         );
     },
     autoExportAsHTML: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/html", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.export_auto_export_html(request)).then(
+        () => null,
+      );
     },
     autoExportAsMarkdown: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/markdown", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.export_auto_export_markdown(request),
+      ).then(() => null);
     },
     autoExportAsIPYNB: async (request) => {
-      return getClient()
-        .POST("/api/export/auto_export/ipynb", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.export_auto_export_ipynb(request),
+      ).then(() => null);
     },
     updateCellOutputs: async (request) => {
-      return getClient()
-        .POST("/api/export/update_cell_outputs", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) =>
+        tools.export_update_cell_outputs(request),
+      ).then(() => null);
     },
     getSandbox: (request) =>
-      getClient()
-        .POST("/api/packages/sandbox", { body: request, params: getParams() })
-        .then(handleResponse),
+      callMarimo((tools) => tools.packages_sandbox(request)),
     updateManifest: (request) =>
-      getClient()
-        .POST("/api/packages/manifest", { body: request, params: getParams() })
-        .then(handleResponse),
+      callMarimo((tools) => tools.packages_manifest(request)),
     syncSandbox: (request) =>
-      getClient()
-        .POST("/api/packages/sync", { body: request, params: getParams() })
-        .then(handleResponse),
+      callMarimo((tools) => tools.packages_sync(request)),
     addPackage: (request) => {
-      return getClient()
-        .POST("/api/packages/add", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.packages_add(request));
     },
     removePackage: (request) => {
-      return getClient()
-        .POST("/api/packages/remove", {
-          body: request,
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.packages_remove(request));
     },
     getPackageList: async () => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpenIfNotebook();
-      return getClient().GET("/api/packages/list").then(handleResponse);
+      return callMarimo((tools) => tools.packages_list({}));
     },
     getDependencyTree: async () => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpenIfNotebook();
-      return getClient().GET("/api/packages/tree").then(handleResponse);
+      return callMarimo((tools) => tools.packages_tree({}));
     },
     listSecretKeys: async (request) => {
       // If the sidebar is already open, it may try to load before the session has been initialized
       await waitForConnectionOpen();
-      return getClient()
-        .POST("/api/secrets/keys", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.secrets_keys(request)).then(
+        () => null,
+      );
     },
     writeSecret: async (request) => {
-      return getClient()
-        .POST("/api/secrets/create", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.secrets_create(request)).then(
+        () => null,
+      );
     },
     invokeAiTool: async (request) => {
-      return getClient()
-        .POST("/api/ai/invoke_tool", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponse);
+      return callMarimo((tools) => tools.ai_invoke_tool(request));
     },
     clearCache: async () => {
-      return getClient()
-        .POST("/api/cache/clear", {
-          body: {},
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.cache_clear({})).then(() => null);
     },
     getCacheInfo: async () => {
-      return getClient()
-        .POST("/api/cache/info", {
-          body: {},
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.cache_info({})).then(() => null);
     },
     listStorageEntries: (request) => {
-      return getClient()
-        .POST("/api/storage/list_entries", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.storage_list_entries(request)).then(
+        () => null,
+      );
     },
     downloadStorage: (request) => {
-      return getClient()
-        .POST("/api/storage/download", {
-          body: request,
-          params: getParams(),
-        })
-        .then(handleResponseReturnNull);
+      return callMarimo((tools) => tools.storage_download(request)).then(
+        () => null,
+      );
     },
   };
 }

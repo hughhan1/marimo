@@ -17,6 +17,7 @@
       "outputs": ["coverage/**"]
     },
     "codegen": {
+      "dependsOn": ["^codegen"],
       "cache": false
     },
     "lint": {},

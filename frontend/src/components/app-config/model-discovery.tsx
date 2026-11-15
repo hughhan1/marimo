@@ -2,17 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { API } from "@/core/network/api";
-import { getRuntimeManager } from "@/core/runtime/config";
+import type { Outputs } from "#holon-ui";
+import { callMarimo } from "@/core/network/holon";
+import { HTTPError } from "@/utils/errors";
 import { isWasm } from "@/core/wasm/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { Popover, PopoverContent } from "../ui/popover";
 
-const CatalogSchema = z.object({
-  models: z.array(z.object({ id: z.string().min(1), name: z.string() })),
-});
+const Details = z.object({ detail: z.string() });
 
 interface ModelDiscoveryProps {
   provider: string;
@@ -39,9 +38,9 @@ export function ModelDiscovery({
   inputId,
   inputClassName,
 }: ModelDiscoveryProps) {
-  const [models, setModels] = useState<z.infer<typeof CatalogSchema>["models"]>(
-    [],
-  );
+  const [models, setModels] = useState<
+    Outputs["marimo"]["ai_models"]["models"]
+  >([]);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,48 +72,28 @@ export function ModelDiscovery({
     setLoading(true);
     setError("");
     try {
-      const url = getRuntimeManager().httpURL;
-      url.search = "";
-      url.hash = "";
-      url.pathname = `${url.pathname.replace(/\/$/, "")}/api/ai/models/${encodeURIComponent(provider)}`;
-      const response = await fetch(url.toString(), {
-        headers: API.headers(),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const raw = await response.text();
-        let detail = "";
-
-        try {
-          const parsed = z
-            .object({ detail: z.string() })
-            .safeParse(JSON.parse(raw));
-
-          detail = parsed.success ? parsed.data.detail : "";
-        } catch {
-          // The backend may return a non-JSON error response.
-        }
-
-        if (!controller.signal.aborted) {
-          setError(
-            detail ||
-              "Unable to load the provider model catalog. Check the connection and retry.",
-          );
-        }
-
-        return;
-      }
-      const catalog = CatalogSchema.parse(await response.json());
+      const catalog = await callMarimo((tools) =>
+        tools.ai_models(
+          { providerName: provider },
+          { signal: controller.signal },
+        ),
+      );
       if (controller.signal.aborted) {
         return;
       }
       setModels(catalog.models);
       setLoaded(true);
       setOpen(true);
-    } catch {
+    } catch (error) {
       if (!controller.signal.aborted) {
+        const details =
+          error instanceof HTTPError ? Details.safeParse(error.cause) : null;
         setError(
-          "Unable to load a valid catalog. Check the connection and retry.",
+          details?.success
+            ? details.data.detail
+            : error instanceof HTTPError
+              ? "Unable to load the provider model catalog. Check the connection and retry."
+              : "Unable to load a valid catalog. Check the connection and retry.",
         );
       }
     } finally {
@@ -131,7 +110,7 @@ export function ModelDiscovery({
     >
       <div className="relative min-w-0 flex-1">
         <Popover open={open && loaded} onOpenChange={setOpen}>
-          <PopoverPrimitive.Anchor asChild>
+          <PopoverPrimitive.Anchor asChild={true}>
             <div>
               <Input
                 ref={inputRef}

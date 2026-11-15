@@ -548,7 +548,7 @@ class TestExecutionRoutes_EditMode:
         )
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/json"
-        assert response.json()["status"] == "ok"
+        assert response.json() == {"success": True}
 
     @staticmethod
     @with_session(SESSION_ID)
@@ -568,7 +568,7 @@ class TestExecutionRoutes_EditMode:
         )
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/json"
-        assert response.json()["status"] == "ok"
+        assert response.json() == {"success": True}
 
     @staticmethod
     @pytest.mark.skipif(

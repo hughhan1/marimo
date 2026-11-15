@@ -9,9 +9,7 @@ from marimo._config.config import PartialMarimoConfig
 from marimo._runtime.commands import (
     ClearCacheCommand,
     CodeCompletionCommand,
-    DebugCellCommand,
     DiscoverDataSourcesCommand,
-    ExecuteScratchpadCommand,
     GetCacheInfoCommand,
     InstallPackagesCommand,
     InvokeFunctionCommand,
@@ -22,7 +20,6 @@ from marimo._runtime.commands import (
     ModelCommand,
     PreviewDatasetColumnCommand,
     PreviewSQLTableCommand,
-    SetBreakpointsCommand,
     StorageDownloadCommand,
     StorageListEntriesCommand,
     UpdateUIElementCommand,
@@ -52,21 +49,16 @@ class GetCacheInfoRequest(GetCacheInfoCommand, tag=False):
         return GetCacheInfoCommand()
 
 
-class DebugCellRequest(DebugCellCommand, tag=False):
-    def as_command(self) -> DebugCellCommand:
-        return DebugCellCommand(cell_id=self.cell_id, request=self.request)
+class DebugCellRequest(msgspec.Struct, rename="camel"):
+    cell_id: CellId_t
 
 
-class SetBreakpointsRequest(SetBreakpointsCommand, tag=False):
-    def as_command(self) -> SetBreakpointsCommand:
-        return SetBreakpointsCommand(
-            breakpoints=self.breakpoints, request=self.request
-        )
+class SetBreakpointsRequest(msgspec.Struct, rename="camel"):
+    breakpoints: dict[CellId_t, list[int]]
 
 
-class ExecuteScratchpadRequest(ExecuteScratchpadCommand, tag=False):
-    def as_command(self) -> ExecuteScratchpadCommand:
-        return ExecuteScratchpadCommand(code=self.code, request=self.request)
+class ExecuteScratchpadRequest(msgspec.Struct, rename="camel"):
+    code: str
 
 
 class InvokeFunctionRequest(InvokeFunctionCommand, tag=False):
@@ -217,6 +209,12 @@ class ErrorResponse(BaseResponse):
     message: str | None = None
 
 
+class TextResponse(msgspec.Struct):
+    """A reply that is text for the caller, such as a version or some code."""
+
+    text: str
+
+
 class KernelStatusResponse(msgspec.Struct, rename="camel"):
     # `running`: at least one cell is queued or running.
     # `idle`: the kernel is alive but not executing.
@@ -282,6 +280,10 @@ class InvokeAiToolResponse(BaseResponse):
 class ProviderModel(msgspec.Struct, rename="camel"):
     id: str
     name: str
+
+
+class ProviderModelsRequest(msgspec.Struct, rename="camel"):
+    provider_name: str
 
 
 class ProviderModelsResponse(msgspec.Struct, rename="camel"):

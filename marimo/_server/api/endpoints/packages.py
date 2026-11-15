@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from starlette.authentication import requires
-
 from marimo._config.settings import GLOBAL_SETTINGS
 from marimo._environments import script_metadata
 from marimo._environments.backends import backend_for
@@ -26,7 +24,7 @@ from marimo._runtime.packages.sandbox_package_manager import (
 )
 from marimo._runtime.packages.utils import split_packages
 from marimo._server.api.deps import AppState
-from marimo._server.api.utils import parse_request
+from marimo._server.api.tools import tool
 from marimo._server.models.packages import (
     AddPackageRequest,
     DependencyTreeResponse,
@@ -41,7 +39,6 @@ from marimo._server.models.packages import (
     SyncSandboxResponse,
     UpdateManifestRequest,
 )
-from marimo._server.router import APIRouter
 from marimo._utils.http import HTTPException
 
 if TYPE_CHECKING:
@@ -49,29 +46,12 @@ if TYPE_CHECKING:
 
     from starlette.requests import Request
 
-# Router for packages endpoints
-router = APIRouter()
 
-
-@router.post("/add")
-@requires("edit")
-async def add_package(request: Request) -> PackageOperationResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/AddPackageRequest"
-    responses:
-        200:
-            description: Install package
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/PackageOperationResponse"
-    """
-    body = await parse_request(request, cls=AddPackageRequest)
-
+@tool("packages_add", requires="edit")
+async def add_package(
+    *, request: Request, body: AddPackageRequest
+) -> PackageOperationResponse:
+    """Install a package into the notebook's environment."""
     package_manager = _get_package_manager(request)
     if not package_manager.is_manager_installed():
         package_manager.alert_not_installed()
@@ -130,26 +110,12 @@ async def add_package(request: Request) -> PackageOperationResponse:
         )
 
 
-@router.post("/remove")
-@requires("edit")
-async def remove_package(request: Request) -> PackageOperationResponse:
-    """
-    requestBody:
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/RemovePackageRequest"
-    responses:
-        200:
-            description: Uninstall package
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/PackageOperationResponse"
-    """
+@tool("packages_remove", requires="edit")
+async def remove_package(
+    *, request: Request, body: RemovePackageRequest
+) -> PackageOperationResponse:
+    """Uninstall a package from the notebook's environment."""
     # TODO: Use `uv remove` instead of package manager uninstall for better dependency management
-    body = await parse_request(request, cls=RemovePackageRequest)
-
     package_manager = _get_package_manager(request)
     if not package_manager.is_manager_installed():
         package_manager.alert_not_installed()
@@ -222,18 +188,9 @@ def _failure_message(package_manager: PackageManager) -> str | None:
     return None
 
 
-@router.get("/list")
-@requires("edit")
-async def list_packages(request: Request) -> ListPackagesResponse:
-    """
-    responses:
-        200:
-            description: List installed packages
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/ListPackagesResponse"
-    """
+@tool("packages_list", requires="edit")
+async def list_packages(*, request: Request) -> ListPackagesResponse:
+    """List the packages installed in the notebook's environment."""
     package_manager = _get_package_manager(request)
     if not package_manager.is_manager_installed():
         package_manager.alert_not_installed()
@@ -244,18 +201,9 @@ async def list_packages(request: Request) -> ListPackagesResponse:
     return ListPackagesResponse(packages=packages)
 
 
-@router.get("/tree")
-@requires("edit")
-async def dependency_tree(request: Request) -> DependencyTreeResponse:
-    """
-    responses:
-        200:
-            description: List dependency tree
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/DependencyTreeResponse"
-    """
+@tool("packages_tree", requires="edit")
+async def dependency_tree(*, request: Request) -> DependencyTreeResponse:
+    """Describe the notebook environment's dependency tree."""
     package_manager = _get_package_manager(request)
     context = _get_package_installation_context(package_manager)
 
@@ -355,31 +303,11 @@ def _sandbox_source(
     return None, path, backend_for(path)
 
 
-@router.post("/sandbox")
-@requires("edit")
-async def get_sandbox(request: Request) -> SandboxResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/SandboxRequest"
-    responses:
-        200:
-            description: Sandbox manifest, available before kernel startup
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SandboxResponse"
-    """
-    body = await parse_request(request, cls=SandboxRequest)
+@tool("packages_sandbox", requires="edit")
+async def get_sandbox(
+    *, request: Request, body: SandboxRequest
+) -> SandboxResponse:
+    """Describe the notebook's sandbox and its manifest."""
     _, path, backend = _sandbox_source(request, body.file_key)
     try:
         manifest = (
@@ -392,31 +320,11 @@ async def get_sandbox(request: Request) -> SandboxResponse:
     return SandboxResponse(backend=backend, manifest=manifest, filename=path)
 
 
-@router.post("/manifest")
-@requires("edit")
-async def update_manifest(request: Request) -> SandboxResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/UpdateManifestRequest"
-    responses:
-        200:
-            description: Save notebook metadata without changing its cells
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SandboxResponse"
-    """
-    body = await parse_request(request, cls=UpdateManifestRequest)
+@tool("packages_manifest", requires="edit")
+async def update_manifest(
+    *, request: Request, body: UpdateManifestRequest
+) -> SandboxResponse:
+    """Replace the notebook's inline script manifest."""
     _, path, backend = _sandbox_source(request, body.file_key, mutation=True)
     if path is None or backend is None:
         raise HTTPException(400, "No notebook manifest is available to edit.")
@@ -434,31 +342,11 @@ async def update_manifest(request: Request) -> SandboxResponse:
     return SandboxResponse(backend=backend, manifest=manifest, filename=path)
 
 
-@router.post("/sync")
-@requires("edit")
-async def sync_sandbox(request: Request) -> SyncSandboxResponse:
-    """
-    parameters:
-        - in: header
-          name: Marimo-Session-Id
-          schema:
-            type: string
-          required: true
-    requestBody:
-        required: true
-        content:
-            application/json:
-                schema:
-                    $ref: "#/components/schemas/SandboxRequest"
-    responses:
-        200:
-            description: Apply the saved manifest, or reconnect to retry startup
-            content:
-                application/json:
-                    schema:
-                        $ref: "#/components/schemas/SyncSandboxResponse"
-    """
-    body = await parse_request(request, cls=SandboxRequest)
+@tool("packages_sync", requires="edit")
+async def sync_sandbox(
+    *, request: Request, body: SandboxRequest
+) -> SyncSandboxResponse:
+    """Sync the notebook's sandbox with its manifest."""
     sandbox, _, backend = _sandbox_source(
         request, body.file_key, mutation=True
     )

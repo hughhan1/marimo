@@ -19,8 +19,7 @@ import {
   InlineCompletionTriggerKind,
 } from "vscode-languageserver-protocol";
 import type { CompletionConfig } from "@/core/config/config-schema";
-import type { AiInlineCompletionRequest } from "@/core/kernel/messages";
-import { API } from "@/core/network/api";
+import { callMarimo } from "@/core/network/holon";
 import { Logger } from "@/utils/Logger";
 import { languageAdapterState } from "../language/extension";
 import { isInVimMode } from "../utils";
@@ -123,10 +122,11 @@ export const copilotBundle = (config: CompletionConfig): Extension => {
           }
 
           const language = state.field(languageAdapterState).type;
-          let res = await API.post<AiInlineCompletionRequest, string>(
-            "/ai/inline_completion",
-            { prefix, suffix, language },
-            { signal },
+          let { text: res } = await callMarimo((tools) =>
+            tools.ai_inline_completion(
+              { prefix, suffix, language },
+              { signal },
+            ),
           );
 
           // If we are at a new position, ignore the response

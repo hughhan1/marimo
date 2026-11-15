@@ -1,6 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { Logger } from "@/utils/Logger";
+import { Semaphore } from "@/utils/semaphore";
 import {
   MarimoValueReadyEvent,
   type MarimoValueReadyEventType,
@@ -30,6 +31,7 @@ export class RuntimeState {
    */
   private _sendComponentValues: RunRequests["sendComponentValues"] | undefined;
   private uiElementRegistry: UIElementRegistry;
+  private readonly sends = new Semaphore(1);
 
   public constructor(uiElementRegistry: UIElementRegistry) {
     this.uiElementRegistry = uiElementRegistry;
@@ -81,17 +83,21 @@ export class RuntimeState {
 
     const value = this.uiElementRegistry.lookupValue(objectId);
     if (value !== undefined) {
-      this.sendComponentValues({
-        objectIds: [objectId],
-        values: [value],
-      }).catch(
-        // This happens if the run failed to register (401, 403, network
-        // error, etc.) A run may fail if the kernel is restarted or the
-        // notebook is closed.
-        (error) => {
-          Logger.warn(error);
-        },
-      );
+      this.sends
+        .run(() =>
+          this.sendComponentValues({
+            objectIds: [objectId],
+            values: [value],
+          }),
+        )
+        .catch(
+          // This happens if the run failed to register (401, 403, network
+          // error, etc.) A run may fail if the kernel is restarted or the
+          // notebook is closed.
+          (error) => {
+            Logger.warn(error);
+          },
+        );
     }
   };
 }

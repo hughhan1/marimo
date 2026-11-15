@@ -110,17 +110,15 @@ class AuthBackend(AuthenticationBackend):
         raise ValueError(f"Invalid session mode: {mode}")
 
 
-class WebSocketOriginMiddleware:
-    """Apply the server's origin policy to WebSocket handshakes."""
+class OriginPolicy:
+    """Which browser origins may open a socket or call a tool endpoint.
+
+    Non-browser clients send no Origin and are not restricted here.
+    """
 
     def __init__(
-        self,
-        app: ASGIApp,
-        *,
-        allow_origins: tuple[str, ...] = (),
-        host: str | None = None,
+        self, allow_origins: tuple[str, ...] = (), host: str | None = None
     ) -> None:
-        self.app = app
         self.trusted_hosts = {"localhost", "127.0.0.1", "::1"}
         if host is not None:
             self.trusted_hosts.add(host.strip("[]").lower())
@@ -188,6 +186,40 @@ class WebSocketOriginMiddleware:
         except ValueError:
             return False
 
+    def allows(
+        self, origins: list[str], host: str, scheme: str, scope: Scope
+    ) -> bool:
+        """Whether a request with these Origin headers may proceed."""
+        if not origins:
+            return True
+        origin = self._parse_origin(origins[0]) if len(origins) == 1 else None
+        if origin is None:
+            return False
+        server_origin = self._parse_origin(f"{scheme}://{host}")
+        return (
+            (
+                origin == server_origin
+                and self._is_trusted_host(origin[1], scope)
+            )
+            or origin in self.allow_origins
+            or self.allow_all_origins
+        )
+
+
+class WebSocketOriginMiddleware:
+    """Apply the server's origin policy to WebSocket handshakes."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        allow_origins: tuple[str, ...] = (),
+        host: str | None = None,
+        policy: OriginPolicy | None = None,
+    ) -> None:
+        self.app = app
+        self.policy = policy or OriginPolicy(allow_origins, host)
+
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
@@ -195,23 +227,12 @@ class WebSocketOriginMiddleware:
             return await self.app(scope, receive, send)
 
         websocket = WebSocket(scope, receive, send)
-        origins = websocket.headers.getlist("origin")
-        # Non-browser clients may omit Origin.
-        if not origins:
-            return await self.app(scope, receive, send)
-
-        origin = self._parse_origin(origins[0]) if len(origins) == 1 else None
         scheme = "https" if scope["scheme"] == "wss" else "http"
-        server_origin = self._parse_origin(
-            f"{scheme}://{websocket.headers.get('host', '')}"
-        )
-        if origin is not None and (
-            (
-                origin == server_origin
-                and self._is_trusted_host(origin[1], scope)
-            )
-            or origin in self.allow_origins
-            or self.allow_all_origins
+        if self.policy.allows(
+            websocket.headers.getlist("origin"),
+            websocket.headers.get("host", ""),
+            scheme,
+            scope,
         ):
             return await self.app(scope, receive, send)
 

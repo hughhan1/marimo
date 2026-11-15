@@ -124,7 +124,7 @@ def test_cant_open_non_tutorial(client: TestClient) -> None:
         json={"tutorialId": "non-tutorial"},
     )
     assert response.status_code == 400
-    assert response.json() == {"detail": "Tutorial not found"}
+    assert "'non-tutorial'" in response.json()["detail"]
 
 
 @with_session(SESSION_ID)

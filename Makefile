@@ -130,6 +130,7 @@ fe-typecheck:
 # 🔄 Generate frontend API
 fe-codegen:
 	uv run --isolated --python=3.12 --with-editable . marimo development openapi > packages/openapi/api.yaml
+	uv run --isolated --python=3.12 --with-editable . pnpm exec holon types generate --contract packages/openapi -o packages/openapi/holon-contract.json
 	pnpm run codegen
 	pnpm format packages/openapi/
 
