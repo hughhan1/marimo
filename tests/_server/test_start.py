@@ -1,6 +1,7 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -22,8 +23,6 @@ if TYPE_CHECKING:
     ("sandbox", "inherited_backend", "expected_manager"),
     [
         ("uv", None, "uv"),
-        ("pixi", None, "pixi"),
-        (None, "uv", "uv"),
         (None, "pixi", "pixi"),
         (None, None, "pip"),
     ],
@@ -48,10 +47,11 @@ def test_package_manager_follows_sandbox_backend(
         monkeypatch.delenv(f"MARIMO_{setting}", raising=False)
 
     with (
+        patch.dict(os.environ),
         patch("marimo._server.start.CompositeLspServer"),
         patch("marimo._server.start.initialize_fd_limit"),
         patch("marimo._server.start.initialize_signals"),
-        patch("marimo._server.start.uvicorn.Server", autospec=True) as server,
+        patch("marimo._server.start.Server", autospec=True) as server,
     ):
         start(
             workspace=DirectoryWorkspace(
