@@ -168,7 +168,6 @@
     "dev": "vite",
     "build:watch": "vite build --watch --outDir ../marimo/_static",
     "build": "cross-env vite build",
-    "codegen": "holon types generate . -s marimo=../packages/openapi",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsgo",

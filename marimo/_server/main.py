@@ -21,7 +21,6 @@ from marimo._server.api.auth import (
 from marimo._server.api.middleware import (
     AuthBackend,
     OpenTelemetryMiddleware,
-    OriginPolicy,
     ProxyMiddleware,
     SkewProtectionMiddleware,
     TimeoutMiddleware,
@@ -68,9 +67,12 @@ def create_starlette_app(
         server_config if server_config is not None else DEFAULT_CONFIG.server
     )
     session_secret = server_config.session_secret or SESSION_SECRET
-    origin_policy = OriginPolicy(allow_origins or (), host)
     final_middlewares: list[Middleware] = [
-        Middleware(WebSocketOriginMiddleware, policy=origin_policy),
+        Middleware(
+            WebSocketOriginMiddleware,
+            allow_origins=allow_origins or (),
+            host=host,
+        ),
         # Handle host API requests before the editor's middleware.
         Middleware(HostApiMiddleware, base_url=base_url),
     ]
@@ -146,7 +148,6 @@ def create_starlette_app(
             timeout_duration_minutes=timeout,
         )
     app.state.session_secret = session_secret
-    app.state.origin_policy = origin_policy
     return app
 
 

@@ -27,7 +27,6 @@ from mcp.types.jsonrpc import INVALID_PARAMS
 from starlette.authentication import requires as scope_required
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 
 from marimo import __version__
 from marimo._server.errors import handle_error
@@ -39,7 +38,6 @@ if TYPE_CHECKING:
     from mcp.server.context import ServerRequestContext
     from starlette.types import Receive, Scope, Send
 
-APP_ONLY = {"ui": {"visibility": ["app"]}}
 SCHEMA_REF = "#/$defs/{name}"
 _AFTER_REPLY = "marimo.after_reply"
 TRANSPORT_SECURITY = TransportSecuritySettings(
@@ -175,53 +173,26 @@ def contract() -> list[dict[str, Any]]:
         )
         arguments.pop("title", None)
         arguments.pop("description", None)
+        output: dict[str, Any] = (
+            {"type": "object", "properties": {}, "additionalProperties": False}
+            if found.output is None
+            else _inline_schema(found.output, schema_of, components)
+        )
         definitions.append(
-            _dedented(
-                {
-                    "name": name,
-                    "description": found.description,
-                    "inputSchema": {
-                        **arguments,
-                        "type": "object",
-                        "properties": arguments.get("properties", {}),
-                        "required": arguments.get("required", []),
-                        "additionalProperties": False,
-                    },
-                    "outputSchema": (
-                        {
-                            "type": "object",
-                            "properties": {},
-                            "additionalProperties": False,
-                        }
-                        if found.output is None
-                        else _inline_schema(
-                            found.output, schema_of, components
-                        )
-                    ),
-                    "_meta": APP_ONLY,
-                }
-            )
+            {
+                "name": name,
+                "description": found.description,
+                "inputSchema": {
+                    **arguments,
+                    "type": "object",
+                    "properties": arguments.get("properties", {}),
+                    "required": arguments.get("required", []),
+                    "additionalProperties": False,
+                },
+                "outputSchema": output,
+            }
         )
     return definitions
-
-
-def _dedented(node: Any) -> Any:
-    """The schema with each description's indentation removed.
-
-    msgspec copies a docstring into its schema as written, and Python 3.13
-    strips the indentation that 3.12 keeps, so the same declarations would
-    otherwise describe themselves differently under each.
-    """
-    if isinstance(node, list):
-        return [_dedented(item) for item in node]
-    if isinstance(node, dict):
-        return {
-            key: inspect.cleandoc(value)
-            if key == "description" and isinstance(value, str)
-            else _dedented(value)
-            for key, value in node.items()
-        }
-    return node
 
 
 # ---- calls ------------------------------------------------------------------
@@ -309,17 +280,6 @@ class EditorMCP:
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
-        request = Request(scope, receive)
-        if not _origin_allowed(request):
-            await JSONResponse(
-                {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": -32600, "message": "Origin not allowed"},
-                },
-                status_code=403,
-            )(scope, receive, send)
-            return
         manager = StreamableHTTPSessionManager(
             self.server,
             stateless=True,
@@ -332,18 +292,3 @@ class EditorMCP:
             await manager.handle_request(scope, receive, send)
         for task in scope.get(_AFTER_REPLY, ()):
             await task()
-
-
-def _origin_allowed(request: Request) -> bool:
-    """Whether a browser at the request's Origin may call these tools."""
-    policy = getattr(request.app.state, "origin_policy", None)
-    if policy is None:
-        return True
-    return bool(
-        policy.allows(
-            request.headers.getlist("origin"),
-            request.headers.get("host", ""),
-            request.url.scheme,
-            request.scope,
-        )
-    )

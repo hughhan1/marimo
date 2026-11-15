@@ -1,10 +1,6 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's tools, as the MCP server `holon types generate` loads.
-
-It reads their contract from this server to write `holon-contract.json` and
-the typed client. Where marimo is not installed, it reads the committed
-contract instead.
-"""
+"""The editor's tools, as the MCP server `holon types generate` loads to
+write the frontend's typed client."""
 
 from __future__ import annotations
 

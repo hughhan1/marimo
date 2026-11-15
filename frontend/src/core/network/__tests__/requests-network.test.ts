@@ -3,7 +3,6 @@
 /* oxlint-disable typescript/no-explicit-any */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import contract from "../../../../../packages/openapi/holon-contract.json";
 import * as apiModule from "../api";
 import { createNetworkRequests } from "../requests-network";
 
@@ -41,12 +40,7 @@ vi.mock("../holon", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../holon")>()),
   callMarimo: async <T>(
     call: (tools: Record<string, ReturnType<typeof tool>>) => Promise<T>,
-  ) =>
-    call(
-      Object.fromEntries(
-        contract.schema.tools.map(({ name }) => [name, tool(name)]),
-      ),
-    ),
+  ) => call(new Proxy({}, { get: (_, name: string) => tool(name) })),
 }));
 
 vi.mock("../connection", () => ({
