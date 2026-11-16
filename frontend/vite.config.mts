@@ -220,6 +220,9 @@ export default defineConfig({
       "/api": {
         target: TARGET,
         changeOrigin: true,
+        headers: {
+          origin: TARGET,
+        },
       },
       "/auth": {
         target: TARGET,

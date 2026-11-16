@@ -6530,11 +6530,11 @@
       {
         "name": "session",
         "inputSchema": {
-          "additionalProperties": false,
-          "description": "What a page subscribes to its session with.",
+          "title": "SessionRequest",
+          "description": "The session a page reads and subscribes to.",
+          "type": "object",
           "properties": {
             "session_id": {
-              "title": "Session Id",
               "type": "string"
             },
             "file": {
@@ -6546,25 +6546,21 @@
                   "type": "null"
                 }
               ],
-              "default": null,
-              "title": "File"
+              "default": null
             },
             "kiosk": {
-              "default": false,
-              "title": "Kiosk",
-              "type": "boolean"
+              "type": "boolean",
+              "default": false
             },
             "query_params": {
-              "default": "",
-              "title": "Query Params",
-              "type": "string"
+              "type": "string",
+              "default": ""
             }
           },
           "required": [
             "session_id"
           ],
-          "title": "SessionArguments",
-          "type": "object"
+          "additionalProperties": false
         },
         "payloadSchema": {
           "anyOf": [
