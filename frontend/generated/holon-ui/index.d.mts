@@ -481,7 +481,7 @@ export interface Resources {
   "marimo": {
   };
 }
-export type MarimoInputSessionArguments = { "file"?: (string | null); "kiosk"?: boolean; "query_params"?: string; "session_id": string; };
+export type MarimoInputSessionRequest = { "file"?: (string | null); "kiosk"?: boolean; "query_params"?: string; "session_id": string; };
 export type MarimoOutputSchema = { "child_schemas"?: Array<MarimoOutputSchema>; "child_schemas_resolved"?: boolean; "name": string; "tables": Array<MarimoOutputDataTable>; "tables_resolved"?: boolean; };
 export type MarimoOutputDataTable = { "columns": Array<MarimoOutputDataTableColumn>; "engine"?: (string | null); "indexes"?: (Array<string> | null); "name": string; "num_columns": (number | null); "num_rows": (number | null); "primary_keys"?: (Array<string> | null); "source": string; "source_type": ("catalog" | "connection" | "duckdb" | "local"); "type"?: ("table" | "view"); "variable_name": (string | null); };
 export type MarimoOutputDataTableColumn = { "external_type": string; "name": string; "sample_values": Array<unknown>; "type": ("boolean" | "date" | "datetime" | "geometry" | "integer" | "number" | "string" | "time" | "unknown"); };
@@ -666,7 +666,7 @@ export type MarimoOutputSetConfig = { "cellId": string; "column": (number | null
 export type MarimoOutputConsumerCapabilitiesNotification = { "consumer_capabilities": MarimoOutputConsumerCapabilities; "op": ("consumer-capabilities"); };
 export interface EventArguments {
   "marimo": {
-    "session": MarimoInputSessionArguments;
+    "session": MarimoInputSessionRequest;
   };
 }
 export interface EventData {
