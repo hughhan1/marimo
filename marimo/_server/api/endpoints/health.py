@@ -195,7 +195,7 @@ class Usage(msgspec.Struct):
     gpu: list[GpuUsage]
 
 
-@tool("usage")
+@tool("usage", notebook="optional")
 @requires("edit")
 async def usage(*, request: Request) -> Usage:
     """Report the memory, CPU and GPU use of the server and kernel."""

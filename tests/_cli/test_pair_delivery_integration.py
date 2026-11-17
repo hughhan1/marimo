@@ -107,7 +107,7 @@ def test_detached_delivery_replacement_and_files(
                 request = tool_request(
                     server.url,
                     "pair_notebooks_messages",
-                    {"id": server.stable_session_id, "message": payload},
+                    {"notebook_id": server.notebook_id, "message": payload},
                 )
                 with urllib.request.urlopen(request, timeout=5) as response:
                     assert tool_status(tool_result(response)) == 200
@@ -274,7 +274,7 @@ def test_subprocess_reconnect_replays_messages_and_server_detach(
             request = tool_request(
                 server.url,
                 "pair_notebooks_messages",
-                {"id": server.stable_session_id, "message": message},
+                {"notebook_id": server.notebook_id, "message": message},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 assert tool_status(tool_result(response)) == 200
@@ -328,7 +328,10 @@ def test_subprocess_reconnect_replays_messages_and_server_detach(
             request = tool_request(
                 server.url,
                 "pair_notebooks_attachments_detach",
-                {"id": server.stable_session_id, "attachment_id": second_id},
+                {
+                    "notebook_id": server.notebook_id,
+                    "attachment_id": second_id,
+                },
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 assert tool_status(tool_result(response)) == 200

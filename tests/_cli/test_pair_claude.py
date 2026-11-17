@@ -251,7 +251,7 @@ def test_detached_forwarder_delivers_to_claude_socket(
             request = tool_request(
                 server.url,
                 "pair_notebooks_messages",
-                {"id": server.stable_session_id, "message": message},
+                {"notebook_id": server.notebook_id, "message": message},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 assert tool_status(tool_result(response)) == 200

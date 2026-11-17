@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("kernel_code_autocomplete")
+@tool("kernel_code_autocomplete", notebook="required")
 @requires("edit")
 async def code_complete(
     *, request: Request, body: CodeCompletionRequest
@@ -38,7 +38,7 @@ async def code_complete(
     return await dispatch_control_request(request, body)
 
 
-@tool("kernel_focus_cell")
+@tool("kernel_focus_cell", notebook="required")
 @requires("edit")
 async def focus_cell(
     *, request: Request, body: FocusCellRequest
@@ -52,7 +52,7 @@ async def focus_cell(
     return SuccessResponse()
 
 
-@tool("kernel_format")
+@tool("kernel_format", notebook="required")
 @requires("edit")
 async def format_cell(
     *, request: Request, body: FormatCellsRequest
@@ -73,11 +73,7 @@ async def format_cell(
             raise ModuleNotFoundError(
                 "Server does not have a formatter. Please install ruff"
             ) from None
-        notify_server_missing_packages(
-            app_state.get_current_session(),
-            app_state.get_current_session_id(),
-            ["ruff"],
-        )
+        notify_server_missing_packages(app_state, ["ruff"])
         # Re-raise without .name so the error handler returns 500 without
         # sending a duplicate notification.
         raise ModuleNotFoundError(
@@ -85,7 +81,7 @@ async def format_cell(
         ) from None
 
 
-@tool("kernel_stdin")
+@tool("kernel_stdin", notebook="required")
 @requires("edit")
 async def stdin(*, request: Request, body: StdinRequest) -> SuccessResponse:
     """Answer the kernel's request for input."""
@@ -95,7 +91,7 @@ async def stdin(*, request: Request, body: StdinRequest) -> SuccessResponse:
     return SuccessResponse()
 
 
-@tool("kernel_install_missing_packages")
+@tool("kernel_install_missing_packages", notebook="required")
 @requires("edit")
 async def install_missing_packages(
     *, request: Request, body: InstallPackagesRequest

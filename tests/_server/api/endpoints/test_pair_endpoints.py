@@ -72,8 +72,8 @@ async def target(
         session.close()
 
 
-def path(session: SessionImpl, operation: str) -> str:
-    return f"/api/pair/notebooks/{session.stable_id}/{operation}"
+def path(notebook: Notebook, operation: str) -> str:
+    return f"/api/pair/notebooks/{notebook.id}/{operation}"
 
 
 @pytest.mark.parametrize(
@@ -82,7 +82,7 @@ def path(session: SessionImpl, operation: str) -> str:
 def test_message_is_an_opaque_custom_event(
     client: TestClient, target: tuple[SessionImpl, Notebook], payload: object
 ) -> None:
-    session, notebook = target
+    _, notebook = target
     notebook.attach(kind="agent", identity="codex", name="Codex")
     notebook.attach(kind="agent", identity="claude", name="Claude")
     events = []
@@ -90,7 +90,7 @@ def test_message_is_an_opaque_custom_event(
         events.append, notebook_id=notebook.id, types={"custom"}
     )
     response = client.post(
-        path(session, "messages"),
+        path(notebook, "messages"),
         content=msgspec.json.encode(payload),
         headers=token_header("fake-token"),
     )
@@ -109,33 +109,16 @@ def test_message_requires_an_agent(
     target: tuple[SessionImpl, Notebook],
     client_attached: bool,
 ) -> None:
-    session, notebook = target
+    _, notebook = target
     if client_attached:
         notebook.attach(kind="client")
     response = client.post(
-        path(session, "messages"), json={}, headers=token_header("fake-token")
+        path(notebook, "messages"), json={}, headers=token_header("fake-token")
     )
     assert (response.status_code, response.json()) == (
         409,
         {"detail": "No agent attached"},
     )
-
-
-def test_no_host_notebook(
-    client: TestClient, target: tuple[SessionImpl, Notebook]
-) -> None:
-    session, _ = target
-    client.app.state.host_context = None
-    response = client.post(
-        path(session, "messages"), json={}, headers=token_header("fake-token")
-    )
-    assert response.status_code == 409
-    response = client.post(
-        path(session, "attachments/detach"),
-        json={"attachment_id": "missing"},
-        headers=token_header("fake-token"),
-    )
-    assert response.status_code == 200
 
 
 def test_detach_removes_only_the_selected_attachment(
@@ -145,7 +128,7 @@ def test_detach_removes_only_the_selected_attachment(
     first = notebook.attach(kind="agent", identity="same")
     second = notebook.attach(kind="agent", identity="same")
     response = client.post(
-        path(session, "attachments/detach"),
+        path(notebook, "attachments/detach"),
         json={"attachment_id": first.id},
         headers=token_header("fake-token"),
     )
@@ -155,7 +138,7 @@ def test_detach_removes_only_the_selected_attachment(
         False,
     )
     response = client.post(
-        path(session, "attachments/detach"),
+        path(notebook, "attachments/detach"),
         json={"attachment_id": first.id},
         headers=token_header("fake-token"),
     )
@@ -169,10 +152,10 @@ def test_detach_removes_only_the_selected_attachment(
 def test_invalid_detach_body(
     client: TestClient, target: tuple[SessionImpl, Notebook], body: bytes
 ) -> None:
-    session, _ = target
+    _, notebook = target
     assert (
         client.post(
-            path(session, "attachments/detach"),
+            path(notebook, "attachments/detach"),
             content=body,
             headers=token_header("fake-token"),
         ).status_code
@@ -202,10 +185,10 @@ def test_missing_session(
 def test_pair_events_route_is_removed(
     client: TestClient, target: tuple[SessionImpl, Notebook]
 ) -> None:
-    session, _ = target
+    _, notebook = target
     assert (
         client.get(
-            path(session, "events"), headers=token_header("fake-token")
+            path(notebook, "events"), headers=token_header("fake-token")
         ).status_code
         == 404
     )
@@ -215,8 +198,8 @@ def test_pair_events_route_is_removed(
 def test_routes_require_authentication(
     client: TestClient, target: tuple[SessionImpl, Notebook], operation: str
 ) -> None:
-    session, notebook = target
-    response = client.post(path(session, operation), json={})
+    _, notebook = target
+    response = client.post(path(notebook, operation), json={})
     assert (response.status_code, notebook.attachments) == (401, [])
 
 
@@ -227,14 +210,14 @@ def test_routes_require_edit_mode(
     operation: str,
     body: dict[str, str],
 ) -> None:
-    session, _ = target
+    _, notebook = target
     manager = get_session_manager(client)
     manager.mode = SessionMode.RUN
     headers = token_header(str(manager.auth_token))
     assert client.get("/api/version", headers=headers).status_code == 200
     assert (
         client.post(
-            path(session, operation), json=body, headers=headers
+            path(notebook, operation), json=body, headers=headers
         ).status_code
         == 401
     )

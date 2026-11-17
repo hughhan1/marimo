@@ -126,6 +126,12 @@ class FakeManager:
         self.release = asyncio.Event()
         self.release.set()
 
+    def get_session_id(self, session: Any) -> str | None:
+        return next(
+            (key for key, each in self.sessions.items() if each is session),
+            None,
+        )
+
     async def create_session(
         self,
         session_id: str,

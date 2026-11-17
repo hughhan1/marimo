@@ -38,6 +38,7 @@ import { FRONTEND_TOOL_REGISTRY } from "@/core/ai/tools/registry";
 import { useCellActions } from "@/core/cells/actions";
 import { aiAtom, aiModelConfiguredAtom } from "@/core/config/config";
 import { DEFAULT_AI_MODEL } from "@/core/config/config-schema";
+import { activeNotebookId } from "@/core/network/holon";
 import { useRequestClient } from "@/core/network/requests";
 import { useRuntimeManager } from "@/core/runtime/config";
 import { isWasm } from "@/core/wasm/utils";
@@ -504,6 +505,7 @@ const ChatPanelBody = () => {
           const completionBody = {
             uiMessages: options.messages,
             options: store.get(chatOptionsAtom),
+            notebookId: activeNotebookId(),
           };
 
           // Call this here to ensure the value is not stale

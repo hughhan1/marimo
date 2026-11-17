@@ -12,6 +12,7 @@ from typing import (
     runtime_checkable,
 )
 
+from marimo._messaging.notification import ConsumerCapabilities
 from marimo._runtime.commands import CommandMessage
 from marimo._server.models.models import SuccessResponse
 from marimo._types.ids import ConsumerId
@@ -43,32 +44,37 @@ class RequestAsCommand(Protocol):
 def enforce_consumer_capability(
     app_state: AppState, command: CommandMessage
 ) -> None:
-    """Raise 403 if the calling consumer lacks the command's capability.
+    """Raise 403 if the calling tab lacks the command's capability.
 
     Advisory mirror of the control-request chokepoint: gives HTTP clients an
-    honest refusal. The chokepoint remains the authority.
+    honest refusal. The chokepoint remains the authority. A caller that
+    names no tab acts on its token's scope alone.
 
     Raises marimo's `HTTPException` rather than Starlette's so the status
     survives the global error handler, which rewrites Starlette 403s to 401s
     to prompt for authentication. A capability refusal is not an auth failure.
     """
-    from marimo._messaging.notification import ConsumerCapabilities
     from marimo._session.capabilities import consumer_can
     from marimo._utils.http import HTTPException
 
-    session = app_state.require_current_session()
-    consumer_id = ConsumerId(app_state.require_current_session_id())
-    consumer = session.room.get_consumer(consumer_id)
-    capabilities = (
-        session.room.get_capabilities(consumer)
-        if consumer is not None
-        else ConsumerCapabilities.VIEWER
-    )
+    tab = app_state.tab
+    if tab is None:
+        return
+    capabilities = tab_capabilities(app_state.require_current_session(), tab)
     if not consumer_can(capabilities, type(command)):
         raise HTTPException(
             status_code=403,
             detail="This connection is read-only for this action.",
         )
+
+
+def tab_capabilities(
+    session: Session | None, tab: ConsumerId
+) -> ConsumerCapabilities:
+    """What a page tab may do in `session`, as a viewer unless it joined it."""
+    if session is None or (consumer := session.room.get_consumer(tab)) is None:
+        return ConsumerCapabilities.VIEWER
+    return session.room.get_capabilities(consumer)
 
 
 async def dispatch_control_request(
@@ -89,8 +95,7 @@ async def dispatch_control_request(
         body = body.as_command()
     enforce_consumer_capability(app_state, body)
     app_state.require_current_session().put_control_request(
-        body,
-        from_consumer_id=ConsumerId(app_state.require_current_session_id()),
+        body, from_consumer_id=app_state.tab
     )
     return SuccessResponse()
 
@@ -242,26 +247,22 @@ async def install_packages_on_server(
 
 
 def notify_server_missing_packages(
-    session: Session | None,
-    session_id: str | None,
-    packages: list[str],
+    app_state: AppState, packages: list[str]
 ) -> None:
     """Send a missing-package alert for a server-side package.
 
     Uses isolated=True so the install button always appears regardless of
     whether the server is in a virtual environment.
     """
-    if session_id is None or session is None:
-        return
     from marimo._messaging.notification import MissingPackageAlertNotification
     from marimo._session.utils import send_message_to_consumer
 
     send_message_to_consumer(
-        session=session,
+        session=app_state.require_current_session(),
         operation=MissingPackageAlertNotification(
             packages=packages,
             isolated=True,
             source="server",
         ),
-        consumer_id=ConsumerId(session_id),
+        consumer_id=app_state.tab,
     )

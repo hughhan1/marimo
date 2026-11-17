@@ -11,7 +11,10 @@ import {
   type NotebookReplica,
   type Results,
 } from "@/core/notebook/replica";
-import { activeNotebookReplicaAtom } from "@/core/session/active-notebook";
+import {
+  activeNotebookIdAtom,
+  activeNotebookReplicaAtom,
+} from "@/core/session/active-notebook";
 import { type CellFreshnessInputs, freshnessOf } from "./freshness";
 import type { CellOutputInputs } from "./output";
 import {
@@ -130,8 +133,7 @@ export function isCurrent(store: Store, request: RunRequest): boolean {
 /** Cells named by pending requests made in the notebook now shown. */
 const requestedCellsAtom = atom((get) => {
   const replica = get(activeNotebookReplicaAtom);
-  const notebookId =
-    replica === null ? null : (get(replica.notebookAtom)?.id ?? null);
+  const notebookId = get(activeNotebookIdAtom);
   const requests = current(get(requestsAtom), replica, notebookId, NO_REQUESTS);
   return requests.size === 0
     ? NO_REQUESTED
@@ -141,8 +143,7 @@ const requestedCellsAtom = atom((get) => {
 /** What every cell's view derives from. Pair with `cellExecutionView`. */
 export const cellExecutionInputsAtom = atom((get): CellExecutionInputs => {
   const replica = get(activeNotebookReplicaAtom);
-  const notebookId =
-    replica === null ? null : (get(replica.notebookAtom)?.id ?? null);
+  const notebookId = get(activeNotebookIdAtom);
   const document = replica === null ? null : get(replica.documentAtom);
   return {
     executions: replica === null ? NO_EXECUTIONS : get(replica.executionsAtom),
@@ -180,8 +181,7 @@ const clearedOutputsAtom =
 /** What every cell's output derives from. Pair with `cellOutputView`. */
 export const cellOutputInputsAtom = atom((get): CellOutputInputs => {
   const replica = get(activeNotebookReplicaAtom);
-  const notebookId =
-    replica === null ? null : (get(replica.notebookAtom)?.id ?? null);
+  const notebookId = get(activeNotebookIdAtom);
   return {
     executions: replica === null ? NO_EXECUTIONS : get(replica.executionsAtom),
     results: replica === null ? NO_RESULTS : get(replica.resultsAtom),

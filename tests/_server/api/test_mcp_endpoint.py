@@ -12,12 +12,17 @@ from sse_starlette.sse import AppStatus
 
 from marimo._server.api.tools import contract
 from marimo._session.model import SessionMode
+from tests._server.api.endpoints.ws_helpers import receive_until
+from tests._server.mcp_client import call_tool
 from tests._server.mocks import (
     get_session_manager,
+    get_single_notebook_id,
     token_header,
     with_session,
 )
+from tests._server.session_events import connect_session
 from tests.mcp_request import (
+    Called,
     request_headers,
     request_meta,
     tool_payload,
@@ -119,15 +124,20 @@ def test_the_assistants_tools_are_for_models_and_the_rest_for_apps(
         "session_id"
     ]
     # A tool's arguments are its request's fields, under their wire names,
-    # and nothing else.
+    # after the notebook it acts on, and nothing else.
     arguments = by_name["kernel_set_ui_element_value"]["inputSchema"]
-    assert arguments["required"] == ["objectIds", "values"]
+    assert arguments["required"] == ["notebook_id", "objectIds", "values"]
     assert arguments["additionalProperties"] is False
     assert "outputSchema" in by_name["kernel_set_ui_element_value"]
-    # A record's id is an argument before the request's fields.
-    assert by_name["pair_notebooks_attachments_detach"]["inputSchema"][
-        "required"
-    ] == ["id", "attachment_id"]
+    # A tool for the whole server names no notebook, and one that works with
+    # or without a notebook takes it optionally.
+    assert (
+        "notebook_id"
+        not in by_name["files_file_details"]["inputSchema"]["properties"]
+    )
+    optional = by_name["kernel_save_user_config"]["inputSchema"]
+    assert "notebook_id" in optional["properties"]
+    assert "notebook_id" not in optional["required"]
     # A file is an embedded resource, which no output schema describes.
     assert "outputSchema" not in by_name["export_html"]
 
@@ -351,12 +361,12 @@ def test_only_post_is_served(client: TestClient) -> None:
         (
             "pair_notebooks_attachments_detach",
             {"attachment_id": "x"},
-            "Object missing required field `id`",
+            "Object missing required field `notebook_id`",
         ),
         (
             "pair_notebooks_attachments_detach",
-            {"id": None, "attachment_id": "x"},
-            "Expected `str`, got `null` - at `$.id`",
+            {"notebook_id": None, "attachment_id": "x"},
+            "Expected `str`, got `null` - at `$.notebook_id`",
         ),
         (
             "version",
@@ -366,7 +376,12 @@ def test_only_post_is_served(client: TestClient) -> None:
         # The server fills the caller's HTTP request in; no caller sends it.
         (
             "kernel_set_ui_element_value",
-            {"objectIds": [], "values": [], "request": {}},
+            {
+                "notebook_id": "nb-unknown",
+                "objectIds": [],
+                "values": [],
+                "request": {},
+            },
             "Object contains unknown field `request`",
         ),
     ],
@@ -451,12 +466,7 @@ def test_tool_call_needs_a_credential(client: TestClient) -> None:
 @pytest.mark.parametrize(
     ("name", "arguments", "status", "kind"),
     [
-        (
-            "kernel_format",
-            {"codes": {}, "lineLength": 80},
-            401,
-            "unauthorized",
-        ),
+        ("home_running_notebooks", {}, 401, "unauthorized"),
         ("get_active_notebooks", {}, 403, "forbidden"),
     ],
 )
@@ -509,3 +519,45 @@ def test_an_assistant_tool_failure_says_what_went_wrong(
     text = result["content"][0]["text"]
     assert text.startswith(prefix)
     assert json.loads(text.removeprefix(prefix))["code"] == code
+
+
+def test_a_caller_without_a_tab_names_the_notebook(client: TestClient) -> None:
+    token = token_header("fake-token")
+    with connect_session(client, "/ws?session_id=page", headers=token) as page:
+        receive_until("kernel-ready", page)
+        notebook_id = get_single_notebook_id(client)
+
+        assert call_tool(
+            client, "kernel_status", headers=token, notebook_id=notebook_id
+        ).data == {"state": "idle"}
+        unknown = call_tool(
+            client, "kernel_status", headers=token, notebook_id="nb-unknown"
+        )
+        assert unknown.problem["type"] == PROBLEM_KIND + "not-found"
+
+
+def test_a_second_tab_edits_after_taking_over(client: TestClient) -> None:
+    token = token_header("fake-token")
+    with (
+        connect_session(client, "/ws?session_id=first", headers=token) as a,
+        connect_session(client, "/ws?session_id=second", headers=token) as b,
+    ):
+        receive_until("kernel-ready", a)
+        receive_until("kernel-ready", b)
+        notebook_id = get_single_notebook_id(client)
+        second = {**token, "Marimo-Session-Id": "second"}
+
+        def run() -> Called:
+            return call_tool(
+                client,
+                "kernel_scratchpad_run",
+                headers=second,
+                notebook_id=notebook_id,
+                code="x = 1",
+            )
+
+        assert run().problem["type"] == PROBLEM_KIND + "forbidden"
+        assert call_tool(
+            client, "kernel_takeover", headers=second, notebook_id=notebook_id
+        ).ok
+        assert run().ok

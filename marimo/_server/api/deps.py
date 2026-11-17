@@ -1,9 +1,8 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
-from marimo import _loggers as loggers
 from marimo._cli.tips import CliTip
 from marimo._config.manager import MarimoConfigManager, ScriptConfigReader
 from marimo._core import protocol
@@ -11,7 +10,7 @@ from marimo._server.config import StarletteServerState
 from marimo._server.session_manager import SessionManager
 from marimo._server.tokens import SkewProtectionToken
 from marimo._session.model import SessionMode
-from marimo._types.ids import SessionId, StableSessionId
+from marimo._types.ids import ConsumerId, SessionId
 from marimo._utils.http import HTTPException, HTTPStatus
 
 if TYPE_CHECKING:
@@ -25,9 +24,8 @@ if TYPE_CHECKING:
     from marimo._server.host.context import HostContext
     from marimo._session import Session
 
-LOGGER = loggers.marimo_logger()
-
-STABLE_SESSION_ID_HEADER = "Marimo-Stable-Session-Id"
+TAB_HEADER: Final = "Marimo-Session-Id"
+_SESSION_ID: Final = "marimo.session_id"
 
 
 class AppStateBase:
@@ -142,92 +140,61 @@ class AppState(AppStateBase):
         super().__init__(request.app.state)
         self.request = request
 
+    @property
+    def tab(self) -> ConsumerId | None:
+        """The page tab that sent the request, which only a page names."""
+        return cast(ConsumerId | None, self.request.headers.get(TAB_HEADER))
+
+    def open_notebook(self, notebook_id: protocol.NotebookId) -> None:
+        """Serve the request with the session running `notebook_id`."""
+        context = self.host_context
+        if context is None or notebook_id not in context.bridge.host.notebooks:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"No notebook {notebook_id}",
+            )
+        session = context.bridge.session_for_notebook(notebook_id)
+        session_id = (
+            None
+            if session is None
+            else self.session_manager.get_session_id(session)
+        )
+        if session_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The notebook has no running session.",
+            )
+        self.request.scope[_SESSION_ID] = session_id
+
     def get_current_session_id(self) -> SessionId | None:
-        """Get the current session."""
-        session_id = self.request.headers.get("Marimo-Session-Id")
-        return SessionId(session_id) if session_id is not None else None
+        """The session of the notebook the request names, if it names one."""
+        return cast(SessionId | None, self.request.scope.get(_SESSION_ID))
 
     def require_current_session_id(self) -> SessionId:
-        """Get the current session or raise an error."""
         session_id = self.get_current_session_id()
         if session_id is None:
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST,
-                detail="Missing Marimo-Session-Id header",
+                detail="Name the notebook with notebook_id",
             )
         return session_id
 
     def get_current_session(self) -> Session | None:
-        """Get the current session."""
         session_id = self.get_current_session_id()
-        if session_id is None:
-            return None
-        return self.session_manager.get_session(session_id)
+        return (
+            None
+            if session_id is None
+            else self.session_manager.get_session(session_id)
+        )
 
     def require_current_session(self) -> Session:
-        """Get the current session or raise an error."""
-        session_id = self.require_current_session_id()
-        session = self.session_manager.get_session(session_id)
-        if session is None:
-            LOGGER.warning(
-                "Valid sessions ids: %s",
-                list(self.session_manager.sessions.keys()),
-            )
-            LOGGER.warning(
-                "Valid consumers ids: %s",
-                [
-                    list(session.room.consumers)
-                    for session in self.session_manager.sessions.values()
-                    if session.room.consumers
-                ],
-            )
-            raise ValueError(f"Invalid session id: {session_id}")
-        return session
-
-    def require_current_session_with_stable_id(
-        self, *, allow_notebook_id: bool = False
-    ) -> Session:
-        """Resolve a session, optionally accepting notebook IDs for execution."""
-        stable_session_id = self.request.headers.get(STABLE_SESSION_ID_HEADER)
-        if stable_session_id is None:
-            return self.require_current_session()
-        if self.get_current_session_id() is not None:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=(
-                    f"{STABLE_SESSION_ID_HEADER} cannot be combined with "
-                    "Marimo-Session-Id."
-                ),
-            )
-
-        context = self.host_context
-        if allow_notebook_id and context is not None:
-            record = context.bridge.host.notebooks.get(
-                protocol.NotebookId(stable_session_id)
-            )
-            if record is not None:
-                session = context.bridge.session_for_notebook(record.id)
-                if session is None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="The notebook has no running session.",
-                    )
-                return session
-        return self.session_by_stable_id(stable_session_id)
-
-    def session_by_stable_id(self, stable_id: str) -> Session:
-        """Resolve a notebook's stable session ID.
-
-        Args:
-            stable_id (str): Stable session ID from the route.
-        """
-        session = self.session_manager.get_session_by_stable_id(
-            StableSessionId(stable_id)
+        session = self.session_manager.get_session(
+            self.require_current_session_id()
         )
         if session is None:
             raise HTTPException(
-                status_code=HTTPStatus.NOT_FOUND,
-                detail=f"Invalid stable session id: {stable_id}",
+                status_code=409,
+                detail="The notebook has no running session.",
             )
         return session
 

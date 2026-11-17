@@ -24,7 +24,6 @@ from marimo._server.models.models import (
     SuccessResponse,
 )
 from marimo._session import send_message_to_consumer
-from marimo._types.ids import ConsumerId
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("kernel_save_user_config")
+@tool("kernel_save_user_config", notebook="optional")
 @requires("edit")
 async def save_user_config(
     *,
@@ -41,7 +40,6 @@ async def save_user_config(
 ) -> SuccessResponse:
     """Save the user's configuration and apply it to the server and kernel."""
     app_state = AppState(request)
-    session_id = app_state.get_current_session_id()
     session = app_state.get_current_session()
     # Refuse read-only connections before writing anything to disk.
     if session is not None:
@@ -77,14 +75,14 @@ async def save_user_config(
             and not DependencyManager.mcp.has()
         ):
             # If we're in an edit session, send an package installation request
-            if session_id is not None and session is not None:
+            if session is not None:
                 send_message_to_consumer(
                     session=session,
                     operation=MissingPackageAlertNotification(
                         packages=["mcp"],
                         isolated=is_python_isolated(),
                     ),
-                    consumer_id=ConsumerId(session_id),
+                    consumer_id=app_state.tab,
                 )
 
         try:
@@ -115,9 +113,7 @@ async def save_user_config(
                     )
                 ),
             ),
-            from_consumer_id=ConsumerId(
-                app_state.require_current_session_id()
-            ),
+            from_consumer_id=app_state.tab,
         )
 
     return SuccessResponse()

@@ -19,7 +19,7 @@ import json
 import sys
 from dataclasses import dataclass
 from functools import cache, partial
-from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, get_type_hints
 
 import msgspec
 import msgspec.json
@@ -45,6 +45,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
+from marimo._server.api.deps import AppState
 from marimo._server.api.events import SessionEvents
 from marimo._server.errors import handle_error
 
@@ -67,6 +68,8 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
 
 
 _MAX_INLINE_BYTES = 1024 * 1024
+NOTEBOOK_ID: Final = msgspec.json.schema(protocol.NotebookId)
+NotebookUse = Literal["required", "optional"]
 
 
 class FileResult(msgspec.Struct, frozen=True):
@@ -84,13 +87,22 @@ class Tool:
     output: object
     description: str = ""
     title: str | None = None
+    notebook: NotebookUse | None = None
 
 
 TOOLS: dict[str, Tool] = {}
 F = TypeVar("F", bound="Callable[..., object]")
 
 
-def tool(name: str) -> Callable[[F], F]:
+def tool(
+    name: str, *, notebook: NotebookUse | None = None
+) -> Callable[[F], F]:
+    """Serve `handler` as the tool `name`.
+
+    A tool that acts on a notebook takes its `notebook_id`, which `notebook`
+    says is required or optional, and serves the call with its session.
+    """
+
     def decorate(handler: F) -> F:
         hints = get_type_hints(
             inspect.unwrap(handler), localns={"Request": Request}
@@ -101,6 +113,7 @@ def tool(name: str) -> Callable[[F], F]:
             hints.get("body"),
             None if output is type(None) else output,
             _doc(handler) or _doc(hints.get("body")),
+            notebook=notebook,
         )
         return handler
 
@@ -123,6 +136,31 @@ def after_reply(request: Request, task: Callable[[], Awaitable[None]]) -> None:
 
 
 # ---- arguments --------------------------------------------------------------
+
+
+class _Notebook(msgspec.Struct):
+    notebook_id: protocol.NotebookId
+
+
+class _MaybeNotebook(msgspec.Struct):
+    notebook_id: protocol.NotebookId | None = None
+
+
+_NOTEBOOK: Final[dict[NotebookUse, type[_Notebook | _MaybeNotebook]]] = {
+    "required": _Notebook,
+    "optional": _MaybeNotebook,
+}
+
+
+def _notebook_id(
+    found: Tool, arguments: dict[str, Any]
+) -> protocol.NotebookId | None:
+    """Take the notebook a call names out of its arguments."""
+    if found.notebook is None:
+        return None
+    named = msgspec.convert(arguments, _NOTEBOOK[found.notebook])
+    arguments.pop("notebook_id", None)
+    return named.notebook_id
 
 
 def _arguments(found: Tool, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -198,12 +236,12 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
     `Output`, as the assistant's tools do.
     """
 
-    def parts(found: Any) -> tuple[Any, Any, str | None]:
+    def parts(found: Any) -> tuple[Any, Any, str | None, NotebookUse | None]:
         if isinstance(found, Tool):
-            return found.input, found.output, found.title
+            return found.input, found.output, found.title, found.notebook
         if isinstance(found, ToolBase):
-            return found.Args, found.Output, None
-        return found.arguments, found.result, found.title
+            return found.Args, found.Output, None, None
+        return found.arguments, found.result, found.title, None
 
     types_ = list(
         dict.fromkeys(
@@ -219,13 +257,19 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
     schema_of = dict(zip(types_, schemas_, strict=True))
     definitions: list[dict[str, Any]] = []
     for name, found in sorted(tools.items()):
-        given, reply, title = parts(found)
+        given, reply, title, notebook = parts(found)
         if given is None:
             arguments: dict[str, Any] = {"type": "object", "properties": {}}
         else:
             arguments = inline_schema(given, schema_of, components)
             arguments.pop("title", None)
             arguments.pop("description", None)
+        properties = arguments.get("properties", {})
+        required = arguments.get("required", [])
+        if notebook is not None:
+            properties = {"notebook_id": NOTEBOOK_ID, **properties}
+        if notebook == "required":
+            required = ["notebook_id", *required]
         definition: dict[str, Any] = {
             "name": name,
             **({"title": title} if title else {}),
@@ -233,8 +277,8 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
             "inputSchema": {
                 **arguments,
                 "type": "object",
-                "properties": arguments.get("properties", {}),
-                "required": arguments.get("required", []),
+                "properties": properties,
+                "required": required,
                 "additionalProperties": False,
             },
         }
@@ -335,11 +379,13 @@ async def _call(
         return await _assistant_call(
             request, assistant, params.arguments or {}
         )
+    arguments = dict(params.arguments or {})
     try:
-        result = found.handler(
-            request=request,
-            **_arguments(found, params.arguments or {}),
-        )
+        notebook_id = _notebook_id(found, arguments)
+        given = _arguments(found, arguments)
+        if notebook_id is not None:
+            AppState(request).open_notebook(notebook_id)
+        result = found.handler(request=request, **given)
         if inspect.isawaitable(result):
             result = await result
     except msgspec.ValidationError as error:

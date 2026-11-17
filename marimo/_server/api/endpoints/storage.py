@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("storage_list_entries")
+@tool("storage_list_entries", notebook="required")
 @requires("edit")
 async def list_entries(
     *, request: Request, body: StorageListEntriesRequest
@@ -29,7 +29,7 @@ async def list_entries(
     return await dispatch_control_request(request, body)
 
 
-@tool("storage_download")
+@tool("storage_download", notebook="required")
 @requires("edit")
 async def download(
     *, request: Request, body: StorageDownloadRequest

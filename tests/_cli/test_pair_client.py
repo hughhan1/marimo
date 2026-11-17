@@ -561,36 +561,13 @@ class FakeStatusResponse:
         self.closed = True
 
 
-def test_raise_for_status_maps_invalid_session_id() -> None:
-    response = FakeStatusResponse(
-        500, json.dumps({"detail": "Invalid session id: s_old"}).encode()
-    )
-
-    with pytest.raises(StaleNotebookError, match="Invalid session id"):
-        client._raise_for_status(response)
-
-    assert response.closed
-
-
-def test_raise_for_status_maps_invalid_stable_session_id() -> None:
+def test_raise_for_status_maps_an_unknown_notebook_to_stale() -> None:
     response = FakeStatusResponse(
         404,
-        json.dumps({"detail": "Invalid stable session id: sess-old"}).encode(),
+        json.dumps({"detail": "No notebook nb-old"}).encode(),
     )
 
-    with pytest.raises(StaleNotebookError, match="Invalid stable session id"):
-        client._raise_for_status(response)
-
-    assert response.closed
-
-
-def test_raise_for_status_maps_missing_legacy_header_to_upgrade() -> None:
-    response = FakeStatusResponse(
-        500,
-        json.dumps({"detail": "Missing Marimo-Session-Id header"}).encode(),
-    )
-
-    with pytest.raises(NotebookUnsupportedError):
+    with pytest.raises(StaleNotebookError, match="No notebook nb-old"):
         client._raise_for_status(response)
 
     assert response.closed
@@ -735,7 +712,7 @@ def test_execute_calls_the_kernel_execute_tool(
     calls = _patch_response(monkeypatch, response)
     result = client.execute(
         url="http://localhost:2718",
-        session_id="nb-one",
+        notebook_id="nb-one",
         token="private",
         code="42",
     )
@@ -748,9 +725,11 @@ def test_execute_calls_the_kernel_execute_tool(
     [call] = calls
     assert call["url"] == "http://localhost:2718/api/mcp"
     assert call["headers"]["Mcp-Name"] == "kernel_execute"
-    assert call["headers"]["Marimo-Stable-Session-Id"] == "nb-one"
     assert call["headers"]["Authorization"] == "Bearer private"
-    assert json.loads(call["body"])["params"]["arguments"] == {"code": "42"}
+    assert json.loads(call["body"])["params"]["arguments"] == {
+        "code": "42",
+        "notebook_id": "nb-one",
+    }
     assert response.closed
 
 
@@ -770,7 +749,7 @@ def test_execution_without_confirmation_is_never_retried(
     with pytest.raises(PairError, match="before completion was confirmed"):
         client.execute(
             url="http://localhost:2718",
-            session_id="nb-one",
+            notebook_id="nb-one",
             token=None,
             code="42",
         )

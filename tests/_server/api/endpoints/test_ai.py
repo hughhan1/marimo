@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 
 from marimo._config.config_schema import MarimoConfig
 from marimo._config.types import CopilotMode
+from marimo._core.protocol import NotebookId
 from marimo._server.ai.completion_output import (
     CELL_COMPLETION_DATA_TYPE,
     NOTEBOOK_CELLS_COMPLETION_DATA_TYPE,
@@ -29,7 +30,11 @@ from marimo._server.api.endpoints.ai import (
 )
 from marimo._server.models.completion import AiCompletionRequest
 from tests._server.conftest import get_session_config_manager
-from tests._server.mocks import token_header, with_session
+from tests._server.mocks import (
+    get_single_notebook_id,
+    token_header,
+    with_session,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -202,6 +207,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "includeOtherCode": "",
                     "code": "",
@@ -235,6 +241,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "includeOtherCode": "",
                     "code": "",
@@ -270,6 +277,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "",
                     "includeOtherCode": "",
                     "code": "",
@@ -305,6 +313,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "code": "<rewrite_this>import pandas as pd</rewrite_this>",
                     "includeOtherCode": "",
@@ -338,6 +347,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "code": "<rewrite_this>import pandas as pd</rewrite_this>",
                     "includeOtherCode": "",
@@ -369,6 +379,7 @@ class TestOpenAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "code": "<rewrite_this>import pandas as pd</rewrite_this>",
                     "includeOtherCode": "",
@@ -488,6 +499,7 @@ class TestAnthropicAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "includeOtherCode": "",
                     "code": "",
@@ -519,6 +531,7 @@ class TestAnthropicAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "code": "<rewrite_this>import pandas as pd</rewrite_this>",
                     "includeOtherCode": "",
@@ -602,6 +615,7 @@ class TestGoogleAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "code": "<rewrite_this>import pandas as pd</rewrite_this>",
                     "includeOtherCode": "",
@@ -648,6 +662,7 @@ class TestGoogleAiEndpoints:
                 "/api/ai/completion",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "prompt": "Help me create a dataframe",
                     "includeOtherCode": "",
                     "code": "",
@@ -833,6 +848,7 @@ def test_chat_without_code(
                 "/api/ai/chat",
                 headers=HEADERS,
                 json={
+                    "notebookId": get_single_notebook_id(client),
                     "messages": _create_messages("Hello"),
                     "uiMessages": _create_messages("Hello"),
                     "model": "gpt-4-turbo",
@@ -901,6 +917,7 @@ def test_chat_with_code(
             "/api/ai/chat",
             headers=HEADERS,
             json={
+                "notebookId": get_single_notebook_id(client),
                 "uiMessages": messages,
                 "model": "gpt-4-turbo",
                 "variables": [],
@@ -959,6 +976,7 @@ def test_chat_code_mode_routes_to_harness(
             "/api/ai/chat",
             headers=HEADERS,
             json={
+                "notebookId": get_single_notebook_id(client),
                 "messages": _create_messages("Add a cell"),
                 "uiMessages": _create_messages("Add a cell"),
                 "model": "gpt-4-turbo",
@@ -1222,21 +1240,6 @@ class TestInvokeToolEndpoint:
         assert "metadata" in response_data["result"]
         assert response_data["error"] is None
 
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_invoke_tool_without_session(client: TestClient) -> None:
-        """Test tool invocation without valid session."""
-        response = client.post(
-            "/api/ai/invoke_tool",
-            headers={
-                "Authorization": "Bearer fake-token"
-            },  # No session header
-            json={"toolName": "test_tool", "arguments": {}},
-        )
-
-        # Should fail without proper session
-        assert response.status_code in [400, 401, 403], response.text
-
 
 class TestMCPEndpoints:
     """Tests for MCP status and refresh endpoints."""
@@ -1355,6 +1358,7 @@ def test_resolve_completion_messages_from_prompt() -> None:
         prompt="edit this",
         include_other_code="",
         code="x = 1",
+        notebook_id=NotebookId("nb-1"),
     )
     messages, support_multiple_cells = resolve_completion_messages(body)
     assert support_multiple_cells is False
@@ -1368,6 +1372,7 @@ def test_resolve_completion_messages_from_ui_messages() -> None:
         prompt="ignored",
         include_other_code="",
         code="",
+        notebook_id=NotebookId("nb-1"),
         ui_messages=ui_messages,
     )
     messages, support_multiple_cells = resolve_completion_messages(body)
@@ -1435,7 +1440,11 @@ def test_ai_endpoints_forward_conversation_id(
             ) as factory,
         ):
             response = client.post(
-                f"/api/ai/{endpoint}", headers=HEADERS, json=body
+                f"/api/ai/{endpoint}",
+                headers=HEADERS,
+                json=body
+                if endpoint == "inline_completion"
+                else {**body, "notebookId": get_single_notebook_id(client)},
             )
 
         assert response.status_code == 200, response.text

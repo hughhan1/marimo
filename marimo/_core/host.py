@@ -78,6 +78,9 @@ class _NotebookRecords(Mapping[str, protocol.Notebook]):
     def __getitem__(self, key: str) -> protocol.Notebook:
         return deepcopy(self._records[key])
 
+    def __contains__(self, key: object) -> bool:
+        return key in self._records
+
     def __iter__(self) -> Iterator[str]:
         return iter(self._records)
 

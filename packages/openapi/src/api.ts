@@ -55,6 +55,8 @@ export interface components {
        * @enum {unknown}
        */
       language?: "markdown" | "python" | "sql";
+      /** @description Identifies a notebook. Unique within the host and unchanged while the notebook exists. */
+      notebookId: string;
       prompt: string;
       /** @default null */
       selectedText?: string | null;
@@ -473,6 +475,8 @@ export interface components {
       id?: string | null;
       /** @default null */
       model?: string | null;
+      /** @description Identifies a notebook. Unique within the host and unchanged while the notebook exists. */
+      notebookId: string;
       options?: components["schemas"]["ChatOptions"];
       /** @default null */
       tools?: components["schemas"]["ToolDefinition"][] | null;

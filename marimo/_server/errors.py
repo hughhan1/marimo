@@ -14,7 +14,6 @@ from marimo._runtime.packages.utils import is_python_isolated
 from marimo._server.api.deps import AppState
 from marimo._session import send_message_to_consumer
 from marimo._session.model import SessionMode
-from marimo._types.ids import ConsumerId
 from marimo._utils.http import (
     HTTPException as MarimoHTTPException,
     is_client_error,
@@ -75,14 +74,9 @@ async def handle_error(request: Request, response: Any) -> Any:
         LOGGER.warning(response.msg)  # print to terminal
         try:
             app_state = AppState(request)
-            session_id = app_state.get_current_session_id()
             session = app_state.get_current_session()
             # If we're in an edit session, send an package installation request
-            if (
-                session_id is not None
-                and session is not None
-                and app_state.mode == SessionMode.EDIT
-            ):
+            if session is not None and app_state.mode == SessionMode.EDIT:
                 if isinstance(response, ManyModulesNotFoundError):
                     packages = response.package_names
                     source = response.source
@@ -103,7 +97,7 @@ async def handle_error(request: Request, response: Any) -> Any:
                         isolated=isolated,
                         source=source,
                     ),
-                    consumer_id=ConsumerId(session_id),
+                    consumer_id=app_state.tab,
                 )
             return JSONResponse({"detail": str(response)}, status_code=500)
         except Exception as e:

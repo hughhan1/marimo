@@ -23,7 +23,6 @@ from marimo._server.models.secrets import (
     CreateSecretRequest,
     DeleteSecretRequest,
 )
-from marimo._types.ids import ConsumerId
 from marimo._utils.http import HTTPException
 
 if TYPE_CHECKING:
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("secrets_keys")
+@tool("secrets_keys", notebook="required")
 @requires("edit")
 async def list_keys(
     *, request: Request, body: ListSecretKeysRequest
@@ -41,15 +40,13 @@ async def list_keys(
     return await dispatch_control_request(request, body)
 
 
-@tool("secrets_create")
+@tool("secrets_create", notebook="required")
 @requires("edit")
 async def create_secret(
     *, request: Request, body: CreateSecretRequest
 ) -> BaseResponse:
     """Store a secret with its provider and refresh the kernel's secrets."""
     app_state = AppState(request)
-    session_id = app_state.require_current_session_id()
-
     command = RefreshSecretsCommand()
     enforce_consumer_capability(app_state, command)
 
@@ -58,8 +55,7 @@ async def create_secret(
 
     # Refresh the secrets
     app_state.require_current_session().put_control_request(
-        command,
-        from_consumer_id=ConsumerId(session_id),
+        command, from_consumer_id=app_state.tab
     )
     return SuccessResponse(success=True)
 

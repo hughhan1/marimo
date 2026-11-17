@@ -26,10 +26,6 @@ import {
 import { pairConfigAtom } from "@/core/config/pair";
 import { readExport } from "@/core/cells/session";
 import type { MarimoError, OutputMessage } from "@/core/kernel/messages";
-import {
-  type StableSessionId,
-  stableSessionIdAtom,
-} from "@/core/kernel/session";
 import { connectionAtom } from "@/core/network/connection";
 import { ConnectionState } from "@/core/session/types";
 import { Deferred } from "@/utils/Deferred";
@@ -45,13 +41,16 @@ vi.mock("@/core/network/holon", () => {
   function mockTools() {
     return {
       pair_notebooks_messages: ({
-        id,
+        notebook_id,
         message,
       }: {
-        id: string;
+        notebook_id: string;
         message: unknown;
       }) =>
-        API.post(`/pair/notebooks/${encodeURIComponent(id)}/messages`, message),
+        API.post(
+          `/pair/notebooks/${encodeURIComponent(notebook_id)}/messages`,
+          message,
+        ),
     };
   }
   return {
@@ -60,6 +59,10 @@ vi.mock("@/core/network/holon", () => {
     ) => {
       return call(mockTools());
     },
+    inNotebook: <A extends object>(args: A) => ({
+      ...args,
+      notebook_id: "nb-test",
+    }),
   };
 });
 vi.mock("@/components/editor/chrome/wrapper/useOpenAiAssistant", () => ({
@@ -67,7 +70,6 @@ vi.mock("@/components/editor/chrome/wrapper/useOpenAiAssistant", () => ({
 }));
 
 const CELL_ID = cellId("test-cell");
-const STABLE_ID = "stable/test" as StableSessionId;
 const attachmentsAtom = atom<Attachment[]>([]);
 vi.mock("@/core/session/active-notebook", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/core/session/active-notebook")>()),
@@ -82,7 +84,7 @@ const AGENT: Attachment = {
   notebook_id: "nb-test",
   identity: "pi-thread",
 };
-const ROUTE = "/pair/notebooks/stable%2Ftest/messages";
+const ROUTE = "/pair/notebooks/nb-test/messages";
 const MESSAGE = "df is not defined";
 const CODE = "df.head()";
 const REPORT: CellOutputMessage<ErrorMessageOutput> = {
@@ -108,19 +110,16 @@ const ERRORS: MarimoError[] = [
 function renderButton({
   preview = true,
   attachments = [AGENT],
-  stableId = STABLE_ID,
   content = <SendErrorReportButton getContent={() => REPORT} />,
 }: {
   preview?: boolean;
   attachments?: Attachment[];
-  stableId?: StableSessionId | null;
   content?: React.ReactNode;
 } = {}) {
   const store = createStore();
   store.set(connectionAtom, { state: ConnectionState.OPEN });
   store.set(pairConfigAtom, { ...PAIR_CONFIG, hostEnabled: preview });
   store.set(attachmentsAtom, attachments);
-  store.set(stableSessionIdAtom, stableId);
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <Provider store={store}>
       <TooltipProvider>{children}</TooltipProvider>
@@ -159,8 +158,7 @@ describe("SendErrorReportButton", () => {
   it.each([
     { attachments: [] },
     { attachments: [{ ...AGENT, kind: "client" as const }] },
-    { stableId: null },
-  ])("disables sending without an agent or stable ID: %j", (options) => {
+  ])("disables sending without an agent: %j", (options) => {
     renderButton(options);
     expect(screen.getByRole("button")).toBeDisabled();
     send();

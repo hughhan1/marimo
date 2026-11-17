@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from textwrap import dedent
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 from urllib.parse import quote
 
 import pytest
@@ -1254,7 +1254,7 @@ def test_auto_export_ipynb_missing_nbformat_notifies_once(
             json={"download": False},
         )
         assert response.status_code == 200
-        mock_notify.assert_called_once_with(session, SESSION_ID, ["nbformat"])
+        mock_notify.assert_called_once_with(ANY, ["nbformat"])
 
         # Reset the export guard to exercise package notification deduplication.
         session.session_view.needs_export = lambda _: True

@@ -5,6 +5,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import contract from "../../../../server/holon-contract.json";
 import { createNetworkRequests } from "../requests-network";
+import { MockExecutions } from "@/__mocks__/executions";
+import { store as pageStore } from "@/core/state/jotai";
 
 // Mock dependencies
 vi.mock("../../runtime/config", () => ({
@@ -46,6 +48,10 @@ vi.mock("../connection", () => ({
   waitForConnectionOpen: vi.fn().mockResolvedValue(undefined),
   waitForConnectionOpenIfNotebook: vi.fn().mockResolvedValue(undefined),
 }));
+
+beforeEach(() => {
+  MockExecutions.seed(pageStore, []);
+});
 
 describe("createNetworkRequests", () => {
   beforeEach(() => {
@@ -97,7 +103,10 @@ describe("createNetworkRequests", () => {
       const requests = createNetworkRequests();
       await requests.exportAsScript({ download: false });
 
-      expect(tool("export_script")).toHaveBeenCalledWith({ download: false });
+      expect(tool("export_script")).toHaveBeenCalledWith({
+        download: false,
+        notebook_id: "n1",
+      });
     });
 
     it("getEnvironmentInfo should read the environment", async () => {
@@ -127,6 +136,7 @@ describe("createNetworkRequests", () => {
 
       expect(tool("export_requirements_install")).toHaveBeenCalledWith({
         format: "pdf",
+        notebook_id: "n1",
       });
     });
 
@@ -135,7 +145,10 @@ describe("createNetworkRequests", () => {
       const request = { requestId: "discovery-request" } as any;
       await requests.discoverDataSources(request);
 
-      expect(tool("datasources_discover")).toHaveBeenCalledWith(request);
+      expect(tool("datasources_discover")).toHaveBeenCalledWith({
+        ...request,
+        notebook_id: "n1",
+      });
     });
 
     it("getPackageList should not require a kernel connection", async () => {

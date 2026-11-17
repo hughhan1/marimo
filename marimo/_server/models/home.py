@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import msgspec
 
+from marimo._core import protocol
 from marimo._server.models.files import FileInfo
 from marimo._tutorials import Tutorial  # type: ignore
 from marimo._types.ids import SessionId
@@ -20,6 +21,7 @@ class MarimoFile(msgspec.Struct, rename="camel"):
     # Session initialization id
     # This is the ID for when the session was initialized
     initialization_id: str | None = None
+    notebook_id: protocol.NotebookId | None = None
 
 
 class RecentFilesResponse(msgspec.Struct, rename="camel"):
@@ -46,7 +48,3 @@ class WorkspaceFilesResponse(msgspec.Struct, rename="camel"):
     has_more: bool = False
     # Total files found
     file_count: int = 0
-
-
-class ShutdownSessionRequest(msgspec.Struct, rename="camel"):
-    session_id: SessionId

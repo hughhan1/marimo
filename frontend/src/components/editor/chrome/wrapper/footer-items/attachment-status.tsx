@@ -22,8 +22,7 @@ import {
 } from "@/core/notebook";
 import { agentToast } from "@/components/editor/agent-toast";
 import { pairConfigAtom } from "@/core/config/pair";
-import { stableSessionIdAtom } from "@/core/kernel/session";
-import { callMarimo } from "@/core/network/holon";
+import { callMarimo, inNotebook } from "@/core/network/holon";
 import { useTimeAgo } from "@/hooks/useFormatting";
 import { FooterItem } from "../footer-item";
 
@@ -146,7 +145,6 @@ export function AttachmentStatus() {
 }
 
 function AttachmentStatusItem({ attachment }: { attachment: Attachment }) {
-  const stableSessionId = useAtomValue(stableSessionIdAtom);
   const [state, setState] = useState<"idle" | "confirming" | "disconnecting">(
     "idle",
   );
@@ -162,16 +160,15 @@ function AttachmentStatusItem({ attachment }: { attachment: Attachment }) {
       : `Disconnect ${label}`;
 
   const disconnect = async () => {
-    if (disconnecting || !stableSessionId) {
+    if (disconnecting) {
       return;
     }
     setState("disconnecting");
     try {
       await callMarimo((tools) =>
-        tools.pair_notebooks_attachments_detach({
-          id: stableSessionId,
-          attachment_id: attachment.id,
-        }),
+        tools.pair_notebooks_attachments_detach(
+          inNotebook({ attachment_id: attachment.id }),
+        ),
       );
     } catch {
       agentToast({ variant: "danger", title: `Could not disconnect ${label}` });
@@ -204,7 +201,7 @@ function AttachmentStatusItem({ attachment }: { attachment: Attachment }) {
           ref={disconnectButton}
           size="icon"
           variant="outlineDestructive"
-          disabled={disconnecting || !stableSessionId}
+          disabled={disconnecting}
           onClick={confirming ? disconnect : () => setState("confirming")}
           aria-label={disconnectLabel}
           title={disconnectLabel}

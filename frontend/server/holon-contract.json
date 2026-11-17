@@ -10,6 +10,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "prefix": {
               "type": "string"
             },
@@ -26,6 +31,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "prefix",
             "suffix"
           ],
@@ -97,8 +103,16 @@
         "name": "ai_mcp_refresh",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -212,8 +226,16 @@
         "name": "cache_clear",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -232,8 +254,16 @@
         "name": "cache_info",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -253,11 +283,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "requestId"
           ],
           "additionalProperties": false
@@ -279,6 +315,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "sourceType": {
               "enum": [
                 "catalog",
@@ -309,6 +350,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "sourceType",
             "source",
             "tableName",
@@ -333,11 +375,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "engine": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "engine"
           ],
           "additionalProperties": false
@@ -359,6 +407,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -377,6 +430,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "engine",
             "database"
@@ -400,6 +454,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -424,6 +483,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "engine",
             "database",
@@ -449,6 +509,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -470,6 +535,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "engine",
             "database",
@@ -493,8 +559,16 @@
         "name": "documentation_snippets",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -647,6 +721,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             },
@@ -682,6 +761,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "download",
             "files",
             "includeCode"
@@ -723,11 +803,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             }
           },
           "required": [
+            "notebook_id",
             "download"
           ],
           "additionalProperties": false
@@ -749,11 +835,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             }
           },
           "required": [
+            "notebook_id",
             "download"
           ],
           "additionalProperties": false
@@ -861,6 +953,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             },
@@ -896,6 +993,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "download",
             "files",
             "includeCode"
@@ -926,6 +1024,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             },
@@ -942,6 +1045,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "download"
           ],
           "additionalProperties": false
@@ -952,6 +1056,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             },
@@ -973,6 +1082,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "download"
           ],
           "additionalProperties": false
@@ -983,6 +1093,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "webpdf": {
               "type": "boolean"
             },
@@ -1003,6 +1118,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "webpdf"
           ],
           "additionalProperties": false
@@ -1013,6 +1129,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "format": {
               "enum": [
                 "html",
@@ -1024,6 +1145,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "format"
           ],
           "additionalProperties": false
@@ -1111,11 +1233,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "download": {
               "type": "boolean"
             }
           },
           "required": [
+            "notebook_id",
             "download"
           ],
           "additionalProperties": false
@@ -1126,6 +1254,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "cellIdsToOutput": {
               "type": "object",
               "additionalProperties": {
@@ -1168,6 +1301,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "cellIdsToOutput"
           ],
           "additionalProperties": false
@@ -4558,6 +4692,19 @@
                     }
                   ],
                   "default": null
+                },
+                "notebookId": {
+                  "anyOf": [
+                    {
+                      "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 }
               },
               "required": [
@@ -4633,6 +4780,19 @@
                     }
                   ],
                   "default": null
+                },
+                "notebookId": {
+                  "anyOf": [
+                    {
+                      "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 }
               },
               "required": [
@@ -4648,12 +4808,14 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "sessionId": {
-              "type": "string"
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
-            "sessionId"
+            "notebook_id"
           ],
           "additionalProperties": false
         },
@@ -4708,6 +4870,19 @@
                   "anyOf": [
                     {
                       "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "notebookId": {
+                  "anyOf": [
+                    {
+                      "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+                      "type": "string",
+                      "minLength": 1
                     },
                     {
                       "type": "null"
@@ -4794,6 +4969,19 @@
               "anyOf": [
                 {
                   "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "notebookId": {
+              "anyOf": [
+                {
+                  "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+                  "type": "string",
+                  "minLength": 1
                 },
                 {
                   "type": "null"
@@ -4965,6 +5153,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "id": {
               "type": "string"
             },
@@ -4976,6 +5169,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "id",
             "document",
             "cellId"
@@ -4999,6 +5193,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "source": {
               "type": "string"
             },
@@ -5007,6 +5206,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "source",
             "destination"
           ],
@@ -5031,11 +5231,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "code": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "code"
           ],
           "additionalProperties": false
@@ -5134,11 +5340,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "cellId": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "cellId"
           ],
           "additionalProperties": false
@@ -5160,6 +5372,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "codes": {
               "type": "object",
               "additionalProperties": {
@@ -5171,6 +5388,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "codes",
             "lineLength"
           ],
@@ -5197,6 +5415,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "functionCallId": {
               "type": "string"
             },
@@ -5211,6 +5434,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "functionCallId",
             "namespace",
             "functionName",
@@ -5235,6 +5459,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "manager": {
               "type": "string"
             },
@@ -5260,6 +5489,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "manager",
             "versions"
           ],
@@ -5282,6 +5512,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "objectIds": {
               "type": "array",
               "items": {
@@ -5311,6 +5546,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "objectIds",
             "values"
           ],
@@ -5333,6 +5569,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "breakpoints": {
               "type": "object",
               "additionalProperties": {
@@ -5344,6 +5585,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "breakpoints"
           ],
           "additionalProperties": false
@@ -5365,11 +5607,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "cellId": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "cellId"
           ],
           "additionalProperties": false
@@ -5390,8 +5638,16 @@
         "name": "kernel_read_code",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -5412,11 +5668,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "filename": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "filename"
           ],
           "additionalProperties": false
@@ -5437,8 +5699,16 @@
         "name": "kernel_restart_session",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -5458,11 +5728,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "config": {
               "type": "object"
             }
           },
           "required": [
+            "notebook_id",
             "config"
           ],
           "additionalProperties": false
@@ -5486,6 +5762,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "layout": {
               "anyOf": [
                 {
@@ -5498,7 +5779,9 @@
               "default": null
             }
           },
-          "required": [],
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -5518,6 +5801,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "config": {
               "type": "object"
             }
@@ -5544,11 +5832,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "code": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "code"
           ],
           "additionalProperties": false
@@ -5570,6 +5864,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "modelId": {
               "type": "string"
             },
@@ -5602,6 +5901,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "modelId",
             "message",
             "buffers"
@@ -5680,6 +5980,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "objectIds": {
               "type": "array",
               "items": {
@@ -5691,6 +5996,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "objectIds",
             "values"
           ],
@@ -5712,7 +6018,13 @@
         "name": "kernel_shutdown",
         "inputSchema": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [],
           "additionalProperties": false
         },
@@ -5732,8 +6044,16 @@
         "name": "kernel_status",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -5758,11 +6078,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "text": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "text"
           ],
           "additionalProperties": false
@@ -5783,8 +6109,16 @@
         "name": "kernel_takeover",
         "inputSchema": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notebook_id"
+          ],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -8786,6 +9120,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "package": {
               "type": "string"
             },
@@ -8849,7 +9188,13 @@
         "name": "packages_list",
         "inputSchema": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [],
           "additionalProperties": false
         },
@@ -8892,6 +9237,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "contents": {
               "type": "string"
             },
@@ -8966,6 +9316,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "package": {
               "type": "string"
             },
@@ -9019,6 +9374,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "fileKey": {
               "anyOf": [
                 {
@@ -9084,6 +9444,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "fileKey": {
               "anyOf": [
                 {
@@ -9135,7 +9500,13 @@
         "name": "packages_tree",
         "inputSchema": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [],
           "additionalProperties": false
         },
@@ -9276,15 +9647,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "id": {
-              "type": "string"
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
             },
             "attachment_id": {
               "type": "string"
             }
           },
           "required": [
-            "id",
+            "notebook_id",
             "attachment_id"
           ],
           "additionalProperties": false
@@ -9300,13 +9673,15 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "id": {
-              "type": "string"
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
             },
             "message": {}
           },
           "required": [
-            "id",
+            "notebook_id",
             "message"
           ],
           "additionalProperties": false
@@ -10099,6 +10474,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "key": {
               "type": "string"
             },
@@ -10116,6 +10496,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "key",
             "value",
             "provider",
@@ -10168,11 +10549,17 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             }
           },
           "required": [
+            "notebook_id",
             "requestId"
           ],
           "additionalProperties": false
@@ -10321,6 +10708,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -10354,6 +10746,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "query",
             "onlyParse"
@@ -10466,6 +10859,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -10481,6 +10879,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "namespace",
             "path"
@@ -10504,6 +10903,11 @@
         "inputSchema": {
           "type": "object",
           "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            },
             "requestId": {
               "type": "string"
             },
@@ -10537,6 +10941,7 @@
             }
           },
           "required": [
+            "notebook_id",
             "requestId",
             "namespace",
             "limit"
@@ -10559,7 +10964,13 @@
         "name": "usage",
         "inputSchema": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "notebook_id": {
+              "description": "Identifies a notebook. Unique within the host and unchanged while the notebook exists.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [],
           "additionalProperties": false
         },

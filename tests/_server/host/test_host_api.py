@@ -2265,8 +2265,11 @@ def test_execution_does_not_start_a_cataloged_notebook(
     ) as client:
         response = client.post(
             "/api/kernel/execute",
-            headers={**AUTH, "Marimo-Stable-Session-Id": harness.notebook_id},
-            json={"code": "print('do not start')"},
+            headers=AUTH,
+            json={
+                "code": "print('do not start')",
+                "notebook_id": harness.notebook_id,
+            },
         )
     assert response.status_code == 409
     assert response.json() == {

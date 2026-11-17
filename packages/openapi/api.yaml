@@ -68,6 +68,11 @@ components:
           - markdown
           - python
           - sql
+        notebookId:
+          description: Identifies a notebook. Unique within the host and unchanged
+            while the notebook exists.
+          minLength: 1
+          type: string
         prompt:
           type: string
         selectedText:
@@ -84,6 +89,7 @@ components:
       - prompt
       - includeOtherCode
       - code
+      - notebookId
       title: AiCompletionRequest
       type: object
     AiConfig:
@@ -679,6 +685,11 @@ components:
           - type: string
           - type: 'null'
           default: null
+        notebookId:
+          description: Identifies a notebook. Unique within the host and unchanged
+            while the notebook exists.
+          minLength: 1
+          type: string
         options:
           $ref: '#/components/schemas/ChatOptions'
         tools:
@@ -703,6 +714,7 @@ components:
           default: null
       required:
       - uiMessages
+      - notebookId
       title: ChatRequest
       type: object
     ClientCommand:

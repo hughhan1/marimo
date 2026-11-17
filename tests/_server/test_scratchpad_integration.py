@@ -151,7 +151,7 @@ class _Session:
         # ``session_id`` as a reconnection and keeps the kernel state.
         # This tears down only our session, not the module-wide server.
         try:
-            self._tool("kernel_restart_session")
+            self._tool("kernel_restart_session", notebook_id=self.notebook_id)
         except Exception:
             pass
         try:
@@ -282,7 +282,9 @@ class _Session:
 
     def execute(self, code: str) -> list[str]:
         """Run `code` through `kernel_execute`; one normalized line per field."""
-        result = self._tool("kernel_execute", code=code)
+        result = self._tool(
+            "kernel_execute", code=code, notebook_id=self.notebook_id
+        )
         return _normalize(
             "\n".join(
                 f"{key}: {json.dumps(value)}" for key, value in result.items()

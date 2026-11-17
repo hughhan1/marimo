@@ -3,7 +3,8 @@
 
 `client.post("/api/kernel/rename", json=body)` becomes a `tools/call` request to
 `/api/mcp` whose arguments are the body's fields, and the result becomes an
-ordinary response: a success is a 200 whose JSON is the structured result, a
+ordinary response. A tool that acts on a notebook gets the `notebook_id` of
+the session the request's tab header names, as the page passes its own: a success is a 200 whose JSON is the structured result, a
 file is a response with the file's type and bytes, and a failure has its
 problem's status and `{"detail": ...}` as its body. `call_tool` calls a tool
 by its name, such as the host protocol's notebook tools the editor serves.
@@ -21,8 +22,10 @@ import httpx
 import msgspec
 from starlette.testclient import TestClient
 
+from marimo._server.api.deps import TAB_HEADER, AppStateBase
 from marimo._server.api.router import build_routes  # noqa: F401
 from marimo._server.api.tools import TOOLS
+from marimo._types.ids import SessionId
 from tests.mcp_request import Called, called, request_headers, tool_payload
 
 _PAIR = re.compile(
@@ -44,7 +47,7 @@ def _tool_call(url: str) -> tuple[str, dict[str, str]] | None:
     pair = _PAIR.fullmatch(path)
     if pair:
         name = "pair_notebooks_" + pair.group(2).replace("/", "_")
-        return name, {"id": pair.group(1)}
+        return name, {"notebook_id": pair.group(1)}
     name = re.sub(r"\W+", "_", path.removeprefix("/api/")).strip("_")
     return (name, {}) if name in TOOLS else None
 
@@ -152,6 +155,9 @@ def _request(self: TestClient, method: str, url: Any, **kwargs: Any) -> Any:
     else:
         # Not an object: sent as it is, for the transport to refuse.
         arguments = body
+    notebook_id = _tab_notebook(self, headers)
+    if TOOLS[name].notebook and isinstance(arguments, dict) and notebook_id:
+        arguments = {"notebook_id": notebook_id, **arguments}
     prefix = full.path.split("/api/")[0].split("/auth/")[0]
     outer = _original_request(
         self,
@@ -164,6 +170,16 @@ def _request(self: TestClient, method: str, url: Any, **kwargs: Any) -> Any:
     )
     download = isinstance(body, dict) and bool(body.get("download"))
     return _response(outer, name, outer.request, download)
+
+
+def _tab_notebook(client: TestClient, headers: dict[str, str]) -> str | None:
+    """The notebook of the session the tab header names, if it has one."""
+    if TAB_HEADER not in headers:
+        return None
+    state = AppStateBase.from_app(client.app)  # type: ignore[arg-type]
+    session = state.session_manager.get_session(SessionId(headers[TAB_HEADER]))
+    notebook = None if session is None else state.notebook_for_session(session)
+    return None if notebook is None else notebook.id
 
 
 def call_tool(

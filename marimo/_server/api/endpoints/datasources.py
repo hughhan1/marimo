@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("datasources_discover")
+@tool("datasources_discover", notebook="required")
 @requires("edit")
 async def discover_data_sources(
     *, request: Request, body: DiscoverDataSourcesRequest
@@ -33,7 +33,7 @@ async def discover_data_sources(
     return await dispatch_control_request(request, body)
 
 
-@tool("datasources_preview_column")
+@tool("datasources_preview_column", notebook="required")
 @requires("edit")
 async def preview_column(
     *, request: Request, body: PreviewDatasetColumnRequest
@@ -42,7 +42,7 @@ async def preview_column(
     return await dispatch_control_request(request, body)
 
 
-@tool("datasources_preview_sql_table")
+@tool("datasources_preview_sql_table", notebook="required")
 @requires("edit")
 async def preview_sql_table(
     *, request: Request, body: PreviewSQLTableRequest
@@ -51,7 +51,7 @@ async def preview_sql_table(
     return await dispatch_control_request(request, body)
 
 
-@tool("datasources_preview_sql_table_list")
+@tool("datasources_preview_sql_table_list", notebook="required")
 @requires("edit")
 async def preview_sql_table_list(
     *, request: Request, body: ListSQLTablesRequest
@@ -60,7 +60,7 @@ async def preview_sql_table_list(
     return await dispatch_control_request(request, body)
 
 
-@tool("datasources_preview_sql_schema_list")
+@tool("datasources_preview_sql_schema_list", notebook="required")
 @requires("edit")
 async def preview_sql_schema_list(
     *, request: Request, body: ListSQLSchemasRequest
@@ -69,7 +69,7 @@ async def preview_sql_schema_list(
     return await dispatch_control_request(request, body)
 
 
-@tool("datasources_preview_datasource_connection")
+@tool("datasources_preview_datasource_connection", notebook="required")
 @requires("edit")
 async def preview_datasource_connection(
     *, request: Request, body: ListDataSourceConnectionRequest

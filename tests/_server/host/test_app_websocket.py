@@ -11,6 +11,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from marimo._core import protocol
+from marimo._server.api.deps import TAB_HEADER
 from marimo._server.codes import WebSocketCodes
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
@@ -20,13 +21,16 @@ from marimo._types.ids import SessionId
 from tests._server.conftest import get_kernel_tasks
 from tests._server.host.drive import socket_snapshot
 from tests._server.host.test_editor_websocket import receive_notification
-from tests._server.mocks import get_session_manager
+from tests._server.mcp_client import call_tool
+from tests._server.mocks import get_session_manager, token_header
 from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from starlette.testclient import TestClient
+
+    from tests.mcp_request import Called
 
 
 @pytest.fixture
@@ -151,6 +155,39 @@ def test_app_visitors_are_isolated_and_reconnect_retains_identity(
             )
             == alice_id
         )
+
+
+def test_app_visitors_drive_only_their_own_app(
+    client: TestClient, app_host: SessionBridge
+) -> None:
+    del app_host
+    with (
+        connect_session(client, url("alice")) as alice,
+        connect_session(client, url("bob")) as bob,
+    ):
+        alice_id, bob_id = (
+            next(
+                e["data"]["notebook"]["id"]
+                for e in socket_snapshot(page)
+                if e["event"] == "notebook"
+            )
+            for page in (alice, bob)
+        )
+        receive_notification(alice, "kernel-ready")
+        receive_notification(bob, "kernel-ready")
+
+        def set_values(notebook_id: str) -> Called:
+            return call_tool(
+                client,
+                "kernel_set_ui_element_value",
+                headers={**token_header("fake-token"), TAB_HEADER: "alice"},
+                notebook_id=notebook_id,
+                objectIds=[],
+                values=[],
+            )
+
+        assert set_values(alice_id).ok
+        assert set_values(bob_id).problem["status"] == 403
 
 
 def test_app_host_keeps_authentication(
