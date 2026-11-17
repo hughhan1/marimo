@@ -210,9 +210,8 @@ def snapshot_for_scratchpad(
 ) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
     """Snapshot the notebook document and per-cell outputs for code_mode.
 
-    Returned for the code-mode `execute_code` tools
-    and passed on `ExecuteScratchpadCommand` so `cm.get_context()`
-    can expose cells and their last outputs.
+    Passed on `ExecuteScratchpadCommand` so `cm.get_context()` can expose
+    cells and their last outputs.
     """
     return scratchpad_snapshot(session.document, session.session_view)
 

@@ -414,7 +414,7 @@ class _OptionalValueOption(click.Option):
     cls=_OptionalValueOption,
     flag_value="tools",
     default=None,
-    type=click.Choice(["tools", "code-mode"]),
+    type=click.Choice(["tools"]),
     hidden=True,
     help="Enable MCP server endpoint.",
 )

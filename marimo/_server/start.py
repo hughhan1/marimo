@@ -371,11 +371,11 @@ def start(
     )
 
     if mcp_enabled and mcp is not None:
-        # setup_mcp_server returns the lifespan for the chosen mode;
+        # setup_mcp_server returns the MCP server's lifespan;
         # appending it to lifespans_list works because Lifespans stores
         # a reference to the list and iterates it at startup time.
         lifespans_list.append(
-            setup_mcp_server(app, mcp, allow_remote=mcp_allow_remote)
+            setup_mcp_server(app, allow_remote=mcp_allow_remote)
         )
 
     init_state = StarletteServerStateInit(
