@@ -1,14 +1,14 @@
 
 # Adding Backend and MCP Tools to marimo
 
-This guide explains how to create tools that are accessible via both the backend (chat panel) and MCP (Model Context Protocol) server endpoints.
+This guide explains how to create tools that are accessible via both the backend (chat panel) and the editor's MCP (Model Context Protocol) endpoint.
 
 ## Overview
 
 marimo provides a unified framework for creating tools that can be used by AI assistants to interact with notebooks. These tools are automatically registered in both:
 
 1. **Backend Tools**: Used by the marimo chat panel (ask/agent modes)
-2. **MCP Tools**: Exposed via the MCP server endpoint for external AI clients (like Claude Desktop)
+2. **MCP Tools**: Listed on the editor's MCP endpoint, `/api/mcp`, for external AI clients (like Claude Desktop)
 
 The unified architecture means you write a tool once and it works in both contexts.
 
@@ -328,7 +328,7 @@ SUPPORTED_BACKEND_AND_MCP_TOOLS: list[type[ToolBase[Any, Any]]] = [
 
 ### 8. Add Args and Output to msgspec tests
 
-Add your tool's Args and Output classes to the `TOOL_IO_CLASSES` list in `tests/_utils/test_msgspec_basestruct.py`. This ensures type compatibility between our serialization system and pydantic (used by the python mcp sdk).
+Add your tool's Args and Output classes to the `TOOL_IO_CLASSES` list in `tests/_utils/test_msgspec_basestruct.py`. This ensures type compatibility between our serialization system and pydantic (used by the chat's AI providers). The MCP endpoint describes and encodes them with msgspec, so they must be types msgspec supports.
 
 ---
 ```python
@@ -696,7 +696,7 @@ Before submitting your tool:
 - **Tool Context**: `marimo/_ai/_tools/base.py` (`ToolContext`)
 - **Exception Handling**: `marimo/_ai/_tools/utils/exceptions.py`
 - **Type Definitions**: `marimo/_ai/_tools/types.py`
-- **MCP Server Setup**: `marimo/_mcp/server/main.py`
+- **MCP Endpoint**: `marimo/_server/api/tools.py`
 - **Backend Tool Manager**: `marimo/_server/ai/tools/tool_manager.py`
 
 ## Questions?

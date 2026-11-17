@@ -101,10 +101,6 @@ class AppStateBase:
         return self.state.headless
 
     @property
-    def skew_protection(self) -> bool:
-        return self.state.skew_protection
-
-    @property
     def skew_protection_token(self) -> SkewProtectionToken:
         return self.session_manager.skew_protection_token
 
@@ -113,10 +109,6 @@ class AppStateBase:
         if hasattr(self.state, "remote_url"):
             return self.state.remote_url
         return None
-
-    @property
-    def mcp_server_enabled(self) -> bool:
-        return self.state.mcp_server_enabled
 
     @property
     def asset_url(self) -> str | None:

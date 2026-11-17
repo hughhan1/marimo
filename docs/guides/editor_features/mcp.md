@@ -5,49 +5,73 @@
 
 marimo supports the Model Context Protocol (MCP) in two ways: as an [MCP server](mcp.md#mcp-server) that exposes marimo's AI tools to external applications, and as an [MCP client](mcp.md#mcp-client) that connects [supported servers](mcp.md#supported-servers) to marimo's [chat panel](ai_completion.md#chat-panel).
 
-## Prerequisites
-
-Both MCP server and client features require the MCP dependencies. Run marimo with MCP support using one of the following methods:
-
-/// tab | uv
-```bash
-# run with uv in a project
-uv run --with="marimo[mcp]" marimo edit notebook.py --mcp --no-token
-```
-///
-
-/// tab | uvx
-```bash
-# run with uvx anywhere
-uvx "marimo[mcp]" edit notebook.py --mcp --no-token
-```
-///
-
-/// tab | pip
-```bash
-# install with pip and a venv
-pip install "marimo[mcp]"
-marimo edit notebook.py --mcp --no-token
-```
-///
-
-!!! note "Flags"
-    The `--mcp` flag exposes an endpoint that provides access to your notebook data via the MCP server endpoint. Remove `--mcp` if you only want MCP Client features. The `--no-token` flag removes authentication, which should only be used for local development. Remove `--no-token` in production environments.
-
 ## MCP Server
 
-marimo can expose its AI tools through an MCP server endpoint, allowing
-external AI applications to interact with your notebooks. If your goal is to
-have a coding agent manipulate a running notebook, see [marimo
+`marimo edit` serves its AI tools over MCP at `/api/mcp`, allowing external AI
+applications to interact with your notebooks. If your goal is to have a coding
+agent manipulate a running notebook, see [marimo
 pair](../generate_with_ai/marimo_pair.md) instead.
 
 <video autoplay loop muted playsinline width="100%" height="100%" align="center">
   <source src="/_static/docs-mcp-server.mp4" type="video/mp4">
 </video>
 
+### Connecting external applications
+
+Start marimo with an access token of your choosing, and give your client the
+same token as a bearer token:
+
+```bash
+marimo edit notebook.py --token-password YOUR_TOKEN
+```
+
+Replace `PORT` in the examples below with the port marimo prints at startup.
+
+!!! tip "Agents that edit notebook files"
+    Add `--watch` so the editor reloads a notebook when an agent edits its
+    file.
+
+#### Claude Code
+
+```bash
+claude mcp add --transport http marimo http://localhost:PORT/api/mcp --header "Authorization: Bearer YOUR_TOKEN"
+```
+
+#### Cursor
+
+```json
+{
+  "mcpServers": {
+    "marimo": {
+      "url": "http://localhost:PORT/api/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
+
+#### VS Code
+
+Create a `.vscode/mcp.json` file in your workspace:
+
+```json
+{
+  "servers": {
+    "marimo": {
+      "type": "http",
+      "url": "http://localhost:PORT/api/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
+
 ### Available tools
 
-When connected to marimo's MCP server, external applications can access the following categories of tools.
+The following tools are listed for models. A `marimo run` server refuses
+them, since they read a notebook's code and data. The endpoint also lists the
+tools marimo's own page calls; those are marked `_meta.ui.visibility: ["app"]`,
+for apps rather than models.
 
 #### Inspection
 
@@ -79,70 +103,36 @@ When connected to marimo's MCP server, external applications can access the foll
 |------|-------------|
 | **get_marimo_rules** | Returns marimo's rules and best practices for AI assistants. |
 
-### Available prompts
-
-When connected to marimo's MCP server, external applications can access the following prompts:
-
-| Prompt | Description |
-|--------|-------------|
-| **active_notebooks** | Get current active notebooks and their session IDs and file paths. Returns session IDs and file paths for all active marimo notebook sessions, along with guidance on using these IDs with marimo MCP tools. |
-| **errors_summary** | Get error summaries for all active notebooks. Returns a summary of all errors across active notebooks organized by notebook and cell, including error types, messages, and affected cell IDs. |
-
-### Connecting external applications
-
-marimo's MCP server works with any MCP-compatible application. Below are setup instructions for some commonly used applications:
-
-!!! tip "Connection details"
-    Replace `PORT` with your marimo server port in the examples below. If authentication is enabled, append `?access_token=YOUR_TOKEN` to the URL and replace `YOUR_TOKEN` with your marimo access token.
-
-#### Claude Code
-
-Use Claude Code's CLI to connect to marimo:
-
-```bash
-claude mcp add --transport http marimo http://localhost:PORT/mcp/server
-```
-
-#### Cursor
-
-Configure Cursor to connect to marimo's MCP server:
-
-```json
-{
-  "mcpServers": {
-    "marimo": {
-      "url": "http://localhost:PORT/mcp/server"
-    }
-  }
-}
-```
-
-#### VS Code
-
-Create a .vscode/mcp.json file in your workspace and configure it to connect to marimo's MCP server:
-
-```json
-{
-  "servers": {
-    "marimo": {
-      "type": "http",
-      "url": "http://localhost:PORT/mcp/server"
-    }
-  }
-}
-```
-
-### DNS rebinding protection
-
-marimo's MCP server enables DNS rebinding protection by default, which validates the `Host` header on incoming requests. This is common when using proxies, gateways (e.g., ECS), CDNs (Cloudflare), or custom domains, where the forwarded `Host` header won't match the expected local host, causing `421 Misdirected Request` or `Invalid Host Header` errors. Pass `--mcp-allow-remote` to disable this check:
-
-```bash
-marimo edit notebook.py --mcp --mcp-allow-remote
-```
-
 ## MCP Client
 
 marimo can connect to external MCP servers to add additional tools and context to the [chat panel](ai_completion.md#chat-panel).
+
+### Prerequisites
+
+The MCP client requires marimo's MCP dependencies. Run marimo with them using
+one of the following methods:
+
+/// tab | uv
+```bash
+# run with uv in a project
+uv run --with="marimo[mcp]" marimo edit notebook.py
+```
+///
+
+/// tab | uvx
+```bash
+# run with uvx anywhere
+uvx "marimo[mcp]" edit notebook.py
+```
+///
+
+/// tab | pip
+```bash
+# install with pip and a venv
+pip install "marimo[mcp]"
+marimo edit notebook.py
+```
+///
 
 ### Supported servers
 

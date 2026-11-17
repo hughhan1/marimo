@@ -14,7 +14,6 @@ from marimo._config.config import PartialMarimoConfig
 from marimo._config.manager import get_default_config_manager
 from marimo._config.settings import GLOBAL_SETTINGS
 from marimo._environments.sandbox import Backend
-from marimo._mcp.setup import McpType, setup_mcp_server
 from marimo._messaging.notification import StartupLogsNotification
 from marimo._runtime.commands import SerializedCLIArgs
 from marimo._runtime.parent_poller import start_parent_poller
@@ -206,8 +205,6 @@ def start(
     redirect_console_to_browser: bool,
     skew_protection: bool,
     remote_url: str | None = None,
-    mcp: McpType | None = None,
-    mcp_allow_remote: bool = False,
     server_startup_command: str | None = None,
     asset_url: str | None = None,
     timeout: float | None = None,
@@ -234,16 +231,6 @@ def start(
             LOGGER.warning(
                 "Ignoring invalid MARIMO_ANCESTOR_PID=%r", ancestor_pid_env
             )
-
-    # Defaults when mcp is enabled
-    if mcp:
-        # Turn on watch mode
-        watch = True
-        # Turn off skew protection for MCP server
-        # since it is more convenient to connect to.
-        # Skew protection is not a security thing, but rather
-        # prevents connecting to old servers.
-        skew_protection = False
 
     # Find a free port if none is specified
     # if the user specifies a port, we don't try to find a free one
@@ -336,22 +323,6 @@ def start(
 
     log_level = "info" if development_mode else "error"
 
-    lifespans_list = [
-        lifespans.signal_handler,
-        lifespans.lsp,
-        lifespans.mcp,
-        lifespans.etc,
-        lifespans.logging,
-        lifespans.open_browser,
-        lifespans.tool_manager,
-        lifespans.server_registry,
-        lifespans.reap_subprocesses,
-        host_lifespan,
-        *LIFESPAN_REGISTRY.get_all(),
-    ]
-
-    mcp_enabled = mcp is not None and mode == SessionMode.EDIT
-
     (external_port, external_host) = _resolve_proxy(port, host, proxy)
     enable_auth = not AuthToken.is_empty(session_manager.auth_token)
     from marimo._server.main import create_starlette_app
@@ -360,7 +331,21 @@ def start(
         server_config=config_reader.get_config(hide_secrets=False).server,
         base_url=base_url,
         host=external_host,
-        lifespan=Lifespans(lifespans_list),
+        lifespan=Lifespans(
+            [
+                lifespans.signal_handler,
+                lifespans.lsp,
+                lifespans.mcp,
+                lifespans.etc,
+                lifespans.logging,
+                lifespans.open_browser,
+                lifespans.tool_manager,
+                lifespans.server_registry,
+                lifespans.reap_subprocesses,
+                host_lifespan,
+                *LIFESPAN_REGISTRY.get_all(),
+            ]
+        ),
         allow_origins=allow_origins,
         enable_auth=enable_auth,
         lsp_servers=list(lsp_composite_server.servers.values())
@@ -369,14 +354,6 @@ def start(
         skew_protection=skew_protection,
         timeout=timeout,
     )
-
-    if mcp_enabled and mcp is not None:
-        # setup_mcp_server returns the MCP server's lifespan;
-        # appending it to lifespans_list works because Lifespans stores
-        # a reference to the list and iterates it at startup time.
-        lifespans_list.append(
-            setup_mcp_server(app, allow_remote=mcp_allow_remote)
-        )
 
     init_state = StarletteServerStateInit(
         port=external_port,
@@ -388,8 +365,6 @@ def start(
         session_manager=session_manager,
         config_manager=config_reader,
         remote_url=remote_url,
-        mcp_server_enabled=mcp_enabled,
-        skew_protection=skew_protection,
         enable_auth=enable_auth,
         startup_tip=startup_tip,
     )

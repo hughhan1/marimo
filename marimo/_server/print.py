@@ -209,26 +209,6 @@ def print_experimental_features(config: MarimoConfig) -> None:
     )
 
 
-def print_mcp_server(mcp_url: str, server_token: str | None) -> None:
-    """Print MCP server configuration when MCP is enabled."""
-    print_()
-    print_tabbed(
-        f"{_utf8('🔗')} {green('Experimental MCP server configuration', bold=True)}"
-    )
-    print_tabbed(
-        f"{_utf8('➜')}  {green('MCP server URL')}: {_colorized_url(mcp_url)}"
-    )
-    # Add to Claude code
-    print_tabbed(
-        f"{_utf8('➜')}  {green('Add to Claude Code')}: claude mcp add --transport http marimo {mcp_url}"
-    )
-    if server_token is not None:
-        print_tabbed(
-            f"{_utf8('➜')}  {green('Add header')}: Marimo-Server-Token: {muted(server_token)}"
-        )
-    print_()
-
-
 def print_mcp_client(config: MCPConfig) -> None:
     keys = set(config.mcpServers.keys()) | set(config.presets)
     if len(keys) == 0:

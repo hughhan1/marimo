@@ -44,7 +44,6 @@ from marimo._cli.utils import (
 from marimo._config.manager import get_default_config_manager
 from marimo._config.settings import GLOBAL_SETTINGS
 from marimo._lint import run_check
-from marimo._mcp.setup import McpType
 from marimo._server.files.directory_scanner import DirectoryScanner
 from marimo._server.models.home import MarimoFile
 from marimo._server.start import start
@@ -273,24 +272,6 @@ edit_help_msg = "\n".join(
 )
 
 
-class _OptionalValueOption(click.Option):
-    """A click Option that supports an optional value.
-
-    Works around a regression in click 8.3.x where the documented
-    `is_flag=False, flag_value=...` pattern is broken.
-    See: https://github.com/pallets/click/issues/3084
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        opt_flag_value = kwargs.pop("flag_value", None)
-        kwargs.setdefault("default", None)
-        kwargs["is_flag"] = False
-        super().__init__(*args, **kwargs)
-        self._flag_needs_value = True
-        if opt_flag_value is not None:
-            self.flag_value = opt_flag_value
-
-
 @main.command(cls=SandboxCommand, help=edit_help_msg)
 @click.option(
     "-p",
@@ -410,23 +391,6 @@ class _OptionalValueOption(click.Option):
     help="When opening a .py file, enable fallback conversion from pypercent, script, or text.",
 )
 @click.option(
-    "--mcp",
-    cls=_OptionalValueOption,
-    flag_value="tools",
-    default=None,
-    type=click.Choice(["tools"]),
-    hidden=True,
-    help="Enable MCP server endpoint.",
-)
-@click.option(
-    "--mcp-allow-remote",
-    is_flag=True,
-    default=False,
-    type=bool,
-    hidden=True,
-    help="Allow remote access to MCP server by disabling DNS rebinding protection.",
-)
-@click.option(
     "--server-startup-command",
     default=None,
     type=str,
@@ -478,8 +442,6 @@ def edit(
     skew_protection: bool,
     remote_url: str | None,
     convert: bool,
-    mcp: McpType | None,
-    mcp_allow_remote: bool,
     server_startup_command: str | None,
     asset_url: str | None,
     timeout: float | None,
@@ -632,8 +594,6 @@ def edit(
         redirect_console_to_browser=True,
         ttl_seconds=session_ttl,
         remote_url=remote_url,
-        mcp=mcp,
-        mcp_allow_remote=mcp_allow_remote,
         server_startup_command=server_startup_command,
         asset_url=asset_url,
         timeout=timeout,

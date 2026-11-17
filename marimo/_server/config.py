@@ -29,8 +29,6 @@ class StarletteServerStateInit:
     session_manager: SessionManager
     config_manager: MarimoConfigManager
     remote_url: str | None
-    mcp_server_enabled: bool
-    skew_protection: bool
     enable_auth: bool
     startup_tip: CliTip | None = None
 

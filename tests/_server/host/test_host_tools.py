@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from marimo._core.calls import HANDLERS
 from marimo._core.protocol_tools import TOOLS
-from marimo._server.api.tools import TOOLS as EDITOR_TOOLS
+from marimo._server.api.tools import TOOLS as EDITOR_TOOLS, assistant_tools
 from marimo._server.host.api import CATALOG
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
@@ -73,4 +73,7 @@ def test_the_editor_lists_the_notebook_tools_beside_its_own(
     )
     names = listed(response.json())
     assert names & TOOLS.keys() == HANDLERS.keys()
-    assert names - HANDLERS.keys() <= EDITOR_TOOLS.keys()
+    assert (
+        names - HANDLERS.keys()
+        <= EDITOR_TOOLS.keys() | assistant_tools().keys()
+    )

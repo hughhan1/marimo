@@ -19,7 +19,6 @@ from marimo._server.lsp import any_lsp_server_running
 from marimo._server.print import (
     print_experimental_features,
     print_mcp_client,
-    print_mcp_server,
     print_shutdown,
     print_startup,
 )
@@ -187,8 +186,6 @@ async def logging(app: Starlette) -> AsyncIterator[None]:
     manager: SessionManager = state.session_manager
     quiet = state.quiet
     workspace = manager.workspace
-    mcp_server_enabled = state.mcp_server_enabled
-    skew_protection_enabled = state.skew_protection
 
     # Startup message
     if not quiet:
@@ -203,13 +200,6 @@ async def logging(app: Starlette) -> AsyncIterator[None]:
         )
 
         print_experimental_features(state.config_manager.get_config())
-
-        if mcp_server_enabled:
-            mcp_url = _mcp_startup_url(state)
-            server_token = None
-            if skew_protection_enabled:
-                server_token = str(state.session_manager.skew_protection_token)
-            print_mcp_server(mcp_url, server_token)
 
     try:
         yield
@@ -318,27 +308,6 @@ def _startup_url(state: AppStateBase) -> str:
     elif port == 443:
         url = f"https://{url_host}{state.base_url}"
 
-    if AuthToken.is_empty(state.session_manager.auth_token):
-        return url
-    return f"{url}?access_token={state.session_manager.auth_token!s}"
-
-
-def _mcp_startup_url(state: AppStateBase) -> str:
-    url_host = format_url_host(state.host, state.port)
-    port = state.port
-    base_url = state.base_url
-
-    # Construct MCP endpoint URL
-    mcp_prefix = "/mcp"
-    mcp_name = "server"
-    full_mcp_path = f"{mcp_prefix}/{mcp_name}"
-    url = f"http://{url_host}:{port}{base_url}{full_mcp_path}"
-    if port == 80:
-        url = f"http://{url_host}{base_url}{full_mcp_path}"
-    elif port == 443:
-        url = f"https://{url_host}{base_url}{full_mcp_path}"
-
-    # Add access token if not empty
     if AuthToken.is_empty(state.session_manager.auth_token):
         return url
     return f"{url}?access_token={state.session_manager.auth_token!s}"

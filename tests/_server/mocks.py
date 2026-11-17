@@ -108,8 +108,6 @@ def get_starlette_server_state_init(
         session_manager=session_manager or get_mock_session_manager(),
         config_manager=MarimoConfigManager(UserConfigStore()),
         remote_url=None,
-        mcp_server_enabled=False,
-        skew_protection=False,
         enable_auth=True,
     )
 
