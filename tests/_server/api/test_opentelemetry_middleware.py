@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
@@ -353,10 +352,10 @@ class TestOpenTelemetryMiddleware:
 
 @pytest.mark.requires("opentelemetry")
 class TestTracePropagationThroughRealApp:
-    """Integration tests using create_starlette_app + setup_mcp_server.
+    """Integration tests using create_starlette_app.
 
     These verify that OpenTelemetryMiddleware actually intercepts
-    requests to MCP endpoints in the real application middleware stack,
+    requests to the MCP endpoint in the real application middleware stack,
     not a hand-built analogue that could drift from production.
     """
 
@@ -367,7 +366,7 @@ class TestTracePropagationThroughRealApp:
         _reset_otel()
 
     def _create_real_app(self) -> Starlette:
-        """Build the real Starlette app and mount MCP, just like start.py."""
+        """Build the real Starlette app, just like start.py."""
         from marimo._server.main import create_starlette_app
         from tests._server.mocks import get_mock_session_manager
 
@@ -380,17 +379,9 @@ class TestTracePropagationThroughRealApp:
         session_manager = get_mock_session_manager()
         app.state.session_manager = session_manager
 
-        if "mcp" in sys.modules or _has_mcp():
-            from marimo._mcp.setup import setup_mcp_server
-
-            setup_mcp_server(app)
-
         return app
 
     def test_mcp_request_produces_span_with_traceparent(self) -> None:
-        if not _has_mcp():
-            pytest.skip("mcp package not installed")
-
         from opentelemetry.trace import TraceFlags
 
         tracer, exporter = _setup_tracing()
@@ -408,14 +399,14 @@ class TestTracePropagationThroughRealApp:
         ):
             app = self._create_real_app()
             client = TestClient(app, raise_server_exceptions=False)
-            client.get(
-                "/mcp/server",
+            client.post(
+                "/api/mcp",
                 headers={"traceparent": traceparent},
             )
 
         mcp_spans = [s for s in exporter.spans if "/mcp" in (s.name or "")]
         assert len(mcp_spans) >= 1, (
-            f"Expected a span for /mcp/server, got: {[s.name for s in exporter.spans]}"
+            f"Expected a span for /api/mcp, got: {[s.name for s in exporter.spans]}"
         )
 
         span = mcp_spans[0]
@@ -425,9 +416,6 @@ class TestTracePropagationThroughRealApp:
         assert span.parent.trace_flags == TraceFlags(1)
 
     def test_mcp_request_root_span_without_traceparent(self) -> None:
-        if not _has_mcp():
-            pytest.skip("mcp package not installed")
-
         tracer, exporter = _setup_tracing()
 
         with (
@@ -439,19 +427,10 @@ class TestTracePropagationThroughRealApp:
         ):
             app = self._create_real_app()
             client = TestClient(app, raise_server_exceptions=False)
-            client.get("/mcp/server")
+            client.post("/api/mcp")
 
         mcp_spans = [s for s in exporter.spans if "/mcp" in (s.name or "")]
         assert len(mcp_spans) >= 1, (
-            f"Expected a span for /mcp/server, got: {[s.name for s in exporter.spans]}"
+            f"Expected a span for /api/mcp, got: {[s.name for s in exporter.spans]}"
         )
         assert mcp_spans[0].parent is None
-
-
-def _has_mcp() -> bool:
-    try:
-        import mcp  # noqa: F401
-
-        return True
-    except ImportError:
-        return False

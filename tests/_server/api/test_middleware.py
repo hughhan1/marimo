@@ -55,7 +55,6 @@ def init_state(
     *,
     session_manager: SessionManager,
     enable_auth: bool = True,
-    skew_protection: bool = False,
     base_url: str = "",
 ) -> StarletteServerStateInit:
     return StarletteServerStateInit(
@@ -68,8 +67,6 @@ def init_state(
         session_manager=session_manager,
         config_manager=MarimoConfigManager(UserConfigStore()),
         remote_url=None,
-        mcp_server_enabled=False,
-        skew_protection=skew_protection,
         enable_auth=enable_auth,
     )
 
@@ -158,22 +155,6 @@ def test_skew_protection_admits_a_caller_without_a_token(
     assert response.status_code == 200, response.text
 
 
-def test_skew_protection_still_guards_marimos_own_mcp_server(
-    edit_app: Starlette,
-) -> None:
-    """Only the tool endpoints admit a caller without a token.
-
-    marimo's own MCP server is not one of them, so the startup banner
-    prints the token for an agent to send.
-    """
-    client = TestClient(edit_app)
-    headers = token_header("fake-token")
-    del headers["Marimo-Server-Token"]
-    response = client.post("/mcp/server", headers=headers, json={})
-    assert response.status_code == 401, response.text
-    assert response.json() == {"error": "Missing server token"}
-
-
 def test_skew_protection_enforced_for_form_content_type(
     edit_app: Starlette,
 ) -> None:
@@ -220,7 +201,6 @@ def test_skew_protection_disabled() -> None:
     app = create_starlette_app(base_url="", skew_protection=False)
     init_state(
         session_manager=get_mock_session_manager(mode=SessionMode.EDIT),
-        skew_protection=False,
     ).apply(app.state)
     # Mock out the server
     with_server(app)
@@ -485,7 +465,6 @@ class TestProxyMiddleware:
         with_server(app)
         init_state(
             session_manager=get_mock_session_manager(mode=SessionMode.EDIT),
-            skew_protection=False,
         ).apply(app.state)
         return app
 
@@ -527,7 +506,6 @@ class TestProxyMiddleware:
         with_server(app)
         init_state(
             session_manager=get_mock_session_manager(mode=SessionMode.EDIT),
-            skew_protection=False,
         ).apply(app.state)
         return app
 
@@ -899,7 +877,6 @@ class TestLspProxyAuth:
         with_server(app)
         init_state(
             session_manager=get_mock_session_manager(mode=SessionMode.EDIT),
-            skew_protection=False,
         ).apply(app.state)
         return app
 
@@ -1001,7 +978,6 @@ class TestLspProxyAuth:
                 session_manager=get_mock_session_manager(
                     mode=SessionMode.EDIT
                 ),
-                skew_protection=False,
                 base_url="/notebook",
             ).apply(app.state)
 

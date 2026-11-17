@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -45,8 +45,6 @@ ArgsT = TypeVar("ArgsT")
 OutT = TypeVar("OutT")
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
     from starlette.applications import Starlette
 
     from marimo._server.session_manager import SessionManager
@@ -357,47 +355,6 @@ class ToolBase(ABC, Generic[ArgsT, OutT]):
     def handle(self, args: ArgsT) -> OutT:
         """Actual tool function."""
         ...
-
-    # adapters
-    def as_mcp_tool_fn(self) -> Callable[[ArgsT], Awaitable[OutT]]:
-        """Return a typed, annotated callable suitable for MCP registration."""
-        Args = self.Args
-        Output = self.Output
-
-        async def handler(args: ArgsT) -> OutT:  # type: ignore[type-var]
-            result = await self.__call__(args)
-            # Ensure JSON-serializable output for MCP
-            if is_dataclass(result):
-                # Some MCP clients expect dicts only
-                return cast(OutT, asdict(result))  # type: ignore[arg-type]
-            return result
-
-        # name/doc metadata (guard for None types)
-        handler_any = cast(Any, handler)
-        handler_any.__name__ = self.name or handler_any.__name__
-        handler_any.__doc__ = self.description or handler_any.__doc__
-
-        # help static consumers and schema tools
-        handler_any.__annotations__ = {"args": Args, "return": Output}
-
-        # Advertise intended signature for mypy/tests
-        # Keep in try/except to avoid breaking tool registration
-        try:
-            handler_any.__signature__ = inspect.Signature(
-                parameters=[
-                    inspect.Parameter(
-                        "args",
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        annotation=Args,
-                    )
-                ],
-                return_annotation=Output,
-            )
-        except Exception:
-            # Best-effort only; safe to skip if inspect behavior changes
-            pass
-
-        return handler
 
     def as_backend_tool(
         self, mode: list[CopilotMode]

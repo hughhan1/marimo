@@ -7,7 +7,7 @@ top-level modules. When two files share a basename, the second import
 clobbers the first and pytest fails collection with an error like:
 
     imported module 'test_exceptions' has this __file__ attribute:
-      .../tests/_mcp/server/test_exceptions.py
+      .../tests/_server/test_exceptions.py
     which is not the same as the test file we want to collect:
       .../tests/_runtime/test_exceptions.py
 

@@ -113,8 +113,6 @@ def app() -> Starlette:
         session_manager=get_mock_session_manager(),
         config_manager=MarimoConfigManager(UserConfigStore()),
         remote_url=None,
-        mcp_server_enabled=False,
-        skew_protection=False,
         enable_auth=True,
     ).apply(app.state)
     return app

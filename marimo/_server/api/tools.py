@@ -8,7 +8,8 @@ and `server/discover`. The arguments are decoded into the request's type by
 msgspec, which refuses what the type does not declare. Files travel by the
 MCP files extension: uploads and replies that are files go to and from
 `/api/mcp/files`, outside the tool calls. The host protocol's notebook tools
-are served here too, and this module also builds the host API's server.
+and the assistant's tools are served here too, and this module also builds
+the host API's server.
 """
 
 from __future__ import annotations
@@ -35,6 +36,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from marimo import __version__
+from marimo._ai._tools.base import ToolBase, ToolContext
+from marimo._ai._tools.tools_registry import SUPPORTED_BACKEND_AND_MCP_TOOLS
+from marimo._ai._tools.utils.exceptions import ToolExecutionError
 from marimo._core import protocol
 from marimo._core.operations import (
     PlainKind,
@@ -49,6 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
 
     from mcp.server.context import ServerRequestContext
+    from starlette.applications import Starlette
     from starlette.types import Receive, Scope, Send
 
 APP_ONLY = {"ui": {"visibility": ["app"]}}
@@ -188,20 +193,23 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Tool definitions, as `tools/list` answers them.
 
     Each tool has a `description`, an optional `title`, and its arguments'
-    and result's types as `input` and `output`, or as `arguments` and
-    `result`, as the host protocol's tools name them.
+    and result's types as `input` and `output`, as `arguments` and
+    `result`, as the host protocol's tools name them, or as `Args` and
+    `Output`, as the assistant's tools do.
     """
 
-    def kinds(found: Any) -> tuple[Any, Any]:
+    def parts(found: Any) -> tuple[Any, Any, str | None]:
         if isinstance(found, Tool):
-            return found.input, found.output
-        return found.arguments, found.result
+            return found.input, found.output, found.title
+        if isinstance(found, ToolBase):
+            return found.Args, found.Output, None
+        return found.arguments, found.result, found.title
 
     types_ = list(
         dict.fromkeys(
             kind
             for found in tools.values()
-            for kind in kinds(found)
+            for kind in parts(found)[:2]
             if kind not in (None, FileResult)
         )
     )
@@ -211,7 +219,7 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
     schema_of = dict(zip(types_, schemas_, strict=True))
     definitions: list[dict[str, Any]] = []
     for name, found in sorted(tools.items()):
-        given, reply = kinds(found)
+        given, reply, title = parts(found)
         if given is None:
             arguments: dict[str, Any] = {"type": "object", "properties": {}}
         else:
@@ -220,7 +228,7 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
             arguments.pop("description", None)
         definition: dict[str, Any] = {
             "name": name,
-            **({"title": found.title} if found.title else {}),
+            **({"title": title} if title else {}),
             "description": found.description,
             "inputSchema": {
                 **arguments,
@@ -244,16 +252,30 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
     return definitions
 
 
+def assistant_tools(
+    app: Starlette | None = None,
+) -> dict[str, ToolBase[Any, Any]]:
+    """The tools the editor's assistant calls, which models may call here."""
+    context = ToolContext(app=app)
+    tools = (kind(context) for kind in SUPPORTED_BACKEND_AND_MCP_TOOLS)
+    return {tool.name: tool for tool in tools}
+
+
 @cache
 def contract() -> list[dict[str, Any]]:
-    """The editor's tool definitions: its own and the host's notebook tools."""
+    """The editor's tool definitions.
+
+    Its own and the host's notebook tools are for its page, and the
+    assistant's are for models too.
+    """
     from marimo._server.host.tools import definitions
 
+    for_page = [*schemas(TOOLS), *definitions(catalog=False)]
     return sorted(
-        (
-            {**definition, "_meta": APP_ONLY}
-            for definition in [*schemas(TOOLS), *definitions(catalog=False)]
-        ),
+        [
+            *({**definition, "_meta": APP_ONLY} for definition in for_page),
+            *schemas(assistant_tools()),
+        ],
         key=lambda definition: definition["name"],
     )
 
@@ -298,13 +320,20 @@ async def _call(
     if found is None:
         from marimo._server.host.tools import editor_call, notebook_tools
 
-        if params.name not in notebook_tools():
+        if params.name in notebook_tools():
+            return tool_result(
+                params.name,
+                await editor_call(
+                    request, params.name, params.arguments or {}
+                ),
+            )
+        assistant = assistant_tools(request.app).get(params.name)
+        if assistant is None:
             raise MCPError(
                 code=INVALID_PARAMS, message=f"Unknown tool {params.name}"
             )
-        return tool_result(
-            params.name,
-            await editor_call(request, params.name, params.arguments or {}),
+        return await _assistant_call(
+            request, assistant, params.arguments or {}
         )
     try:
         result = found.handler(
@@ -344,6 +373,39 @@ def tool_result(name: str, reply: object) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=f"{name}: ok")],
         structured_content={} if reply is None else msgspec.to_builtins(reply),
+    )
+
+
+async def _assistant_call(
+    request: Request, tool: ToolBase[Any, Any], arguments: dict[str, Any]
+) -> types.CallToolResult:
+    if "edit" not in request.auth.scopes:
+        return tool_result(
+            tool.name,
+            make_problem(
+                "forbidden", "Only an editor may call the assistant's tools"
+            ),
+        )
+    try:
+        reply = msgspec.to_builtins(await tool(arguments))
+    except ToolExecutionError as error:
+        return types.CallToolResult(
+            is_error=True,
+            content=[
+                types.TextContent(
+                    type="text",
+                    text=f"Error executing tool {tool.name}: {error}",
+                )
+            ],
+        )
+    return types.CallToolResult(
+        content=[
+            types.TextContent(
+                type="text",
+                text=json.dumps(reply, indent=2, ensure_ascii=False),
+            )
+        ],
+        structured_content=reply,
     )
 
 

@@ -136,8 +136,6 @@ def client(user_config_manager: UserConfigStore) -> Iterator[TestClient]:
         session_manager=get_mock_session_manager(),
         config_manager=MarimoConfigManager(user_config_manager),
         remote_url=None,
-        mcp_server_enabled=False,
-        skew_protection=False,
         enable_auth=True,
     ).apply(app.state)
 

@@ -12,7 +12,11 @@ from sse_starlette.sse import AppStatus
 
 from marimo._server.api.tools import contract
 from marimo._session.model import SessionMode
-from tests._server.mocks import get_session_manager, token_header
+from tests._server.mocks import (
+    get_session_manager,
+    token_header,
+    with_session,
+)
 from tests.mcp_request import (
     request_headers,
     request_meta,
@@ -26,6 +30,19 @@ if TYPE_CHECKING:
 HEADERS = {"Marimo-Session-Id": "123", **token_header("fake-token")}
 ROOT = Path(__file__).parents[3]
 PROBLEM_KIND = "urn:marimo:problem:"
+SESSION_ID = "session-123"
+ASSISTANT_TOOLS = {
+    "get_active_notebooks",
+    "get_cell_dependency_graph",
+    "get_cell_outputs",
+    "get_cell_runtime_data",
+    "get_database_tables",
+    "get_lightweight_cell_map",
+    "get_marimo_rules",
+    "get_notebook_errors",
+    "get_tables_and_variables",
+    "lint_notebook",
+}
 
 
 def _rpc(
@@ -83,13 +100,24 @@ def test_discover_names_the_protocol_and_server(client: TestClient) -> None:
     )
 
 
-def test_tools_are_for_apps_not_models(client: TestClient) -> None:
+def test_the_assistants_tools_are_for_models_and_the_rest_for_apps(
+    client: TestClient,
+) -> None:
     tools = _rpc(client, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[
         "result"
     ]["tools"]
-    assert {tool["_meta"]["ui"]["visibility"][0] for tool in tools} == {"app"}
+    for_models = [tool for tool in tools if tool["name"] in ASSISTANT_TOOLS]
+    for_apps = [tool for tool in tools if tool["name"] not in ASSISTANT_TOOLS]
+    assert {tool["name"] for tool in for_models} == ASSISTANT_TOOLS
+    assert all("_meta" not in tool for tool in for_models)
+    assert {tool["_meta"]["ui"]["visibility"][0] for tool in for_apps} == {
+        "app"
+    }
     assert all(tool["description"] for tool in tools)
     by_name = {tool["name"]: tool for tool in tools}
+    assert by_name["get_cell_outputs"]["inputSchema"]["required"] == [
+        "session_id"
+    ]
     # A tool's arguments are its request's fields, under their wire names,
     # and nothing else.
     arguments = by_name["kernel_set_ui_element_value"]["inputSchema"]
@@ -420,11 +448,64 @@ def test_tool_call_needs_a_credential(client: TestClient) -> None:
     assert problem["type"] == PROBLEM_KIND + "unauthorized"
 
 
-def test_read_only_caller_cannot_call_an_edit_tool(client: TestClient) -> None:
+@pytest.mark.parametrize(
+    ("name", "arguments", "status", "kind"),
+    [
+        (
+            "kernel_format",
+            {"codes": {}, "lineLength": 80},
+            401,
+            "unauthorized",
+        ),
+        ("get_active_notebooks", {}, 403, "forbidden"),
+    ],
+)
+def test_read_only_caller_cannot_call_an_edit_tool(
+    client: TestClient,
+    name: str,
+    arguments: dict[str, Any],
+    status: int,
+    kind: str,
+) -> None:
     get_session_manager(client).mode = SessionMode.RUN
-    result = _call(client, "kernel_format", {"codes": {}, "lineLength": 80})
-    assert result["isError"] is True
-    problem = tool_problem(result)
+    problem = tool_problem(_call(client, name, arguments))
     assert problem is not None
-    assert problem["status"] == 401
-    assert problem["type"] == PROBLEM_KIND + "unauthorized"
+    assert problem["status"] == status
+    assert problem["type"] == PROBLEM_KIND + kind
+
+
+@with_session(SESSION_ID)
+def test_an_assistant_tool_answers_with_its_result_as_text_too(
+    client: TestClient,
+) -> None:
+    result = _call(client, "get_active_notebooks")
+    assert result["isError"] is False
+    notebooks = result["structuredContent"]
+    assert json.loads(result["content"][0]["text"]) == notebooks
+    (notebook,) = notebooks["data"]["notebooks"]
+    assert notebook["session_id"] == SESSION_ID
+
+    cells = _call(
+        client, "get_lightweight_cell_map", {"session_id": SESSION_ID}
+    )["structuredContent"]
+    assert cells["session_id"] == SESSION_ID
+    assert cells["total_cells"] == 1
+
+
+@pytest.mark.parametrize(
+    ("arguments", "code"),
+    [
+        ({"session_id": "nope"}, "SESSION_NOT_FOUND"),
+        ({"preview_lines": 1}, "BAD_ARGUMENTS"),
+    ],
+)
+def test_an_assistant_tool_failure_says_what_went_wrong(
+    client: TestClient, arguments: dict[str, Any], code: str
+) -> None:
+    result = _call(client, "get_lightweight_cell_map", arguments)
+    assert result["isError"] is True
+    assert "structuredContent" not in result
+    prefix = "Error executing tool get_lightweight_cell_map: "
+    text = result["content"][0]["text"]
+    assert text.startswith(prefix)
+    assert json.loads(text.removeprefix(prefix))["code"] == code

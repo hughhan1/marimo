@@ -2707,6 +2707,1793 @@
         }
       },
       {
+        "name": "get_active_notebooks",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetActiveNotebooksOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "data": {
+              "$ref": "#/$defs/GetActiveNotebooksData"
+            }
+          },
+          "required": [],
+          "$defs": {
+            "GetActiveNotebooksData": {
+              "title": "GetActiveNotebooksData",
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/SummaryInfo"
+                },
+                "notebooks": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MarimoNotebookInfo"
+                  }
+                }
+              },
+              "required": [
+                "summary",
+                "notebooks"
+              ]
+            },
+            "SummaryInfo": {
+              "title": "SummaryInfo",
+              "type": "object",
+              "properties": {
+                "total_notebooks": {
+                  "type": "integer"
+                },
+                "active_connections": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "total_notebooks",
+                "active_connections"
+              ]
+            },
+            "MarimoNotebookInfo": {
+              "title": "MarimoNotebookInfo",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "session_id"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_cell_dependency_graph",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "cell_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "depth": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetCellDependencyGraphOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "cells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CellDependencyInfo"
+              }
+            },
+            "variable_owners": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "multiply_defined": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cycles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CycleInfo"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "CellDependencyInfo": {
+              "title": "CellDependencyInfo",
+              "type": "object",
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "cell_name": {
+                  "type": "string"
+                },
+                "defs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/VariableInfo"
+                  }
+                },
+                "refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "parent_cell_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "child_cell_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "cell_id",
+                "cell_name",
+                "defs",
+                "refs",
+                "parent_cell_ids",
+                "child_cell_ids"
+              ]
+            },
+            "VariableInfo": {
+              "title": "VariableInfo",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "datatype": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "kind"
+              ]
+            },
+            "CycleInfo": {
+              "title": "CycleInfo",
+              "type": "object",
+              "properties": {
+                "cell_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "edges": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "cell_ids",
+                "edges"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_cell_outputs",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "cell_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetCellOutputOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "cells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CellOutputData"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "CellOutputData": {
+              "title": "CellOutputData",
+              "type": "object",
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "visual_output": {
+                  "$ref": "#/$defs/CellVisualOutput"
+                },
+                "console_outputs": {
+                  "$ref": "#/$defs/MarimoCellConsoleOutputs"
+                }
+              },
+              "required": [
+                "cell_id"
+              ]
+            },
+            "CellVisualOutput": {
+              "title": "CellVisualOutput",
+              "description": "Visual from a cell execution.",
+              "type": "object",
+              "properties": {
+                "visual_output": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "visual_mimetype": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            },
+            "MarimoCellConsoleOutputs": {
+              "title": "MarimoCellConsoleOutputs",
+              "type": "object",
+              "properties": {
+                "stdout": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "stderr": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      {
+        "name": "get_cell_runtime_data",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "cell_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetCellRuntimeDataOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/GetCellRuntimeDataData"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "GetCellRuntimeDataData": {
+              "title": "GetCellRuntimeDataData",
+              "type": "object",
+              "properties": {
+                "session_id": {
+                  "type": "string"
+                },
+                "cell_id": {
+                  "type": "string"
+                },
+                "code": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "errors": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MarimoErrorDetail"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "metadata": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/CellRuntimeMetadata"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "variables": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/VariableValue"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "session_id",
+                "cell_id"
+              ]
+            },
+            "MarimoErrorDetail": {
+              "title": "MarimoErrorDetail",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "traceback": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "message",
+                "traceback"
+              ]
+            },
+            "CellRuntimeMetadata": {
+              "title": "CellRuntimeMetadata",
+              "type": "object",
+              "properties": {
+                "runtime_state": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "execution_time": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": []
+            },
+            "VariableValue": {
+              "title": "VariableValue",
+              "description": "Variable value and type for variables panel.\n\nAttributes:\n    name: Variable name.\n    value: String representation of value.\n    datatype: Data type as string.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "datatype": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "execution_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "revision": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Revision"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "value",
+                "datatype"
+              ]
+            },
+            "Revision": {
+              "title": "Revision",
+              "type": "object",
+              "properties": {
+                "execution": {
+                  "description": "Identifies an execution. Unique within the host.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "update": {
+                  "description": "How many times the value has been updated since it was produced. Zero at binding.",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "execution",
+                "update"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_database_tables",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetDatabaseTablesOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "tables": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TableDetails"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "TableDetails": {
+              "title": "TableDetails",
+              "type": "object",
+              "properties": {
+                "connection": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "schema": {
+                  "type": "string"
+                },
+                "table": {
+                  "$ref": "#/$defs/DataTable"
+                },
+                "sample_query": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "connection",
+                "database",
+                "schema",
+                "table",
+                "sample_query"
+              ]
+            },
+            "DataTable": {
+              "title": "DataTable",
+              "description": "Represents a data table.\n\nAttributes:\n    source_type (DataTableSource): Type of data source ('local', 'duckdb', 'connection').\n    source (str): Can be dialect, or source db name.\n    name (str): Name of the data table.\n    num_rows (Optional[int]): Total number of rows in the table, if known.\n    num_columns (Optional[int]): Total number of columns in the table, if known.\n    variable_name (Optional[VariableName]): Variable name referencing this table in code.\n    columns (List[DataTableColumn]): List of column definitions and metadata.\n    engine (Optional[VariableName]): Database engine or connection handler, if any.\n    type (DataTableType): Table type, either 'table' or 'view'. Defaults to 'table'.\n    primary_keys (Optional[List[str]]): Column names used as primary keys, if any.\n    indexes (Optional[List[str]]): Column names used as indexes, if any.",
+              "type": "object",
+              "properties": {
+                "source_type": {
+                  "enum": [
+                    "catalog",
+                    "connection",
+                    "duckdb",
+                    "local"
+                  ]
+                },
+                "source": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "num_rows": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "num_columns": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "variable_name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DataTableColumn"
+                  }
+                },
+                "engine": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "type": {
+                  "enum": [
+                    "table",
+                    "view"
+                  ],
+                  "default": "table"
+                },
+                "primary_keys": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "indexes": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "source_type",
+                "source",
+                "name",
+                "num_rows",
+                "num_columns",
+                "variable_name",
+                "columns"
+              ]
+            },
+            "DataTableColumn": {
+              "title": "DataTableColumn",
+              "description": "Represents a column in a data table.\n\nAttributes:\n    name (str): The name of the column.\n    type (DataType): The data type of the column.\n    external_type (ExternalDataType): The raw data type of the column.\n    sample_values (List[Any]): The sample values of the column.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "boolean",
+                    "date",
+                    "datetime",
+                    "geometry",
+                    "integer",
+                    "number",
+                    "string",
+                    "time",
+                    "unknown"
+                  ]
+                },
+                "external_type": {
+                  "type": "string"
+                },
+                "sample_values": {
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "external_type",
+                "sample_values"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_lightweight_cell_map",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "preview_lines": {
+              "type": "integer",
+              "default": 3
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetLightweightCellMapOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "session_id": {
+              "type": "string",
+              "default": ""
+            },
+            "notebook_name": {
+              "type": "string",
+              "default": ""
+            },
+            "cells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LightweightCellInfo"
+              }
+            },
+            "total_cells": {
+              "type": "integer",
+              "default": 0
+            },
+            "preview_lines": {
+              "type": "integer",
+              "default": 3
+            }
+          },
+          "required": [],
+          "$defs": {
+            "LightweightCellInfo": {
+              "title": "LightweightCellInfo",
+              "type": "object",
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "preview": {
+                  "type": "string"
+                },
+                "line_count": {
+                  "type": "integer"
+                },
+                "cell_type": {
+                  "$ref": "#/$defs/SupportedCellType"
+                },
+                "runtime_state": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "has_output": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "has_console_output": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "has_errors": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "cell_id",
+                "preview",
+                "line_count",
+                "cell_type"
+              ]
+            },
+            "SupportedCellType": {
+              "title": "SupportedCellType",
+              "enum": [
+                "code",
+                "markdown",
+                "sql"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_marimo_rules",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetMarimoRulesOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "rules_content": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_url": {
+              "type": "string",
+              "default": "https://docs.marimo.io/CLAUDE.md"
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "get_notebook_errors",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "GetNotebookErrorsOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "has_errors": {
+              "type": "boolean",
+              "default": false
+            },
+            "total_errors": {
+              "type": "integer",
+              "default": 0
+            },
+            "total_cells_with_errors": {
+              "type": "integer",
+              "default": 0
+            },
+            "cells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MarimoCellErrors"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "MarimoCellErrors": {
+              "title": "MarimoCellErrors",
+              "type": "object",
+              "properties": {
+                "cell_id": {
+                  "type": "string"
+                },
+                "errors": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MarimoErrorDetail"
+                  }
+                },
+                "stderr": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "cell_id"
+              ]
+            },
+            "MarimoErrorDetail": {
+              "title": "MarimoErrorDetail",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "traceback": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "message",
+                "traceback"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "get_tables_and_variables",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "variable_names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "session_id",
+            "variable_names"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "TablesAndVariablesOutput",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "tables": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/DataTableMetadata"
+              }
+            },
+            "variables": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/VariableValue"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "DataTableMetadata": {
+              "title": "DataTableMetadata",
+              "description": "Metadata about a data table.\n\nsource: str - Can be dialect, or source db name.\nengine: str - The engine or connection handler of the data table.\nnum_rows: int - The number of rows in the data table.\nnum_columns: int - The number of columns in the data table.\ncolumns: list[DataTableColumn] - The columns in the data table.\nprimary_keys: Optional[list[str]] - The primary keys of the data table.\nindexes: Optional[list[str]] - The indexes of the data table.",
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "num_rows": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "num_columns": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DataTableColumn"
+                  }
+                },
+                "engine": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primary_keys": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "indexes": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "num_rows",
+                "num_columns",
+                "columns",
+                "engine",
+                "primary_keys",
+                "indexes"
+              ]
+            },
+            "DataTableColumn": {
+              "title": "DataTableColumn",
+              "description": "Represents a column in a data table.\n\nAttributes:\n    name (str): The name of the column.\n    type (DataType): The data type of the column.\n    external_type (ExternalDataType): The raw data type of the column.\n    sample_values (List[Any]): The sample values of the column.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "boolean",
+                    "date",
+                    "datetime",
+                    "geometry",
+                    "integer",
+                    "number",
+                    "string",
+                    "time",
+                    "unknown"
+                  ]
+                },
+                "external_type": {
+                  "type": "string"
+                },
+                "sample_values": {
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "external_type",
+                "sample_values"
+              ]
+            },
+            "VariableValue": {
+              "title": "VariableValue",
+              "description": "Variable value and type for variables panel.\n\nAttributes:\n    name: Variable name.\n    value: String representation of value.\n    datatype: Data type as string.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "datatype": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "execution_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "revision": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Revision"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "name",
+                "value",
+                "datatype"
+              ]
+            },
+            "Revision": {
+              "title": "Revision",
+              "type": "object",
+              "properties": {
+                "execution": {
+                  "description": "Identifies an execution. Unique within the host.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "update": {
+                  "description": "How many times the value has been updated since it was produced. Zero at binding.",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "execution",
+                "update"
+              ]
+            }
+          }
+        }
+      },
+      {
         "name": "home_recent_files",
         "inputSchema": {
           "type": "object",
@@ -4010,6 +5797,259 @@
             }
           },
           "required": []
+        }
+      },
+      {
+        "name": "lint_notebook",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "LintNotebookOutput",
+          "description": "Output from linting a notebook.",
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "error",
+                "success",
+                "warning"
+              ],
+              "default": "success"
+            },
+            "auth_required": {
+              "type": "boolean",
+              "default": false
+            },
+            "next_steps": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "action_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "meta": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "summary": {
+              "$ref": "#/$defs/DiagnosticSummary"
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Diagnostic"
+              }
+            }
+          },
+          "required": [],
+          "$defs": {
+            "DiagnosticSummary": {
+              "title": "DiagnosticSummary",
+              "description": "Summary of diagnostics by severity.",
+              "type": "object",
+              "properties": {
+                "total_issues": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "breaking_issues": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "runtime_issues": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "formatting_issues": {
+                  "type": "integer",
+                  "default": 0
+                }
+              },
+              "required": []
+            },
+            "Diagnostic": {
+              "title": "Diagnostic",
+              "description": "Represents a diagnostic found in a notebook.",
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "line": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  ]
+                },
+                "column": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  ]
+                },
+                "cell_id": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "code": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "severity": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Severity"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "fixable": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "enum": [
+                        "unsafe"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "fix": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "filename": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "message",
+                "line",
+                "column"
+              ]
+            },
+            "Severity": {
+              "title": "Severity",
+              "description": "Severity levels for diagnostic errors.",
+              "enum": [
+                "breaking",
+                "formatting",
+                "runtime",
+                "wasm"
+              ]
+            }
+          }
         }
       },
       {
