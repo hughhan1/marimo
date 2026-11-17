@@ -41,7 +41,6 @@ from marimo._session.requests import (
     UpdateUIElementValuesRequest,
 )
 from marimo._session.types import KernelState
-from marimo._types.ids import ConsumerId
 from marimo._utils.http import HTTPException
 
 if TYPE_CHECKING:
@@ -50,7 +49,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("kernel_set_ui_element_value")
+@tool("kernel_set_ui_element_value", notebook="required")
 @requires("read")
 async def set_ui_element_values(
     *,
@@ -67,14 +66,13 @@ async def set_ui_element_values(
     )
     enforce_consumer_capability(app_state, command)
     app_state.require_current_session().put_control_request(
-        command,
-        from_consumer_id=ConsumerId(app_state.require_current_session_id()),
+        command, from_consumer_id=app_state.tab
     )
 
     return SuccessResponse()
 
 
-@tool("kernel_set_model_value")
+@tool("kernel_set_model_value", notebook="required")
 @requires("read")
 async def set_model_values(
     *,
@@ -85,7 +83,7 @@ async def set_model_values(
     return await dispatch_control_request(request, body)
 
 
-@tool("kernel_instantiate")
+@tool("kernel_instantiate", notebook="required")
 @requires("edit")
 async def instantiate(
     *,
@@ -102,7 +100,7 @@ async def instantiate(
     return SuccessResponse()
 
 
-@tool("kernel_function_call")
+@tool("kernel_function_call", notebook="required")
 @requires("read")
 async def function_call(
     *,
@@ -113,7 +111,7 @@ async def function_call(
     return await dispatch_control_request(request, body)
 
 
-@tool("kernel_status")
+@tool("kernel_status", notebook="required")
 @requires("edit")
 async def kernel_status(
     *,
@@ -136,7 +134,7 @@ async def kernel_status(
     return KernelStatusResponse(state="running" if is_running else "idle")
 
 
-@tool("kernel_execute")
+@tool("kernel_execute", notebook="required")
 @requires("edit")
 async def execute_code(
     *,
@@ -147,9 +145,7 @@ async def execute_code(
     from marimo._server.scratchpad import run_scratchpad_code
 
     app_state = AppState(request)
-    session = app_state.require_current_session_with_stable_id(
-        allow_notebook_id=True
-    )
+    session = app_state.require_current_session()
     server_url, auth_token = get_code_mode_credentials(app_state, request)
     return await run_scratchpad_code(
         session,
@@ -161,7 +157,7 @@ async def execute_code(
     )
 
 
-@tool("kernel_scratchpad_run")
+@tool("kernel_scratchpad_run", notebook="required")
 @requires("edit")
 async def run_scratchpad(
     *,
@@ -177,7 +173,7 @@ async def run_scratchpad(
     )
 
 
-@tool("kernel_pdb_pm")
+@tool("kernel_pdb_pm", notebook="required")
 @requires("edit")
 async def run_post_mortem(
     *,
@@ -193,7 +189,7 @@ async def run_post_mortem(
     )
 
 
-@tool("kernel_pdb_breakpoints")
+@tool("kernel_pdb_breakpoints", notebook="required")
 @requires("edit")
 async def set_breakpoints(
     *,
@@ -210,7 +206,7 @@ async def set_breakpoints(
     )
 
 
-@tool("kernel_restart_session")
+@tool("kernel_restart_session", notebook="required")
 @requires("edit")
 async def restart_session(
     *,
@@ -222,13 +218,11 @@ async def restart_session(
 
     # This just closes the session, and the frontend will
     # do a full reload, which will restart the session.
-    session_id = app_state.require_current_session_id()
-    app_state.require_current_session()
-    session_manager.close_session(session_id)
+    session_manager.close_session(app_state.require_current_session_id())
     return SuccessResponse()
 
 
-@tool("kernel_shutdown")
+@tool("kernel_shutdown", notebook="optional")
 @requires("edit")
 async def shutdown(
     *,
@@ -265,7 +259,7 @@ async def shutdown(
     return SuccessResponse()
 
 
-@tool("kernel_takeover")
+@tool("kernel_takeover", notebook="required")
 @requires("edit")
 async def takeover_endpoint(
     *,
@@ -273,32 +267,17 @@ async def takeover_endpoint(
 ) -> SuccessResponse:
     """Make the calling client the notebook's editor."""
     app_state = AppState(request)
-
-    session_id = app_state.get_current_session_id()
-    if session_id is None:
-        LOGGER.error("Missing Marimo-Session-Id header")
-        raise HTTPException(
-            status_code=400, detail="Cannot take over session."
-        )
-    caller_id = ConsumerId(session_id)
-
-    session = app_state.get_current_session()
-    if not session:
-        LOGGER.error("No current session found")
+    tab = app_state.tab
+    session = app_state.require_current_session()
+    caller = None if tab is None else session.room.get_consumer(tab)
+    if caller is None:
         raise HTTPException(
             status_code=400, detail="Cannot take over session."
         )
 
-    caller = session.room.get_consumer(caller_id)
-    if not caller:
-        LOGGER.error("No consumer found for caller ID %s", caller_id)
-        raise HTTPException(
-            status_code=400, detail="Cannot take over session."
-        )
-
-    takeover_decision = can_take_over_editing(session, caller_id)
+    takeover_decision = can_take_over_editing(session, caller.consumer_id)
     if takeover_decision != TakeoverDecision.ALLOW:
-        LOGGER.debug("Takeover denied by policy for consumer %s", caller_id)
+        LOGGER.debug("Takeover denied by policy for consumer %s", tab)
         raise HTTPException(
             status_code=403, detail="Not allowed to take over session."
         )

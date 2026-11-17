@@ -21,9 +21,8 @@ from marimo._server.host import HOST_API_PATH
 @dataclass(frozen=True)
 class ExecutionTarget:
     url: str
-    id: str
+    notebook_id: str
     token: str | None = field(repr=False)
-    notebook_id: str | None = None
 
 
 def resolve_target(
@@ -49,36 +48,31 @@ def resolve_target(
         ]
         if not found and listing.warnings:
             raise PairError(" ".join(listing.warnings))
-        # The catalog has no legacy session IDs. Only an explicit --session
-        # and URL can defer that lookup to the selected server.
-        if not found and host is not None and session_id is not None:
-            assert url is not None
-            return ExecutionTarget(url, session_id, host.token)
-        _require_one([n.id for n in found], url, selected_id)
-        notebook = found[0]
-        selected_host = (
-            host if host is not None else resolve_host(notebook.url)
-        )
-        return ExecutionTarget(
-            notebook.url,
-            notebook.id,
-            token if token is not None else selected_host.token,
-            notebook.id,
-        )
+        # The catalog has no session IDs. An explicit --session and URL
+        # find the notebook in the selected server's sessions instead.
+        if found or host is None or session_id is None:
+            _require_one([n.id for n in found], url, selected_id)
+            notebook = found[0]
+            selected_host = (
+                host if host is not None else resolve_host(notebook.url)
+            )
+            return ExecutionTarget(
+                notebook.url,
+                notebook.id,
+                token if token is not None else selected_host.token,
+            )
+        token = host.token
 
+    assert url is not None
     sessions = list_sessions(url=url, token=token)
-    candidates = {
-        str(s["session_id"]): s
+    candidates = [
+        notebook_id
         for s in sessions.values()
-        if selected_id is None
-        or selected_id == s.get("notebook_id")
-        or session_id == s["session_id"]
-    }
-    _require_one(list(candidates), url, selected_id)
-    selected = next(iter(candidates.values()))
-    return ExecutionTarget(
-        url, str(selected["session_id"]), token, selected.get("notebook_id")
-    )
+        if (notebook_id := s["notebook_id"]) is not None
+        and selected_id in (None, notebook_id, s["session_id"])
+    ]
+    _require_one(candidates, url, selected_id)
+    return ExecutionTarget(url, candidates[0], token)
 
 
 def _require_one(

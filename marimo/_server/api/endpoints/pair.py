@@ -18,18 +18,15 @@ if TYPE_CHECKING:
 class AgentMessage(msgspec.Struct):
     """Any JSON content for the agents attached to a notebook."""
 
-    id: str
-    """The notebook's session."""
     message: Any
 
 
-@tool("pair_notebooks_messages")
+@tool("pair_notebooks_messages", notebook="required")
 @requires("edit")
 async def messages(*, request: Request, body: AgentMessage) -> None:
     """Send any JSON content to all agents attached to the notebook."""
     state = AppState(request)
-    session = state.session_by_stable_id(body.id)
-    notebook = state.notebook_for_session(session)
+    notebook = state.notebook_for_session(state.require_current_session())
     if notebook is None or not any(
         a.kind == "agent" for a in notebook.attachments
     ):
@@ -40,22 +37,19 @@ async def messages(*, request: Request, body: AgentMessage) -> None:
 class DetachRequest(msgspec.Struct):
     """Select a host attachment to remove without stopping its notebook runtime."""
 
-    id: str
-    """The notebook's session."""
     attachment_id: str
 
 
-@tool("pair_notebooks_attachments_detach")
+@tool("pair_notebooks_attachments_detach", notebook="required")
 @requires("edit")
 async def detach(*, request: Request, body: DetachRequest) -> None:
     """Disconnect one attachment without stopping its notebook runtime."""
     state = AppState(request)
-    session = state.session_by_stable_id(body.id)
     if not body.attachment_id:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail="Invalid attachment ID.",
         )
-    notebook = state.notebook_for_session(session)
+    notebook = state.notebook_for_session(state.require_current_session())
     if notebook is not None:
         notebook.detach(body.attachment_id)

@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { attachmentLabel, useNotebookAttachments } from "@/core/notebook";
 import { agentToast } from "@/components/editor/agent-toast";
 import { pairConfigAtom } from "@/core/config/pair";
-import { stableSessionIdAtom } from "@/core/kernel/session";
-import { callMarimo } from "@/core/network/holon";
+import { callMarimo, inNotebook } from "@/core/network/holon";
 import { HTTPError, prettyError } from "@/utils/errors";
 
 export function SendErrorReportButton({
@@ -18,7 +17,6 @@ export function SendErrorReportButton({
 }) {
   const hostEnabled = useAtomValue(pairConfigAtom)?.hostEnabled;
   const agents = useNotebookAttachments("agent");
-  const stableSessionId = useAtomValue(stableSessionIdAtom);
   const [sending, setSending] = useState(false);
 
   if (!hostEnabled) {
@@ -26,16 +24,13 @@ export function SendErrorReportButton({
   }
 
   const send = async () => {
-    if (sending || agents.length === 0 || !stableSessionId) {
+    if (sending || agents.length === 0) {
       return;
     }
     setSending(true);
     try {
       await callMarimo((tools) =>
-        tools.pair_notebooks_messages({
-          id: stableSessionId,
-          message: getContent(),
-        }),
+        tools.pair_notebooks_messages(inNotebook({ message: getContent() })),
       );
       agentToast({
         title: `Sent to ${agents.map(attachmentLabel).join(", ")}`,
@@ -58,7 +53,7 @@ export function SendErrorReportButton({
     <Button
       size="xs"
       variant="outline"
-      disabled={sending || agents.length === 0 || !stableSessionId}
+      disabled={sending || agents.length === 0}
       onClick={send}
     >
       <SendIcon className="h-3 w-3 mr-2" />

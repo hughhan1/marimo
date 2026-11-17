@@ -256,10 +256,9 @@ def execute(
         )
         url = target.url
         notebook_id = target.notebook_id
-        session_id = target.id if notebook_id is None else None
         result = execute_code(
             url=target.url,
-            session_id=target.id,
+            notebook_id=target.notebook_id,
             token=target.token,
             code=code,
         )
@@ -281,14 +280,12 @@ def execute(
         click.echo("Interrupted.", err=True)
         ctx.exit(1)
 
-    target_id = notebook_id or session_id
-    assert target_id is not None
     next_text = None
     if not result.success:
         next_text = _kernel_next(
             result.stderr,
-            url=display_url(url),
-            notebook_id=target_id,
+            url=display_url(target.url),
+            notebook_id=target.notebook_id,
             selector=selector,
         )
 
@@ -298,9 +295,7 @@ def execute(
         "output": result.output,
         "stdout": result.stdout,
         "stderr": result.stderr,
-        ("session" if notebook_id is None else "notebook"): {
-            "id": session_id if notebook_id is None else notebook_id
-        },
+        "notebook": {"id": target.notebook_id},
     }
     if next_text:
         payload["next"] = next_text

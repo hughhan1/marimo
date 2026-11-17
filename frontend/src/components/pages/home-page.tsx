@@ -640,9 +640,9 @@ const SessionShutdownButton: React.FC<{ filePath: string }> = ({
               <AlertDialogDestructiveAction
                 onClick={() => {
                   const ids = runningNotebooks.get(filePath);
-                  assertExists(ids?.sessionId);
+                  assertExists(ids?.notebookId);
                   shutdownSession({
-                    sessionId: ids.sessionId,
+                    notebook_id: ids.notebookId,
                   }).then((response) => {
                     setRunningNotebooks(
                       Maps.keyBy(response.files, (file) => file.path),

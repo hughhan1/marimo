@@ -1,24 +1,31 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 import { render, screen } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { layoutStateAtom } from "@/core/layout/state";
 import { kioskModeAtom, viewStateAtom } from "@/core/mode";
 import { ViewerBanner } from "../viewer-banner";
+import { MockExecutions } from "@/__mocks__/executions";
+import { store as pageStore } from "@/core/state/jotai";
 
 const takeover = vi.hoisted(() => vi.fn(async () => ({})));
-vi.mock("@/core/network/holon", () => {
+vi.mock("@/core/network/holon", async (importOriginal) => {
   function mockTools() {
     return { kernel_takeover: takeover };
   }
   return {
+    ...(await importOriginal<typeof import("@/core/network/holon")>()),
     callMarimo: async <T,>(
       call: (tools: ReturnType<typeof mockTools>) => Promise<T>,
     ) => {
       return call(mockTools());
     },
   };
+});
+
+beforeEach(() => {
+  MockExecutions.seed(pageStore, []);
 });
 
 describe("ViewerBanner", () => {
@@ -107,6 +114,8 @@ describe("ViewerBanner", () => {
     );
     const button = screen.getByTestId("takeover-button");
     button.click();
-    await vi.waitFor(() => expect(takeover).toHaveBeenCalledWith({}));
+    await vi.waitFor(() =>
+      expect(takeover).toHaveBeenCalledWith({ notebook_id: "n1" }),
+    );
   });
 });

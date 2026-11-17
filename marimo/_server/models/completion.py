@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 import msgspec
 
+from marimo._core import protocol
 from marimo._server.ai.tools.types import ToolDefinition
 
 
@@ -48,6 +49,7 @@ class AiCompletionRequest(msgspec.Struct, rename="camel"):
     prompt: str
     include_other_code: str
     code: str
+    notebook_id: protocol.NotebookId
     id: str | None = None
     ui_messages: list[UIMessage] = []
     selected_text: str | None = None
@@ -76,6 +78,7 @@ class ChatRequest(msgspec.Struct, rename="camel"):
     """
 
     ui_messages: list[UIMessage]
+    notebook_id: protocol.NotebookId
     id: str | None = None
     tools: list[ToolDefinition] | None = None
     model: str | None = None

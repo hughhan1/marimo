@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from marimo._messaging.notification import ConsumerCapabilities
+from marimo._server.api.deps import TAB_HEADER
 from marimo._types.ids import ConsumerId, SessionId
 from tests._server.api.endpoints.ws_helpers import headers, receive_until
 from tests._server.host.drive import AUTH, call, socket_snapshot, wait_for
@@ -16,10 +17,12 @@ from tests._server.host.live import open_host
 from tests._server.mcp_client import call_tool
 from tests._server.mocks import get_session_manager
 from tests._server.session_events import connect_session
+from tests._session.test_room import FakeConsumer
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from starlette.applications import Starlette
     from starlette.testclient import TestClient
 
     from tests._server.host.drive import Response
@@ -119,6 +122,17 @@ def test_editor_input_replies_require_interact(
             assert run["outcome"] == "succeeded"
 
 
+def _page(app: Starlette) -> dict[str, str]:
+    """Join an editing page to the notebook's session, as its tab."""
+    (session,) = app.state.session_manager.sessions.values()
+    session.room.add_consumer(
+        FakeConsumer("page"),
+        main=False,
+        capabilities=ConsumerCapabilities.EDITOR,
+    )
+    return {**AUTH, TAB_HEADER: "page"}
+
+
 @pytest.mark.parametrize("scratch", [False, True])
 async def test_input_replies_and_retries(
     tmp_path: Path, scratch: bool
@@ -132,7 +146,6 @@ async def test_input_replies_and_retries(
     async with open_host(tmp_path, source) as (app, notebook_id, events):
         context = app.state.host_context
         notebook = await context.bridge.host.notebook(notebook_id)
-        session_id = next(iter(app.state.session_manager.sessions))
         payload: dict[str, Any] = (
             {"code": code}
             if scratch
@@ -141,7 +154,7 @@ async def test_input_replies_and_retries(
         accepted = await call(
             app,
             "runtime.execute" if scratch else "runtime.run",
-            headers={**AUTH, "Marimo-Session-Id": session_id},
+            headers=_page(app),
             idempotency_key="run",
             notebook_id=notebook_id,
             **payload,
@@ -235,11 +248,10 @@ async def test_interrupt_closes_prompt_and_rejects_late_reply(
         notebook_id,
         events,
     ):
-        session_id = next(iter(app.state.session_manager.sessions))
         accepted = await call(
             app,
             "runtime.execute",
-            headers={**AUTH, "Marimo-Session-Id": session_id},
+            headers=_page(app),
             idempotency_key="run",
             notebook_id=notebook_id,
             code="input()",

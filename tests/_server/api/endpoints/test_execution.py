@@ -50,7 +50,6 @@ HEADERS = {
     "Marimo-Session-Id": SESSION_ID,
     **token_header("fake-token"),
 }
-STABLE_SESSION_HEADER = "Marimo-Stable-Session-Id"
 
 
 class TestExecutionRoutes_EditMode:
@@ -192,12 +191,8 @@ class TestExecutionRoutes_EditMode:
         assert response.json()["state"] == "idle"
 
     @staticmethod
+    @with_session(SESSION_ID)
     def test_restart_session(client: TestClient) -> None:
-        with connect_session(
-            client, f"/ws?session_id={SESSION_ID}&access_token=fake-token"
-        ) as websocket:
-            data = websocket.receive_text()
-            assert data
         response = client.post("/api/kernel/restart_session", headers=HEADERS)
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/json"
@@ -232,7 +227,7 @@ class TestExecutionRoutes_EditMode:
 
     @staticmethod
     @with_session(SESSION_ID)
-    def test_execute_with_stable_session_id(client: TestClient) -> None:
+    def test_execute_by_notebook_id_without_a_tab(client: TestClient) -> None:
 
         session = get_session_manager(client).get_session(SESSION_ID)
         assert session is not None
@@ -255,11 +250,11 @@ class TestExecutionRoutes_EditMode:
         ):
             response = client.post(
                 "/api/kernel/execute",
-                headers={
-                    STABLE_SESSION_HEADER: session.stable_id,
-                    **token_header("fake-token"),
+                headers=token_header("fake-token"),
+                json={
+                    "code": "x = 1",
+                    "notebook_id": get_single_notebook_id(client),
                 },
-                json={"code": "x = 1"},
             )
 
         assert response.status_code == 200, response.text
@@ -270,50 +265,6 @@ class TestExecutionRoutes_EditMode:
         ]
         assert len(scratchpad_commands) == 1
         assert scratchpad_commands[0].code == "x = 1"
-
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_execute_rejects_conflicting_session_ids(
-        client: TestClient,
-    ) -> None:
-        session = get_session_manager(client).get_session(SESSION_ID)
-        assert session is not None
-
-        response = client.post(
-            "/api/kernel/execute",
-            headers={
-                **HEADERS,
-                STABLE_SESSION_HEADER: session.stable_id,
-            },
-            json={"code": "x = 1"},
-        )
-
-        assert response.status_code == 400, response.text
-        assert response.json() == {
-            "detail": (
-                "Marimo-Stable-Session-Id cannot be combined with "
-                "Marimo-Session-Id."
-            )
-        }
-
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_execute_rejects_unknown_stable_session_id(
-        client: TestClient,
-    ) -> None:
-        response = client.post(
-            "/api/kernel/execute",
-            headers={
-                STABLE_SESSION_HEADER: "sess-unknown",
-                **token_header("fake-token"),
-            },
-            json={"code": "x = 1"},
-        )
-
-        assert response.status_code == 404, response.text
-        assert response.json() == {
-            "detail": "Invalid stable session id: sess-unknown"
-        }
 
     @staticmethod
     @with_session(SESSION_ID)
@@ -455,12 +406,14 @@ class TestExecutionRoutes_EditMode:
 
     @staticmethod
     @with_session(SESSION_ID)
-    def test_takeover_missing_session_id_header(client: TestClient) -> None:
+    def test_takeover_needs_a_tab(client: TestClient) -> None:
         response = client.post(
             "/api/kernel/takeover",
             headers=token_header("fake-token"),
+            json={"notebook_id": get_single_notebook_id(client)},
         )
         assert response.status_code == 400, response.text
+        assert response.json() == {"detail": "Cannot take over session."}
 
     @staticmethod
     @with_session(SESSION_ID)

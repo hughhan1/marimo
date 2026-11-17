@@ -1,6 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { waitForConnectionOpen } from "@/core/network/connection";
+import { activeNotebookId } from "@/core/network/holon";
 import type { AiCompletionRequest } from "@/core/network/types";
 import { streamCompletionText } from "@/core/ai/stream-completion-text";
 import { getRuntimeManager } from "@/core/runtime/config";
@@ -42,6 +43,7 @@ ${opts.codeAfter}
         selectedText: opts.selection,
         includeOtherCode: "",
         language: opts.language,
+        notebookId: activeNotebookId(),
       } satisfies AiCompletionRequest),
     },
   );

@@ -50,7 +50,7 @@ from marimo._session.session import Session, SessionImpl
 from marimo._session.session_repository import SessionRepository
 from marimo._session.startup import SessionStartup
 from marimo._session.types import KernelState
-from marimo._types.ids import ConsumerId, SessionId, StableSessionId
+from marimo._types.ids import ConsumerId, SessionId
 from marimo._utils.asyncio_utils import fire_and_forget
 from marimo._utils.file_watcher import FileWatcherManager
 
@@ -348,6 +348,10 @@ class SessionManager:
     ) -> bool:
         return self._connection_key(session_id, file_key) in self._pending
 
+    def is_file_starting(self, file_key: MarimoFileKey) -> bool:
+        """Whether the editor's session for `file_key` is still starting."""
+        return (self._resolve_file_key(file_key) or file_key) in self._pending
+
     async def _create_session(
         self,
         session_id: SessionId,
@@ -494,18 +498,9 @@ class SessionManager:
         # Search for kiosk sessions by consumer ID
         return self._repository.get_by_consumer_id(ConsumerId(session_id))
 
-    def get_session_by_stable_id(
-        self, stable_session_id: StableSessionId
-    ) -> Session | None:
-        """Get a session by its stable ID."""
-        return next(
-            (
-                session
-                for session in self._repository.get_all()
-                if session.stable_id == stable_session_id
-            ),
-            None,
-        )
+    def get_session_id(self, session: Session) -> SessionId | None:
+        """The ID a session is kept under."""
+        return self._repository.get_session_id(session)
 
     def get_session_by_file_key(
         self, file_key: MarimoFileKey

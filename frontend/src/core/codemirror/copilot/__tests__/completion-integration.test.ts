@@ -15,6 +15,8 @@ import { languageAdapterState } from "../../language/extension";
 import { copilotBundle } from "../extension";
 import { getCodes } from "../getCodes";
 import { CopilotLanguageServerClient } from "../language-server";
+import { MockExecutions } from "@/__mocks__/executions";
+import { store as pageStore } from "@/core/state/jotai";
 
 const fixture: { client?: CopilotLanguageServerClient } = vi.hoisted(
   () => ({}),
@@ -65,6 +67,10 @@ vi.mock("../state", async (importOriginal) => ({
 vi.mock("../getCodes", () => ({
   getCodes: vi.fn((code: string) => `import math\n\n${code}`),
 }));
+
+beforeEach(() => {
+  MockExecutions.seed(pageStore, []);
+});
 
 describe("Copilot editor integration", () => {
   let view: EditorView;
@@ -334,7 +340,7 @@ describe("Copilot editor integration", () => {
     await vi.advanceTimersByTimeAsync(150);
     expect(post).toHaveBeenCalledExactlyOnceWith(
       "/ai/inline_completion",
-      { prefix: "prin", suffix: "", language: "python" },
+      { prefix: "prin", suffix: "", language: "python", notebook_id: "n1" },
       { signal: expect.objectContaining({ aborted: false }) },
     );
     const signal = post.mock.calls[0][2]?.signal;

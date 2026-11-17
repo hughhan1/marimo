@@ -669,13 +669,8 @@ class SessionBridge(SessionEventListener):
             raise Conflict(f"{target.name} already exists")
         backend = self._backends.get(notebook_id)
         session = None if backend is None else backend.session
-        session_id = next(
-            (
-                sid
-                for sid, candidate in self._manager.sessions.items()
-                if candidate is session
-            ),
-            None,
+        session_id = (
+            None if session is None else self._manager.get_session_id(session)
         )
         try:
             await asyncio.to_thread(

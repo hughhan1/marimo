@@ -2,7 +2,7 @@
 
 import type { Outputs } from "#holon-ui";
 import { useState } from "react";
-import { callMarimo } from "@/core/network/holon";
+import { callMarimo, inNotebook } from "@/core/network/holon";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { toast } from "../ui/use-toast";
 
@@ -27,7 +27,7 @@ export function useMCPRefresh() {
   const refresh = async () => {
     setIsRefreshing(true);
     try {
-      await callMarimo((tools) => tools.ai_mcp_refresh({}));
+      await callMarimo((tools) => tools.ai_mcp_refresh(inNotebook({})));
       toast({
         title: "MCP refreshed",
         description: "MCP server configuration has been refreshed successfully",

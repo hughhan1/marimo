@@ -114,12 +114,12 @@ async def ai_completion(
     request: Request,
 ) -> StreamingResponse:
     app_state = AppState(request)
-    app_state.require_current_session()
-    session_id = app_state.require_current_session_id()
-    config = app_state.app_config_manager.get_config(hide_secrets=False)
     body = await parse_request(
         request, cls=AiCompletionRequest, allow_unknown_keys=True
     )
+    app_state.open_notebook(body.notebook_id)
+    session_id = app_state.require_current_session_id()
+    config = app_state.app_config_manager.get_config(hide_secrets=False)
     ai_config = get_ai_config(config)
 
     custom_rules = ai_config.rules
@@ -184,13 +184,14 @@ async def ai_chat(
     request: Request,
 ) -> StreamingResponse:
     app_state = AppState(request)
+    body = await parse_request(
+        request, cls=ChatRequest, allow_unknown_keys=True
+    )
+    app_state.open_notebook(body.notebook_id)
     session = app_state.require_current_session()
     session_id = app_state.require_current_session_id()
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     config = app_state.app_config_manager.get_config(hide_secrets=False)
-    body = await parse_request(
-        request, cls=ChatRequest, allow_unknown_keys=True
-    )
     ai_config = get_ai_config(config)
     custom_rules = ai_config.rules
 
@@ -248,7 +249,7 @@ async def ai_chat(
     )
 
 
-@tool("ai_inline_completion")
+@tool("ai_inline_completion", notebook="required")
 @requires("edit")
 async def ai_inline_completion(
     *,
@@ -257,7 +258,6 @@ async def ai_inline_completion(
 ) -> TextResponse:
     """Complete the code between a prefix and a suffix."""
     app_state = AppState(request)
-    app_state.require_current_session()
     session_id = app_state.require_current_session_id()
     config = app_state.app_config_manager.get_config(hide_secrets=False)
     # Use FIM (Fill-In-Middle) format for inline completion
@@ -315,9 +315,6 @@ async def invoke_tool(
     body: InvokeAiToolRequest,
 ) -> InvokeAiToolResponse:
     """Invoke one of the AI assistant's tools with its arguments."""
-    app_state = AppState(request)
-    app_state.require_current_session()
-
     try:
         # Invoke the tool
         result = await get_tool_manager().invoke_tool(
@@ -418,7 +415,7 @@ async def mcp_status(
         )
 
 
-@tool("ai_mcp_refresh")
+@tool("ai_mcp_refresh", notebook="required")
 @requires("edit")
 async def mcp_refresh(
     *,
@@ -426,8 +423,6 @@ async def mcp_refresh(
 ) -> MCPRefreshResponse:
     """Reconnect the MCP servers from the current configuration."""
     app_state = AppState(request)
-    app_state.require_current_session()
-
     try:
         # Get the MCP client
         mcp_client = get_mcp_client()

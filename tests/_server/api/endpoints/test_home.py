@@ -24,7 +24,12 @@ from marimo._session.model import SessionMode
 from marimo._utils.marimo_path import MarimoPath
 from tests._server.host.drive import socket_snapshot
 from tests._server.host.test_editor_websocket import receive_notification
-from tests._server.mocks import get_session_manager, token_header, with_session
+from tests._server.mocks import (
+    get_session_manager,
+    get_single_notebook_id,
+    token_header,
+    with_session,
+)
 from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
@@ -86,6 +91,7 @@ def test_running_notebooks(client: TestClient) -> None:
     files = body["files"]
     assert len(files) == 1
     assert files[0]["path"] == current_filename
+    assert files[0]["notebookId"] == get_single_notebook_id(client)
 
 
 # TODO: Debug on Windows
@@ -95,7 +101,7 @@ def test_shutdown_session(client: TestClient) -> None:
     response = client.post(
         "/api/home/shutdown_session",
         headers=HEADERS,
-        json={"sessionId": SESSION_ID},
+        json={"notebook_id": get_single_notebook_id(client)},
     )
     assert response.status_code == 200
     assert response.json() == {"files": []}
@@ -520,7 +526,7 @@ def test_shutdown_session_returns_relative_paths(client: TestClient) -> None:
             response = client.post(
                 "/api/home/shutdown_session",
                 headers=HEADERS,
-                json={"sessionId": SESSION_ID},
+                json={"notebook_id": get_single_notebook_id(client)},
             )
             assert response.status_code == 200
             # After shutdown, no sessions remain

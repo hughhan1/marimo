@@ -1,7 +1,7 @@
 /* Copyright 2026 Marimo. All rights reserved. */
 
 import { Loader2, PlugIcon, RefreshCwIcon } from "lucide-react";
-import { callMarimo } from "@/core/network/holon";
+import { callMarimo, inNotebook } from "@/core/network/holon";
 import { cn } from "@/utils/cn";
 import { Button } from "../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
@@ -18,7 +18,7 @@ export const MCPStatusIndicator: React.FC = () => {
 
   const handleRefresh = async () => {
     try {
-      await callMarimo((tools) => tools.ai_mcp_refresh({}));
+      await callMarimo((tools) => tools.ai_mcp_refresh(inNotebook({})));
       toast({
         title: "MCP refreshed",
         description: "MCP server configuration has been refreshed",

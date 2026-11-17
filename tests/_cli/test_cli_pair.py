@@ -45,7 +45,7 @@ def _isolate_pair_command(monkeypatch: pytest.MonkeyPatch) -> None:
         assert url is not None
         selected_id = notebook_id or session_id
         assert selected_id is not None
-        return ExecutionTarget(url, selected_id, token, selected_id)
+        return ExecutionTarget(url, selected_id, token)
 
     monkeypatch.setattr(commands, "resolve_target", resolve)
     monkeypatch.delenv("MARIMO_TOKEN", raising=False)
@@ -372,9 +372,7 @@ Options:
         assert result.exit_code == 2
         assert "error: could not read the code file" in result.output
 
-    def test_execute_success(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_execute_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[dict[str, Any]] = []
 
         def fake_execute(**kwargs: Any) -> ExecutionResult:
@@ -403,7 +401,7 @@ Options:
 
         assert result.exit_code == 0
         assert calls[0]["url"] == TEST_URL
-        assert calls[0]["session_id"] == "s_ab12cd"
+        assert calls[0]["notebook_id"] == "s_ab12cd"
         assert calls[0]["code"] == "print(1)"
         assert calls[0]["token"] is None
         assert json.loads(result.output) == {
@@ -763,7 +761,7 @@ Options:
 
         def fake_resolve(**kwargs: Any) -> ExecutionTarget:
             resolve_calls.append(kwargs)
-            return ExecutionTarget("http://one", "sess-one", None, "s_one")
+            return ExecutionTarget("http://one", "nb-one", None)
 
         def fake_execute(**kwargs: Any) -> ExecutionResult:
             execute_calls.append(kwargs)
@@ -794,7 +792,7 @@ Options:
                 "notebook_id": None,
             }
         ]
-        assert execute_calls[0]["session_id"] == "sess-one"
+        assert execute_calls[0]["notebook_id"] == "nb-one"
 
     def test_execute_rejects_two_code_inputs(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1478,9 +1476,7 @@ def test_execute_credential_precedence(
 
     def resolve(**kwargs: Any) -> ExecutionTarget:
         calls.append(kwargs)
-        return ExecutionTarget(
-            "http://one", "nb-one", kwargs["token"], "nb-one"
-        )
+        return ExecutionTarget("http://one", "nb-one", kwargs["token"])
 
     monkeypatch.setattr(commands, "resolve_target", resolve)
     monkeypatch.setattr(

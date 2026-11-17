@@ -1571,6 +1571,8 @@ def test_editor_sandbox_supplies_server_tools(
             ) as websocket:
                 while True:
                     event = json.loads(websocket.recv(timeout=60))
+                    if event["event"] == "notebook":
+                        notebook_id = event["data"]["notebook"]["id"]
                     if event["event"] != "marimo":
                         continue
                     message = event["data"]["marimo"]
@@ -1580,8 +1582,11 @@ def test_editor_sandbox_supplies_server_tools(
                 request = tool_request(
                     f"http://{DEFAULT_HOST}:{port}",
                     "kernel_format",
-                    {"codes": {"cell": "x=  1"}, "lineLength": 80},
-                    {"Marimo-Session-Id": "formatting"},
+                    {
+                        "notebook_id": notebook_id,
+                        "codes": {"cell": "x=  1"},
+                        "lineLength": 80,
+                    },
                 )
                 with urllib.request.urlopen(request, timeout=10) as response:
                     assert tool_result(response)["structuredContent"] == {

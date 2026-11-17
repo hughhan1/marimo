@@ -79,15 +79,8 @@ def test_execution_target_selection(
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["stdout"] == "stable\n"
-    if selector != "session":
-        assert payload["notebook"] == {"id": server.notebook_id}
-        assert "session" not in payload
-    else:
-        assert payload["session"] == {
-            "id": server.stable_session_id
-            if selector == "session"
-            else server.notebook_id
-        }
+    assert payload["notebook"] == {"id": server.notebook_id}
+    assert "session" not in payload
 
 
 @pytest.fixture(scope="module")
@@ -293,16 +286,15 @@ def test_execution_without_runtime_reports_error(tmp_path: Path) -> None:
         assert "marimo pair list" in payload["next"]
 
 
-@pytest.mark.parametrize("identifier", ["notebook_id", "stable_session_id"])
 def test_execute_accepts_the_local_credential(
-    editor_server: PairTestServer, identifier: str
+    editor_server: PairTestServer,
 ) -> None:
     from marimo._cli.pair.client import execute, resolve_host
 
     host = resolve_host(editor_server.url)
     result = execute(
         url=editor_server.url,
-        session_id=getattr(editor_server, identifier),
+        notebook_id=editor_server.notebook_id,
         token=host.token,
         code="print('local credential')",
     )
@@ -526,7 +518,5 @@ def test_url_does_not_discover_a_notebook_on_another_server(
     payload = json.loads(result.stdout)
     assert payload["error"] == (
         f"No running notebook matches {editor_server.notebook_id!r} on {server.url}."
-        if selector == "--notebook"
-        else f"No notebook {editor_server.notebook_id} on {server.url}. Run pair list to find the current notebook."
     )
     assert "must not execute" not in result.stdout

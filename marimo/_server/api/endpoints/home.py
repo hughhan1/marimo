@@ -19,7 +19,6 @@ from marimo._server.models.home import (
     OpenTutorialRequest,
     RecentFilesResponse,
     RunningNotebooksResponse,
-    ShutdownSessionRequest,
     WorkspaceFilesRequest,
     WorkspaceFilesResponse,
 )
@@ -180,6 +179,10 @@ def _get_active_sessions(app_state: AppState) -> list[MarimoFile]:
                     last_modified=0,
                     session_id=session_id,
                     initialization_id=session.initialization_id,
+                    notebook_id=None
+                    if (notebook := app_state.notebook_for_session(session))
+                    is None
+                    else notebook.id,
                 )
             )
     # These are better in reverse
@@ -197,16 +200,17 @@ async def running_notebooks(
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 
-@tool("home_shutdown_session")
+@tool("home_shutdown_session", notebook="required")
 @requires("edit")
 async def shutdown_session(
     *,
     request: Request,
-    body: ShutdownSessionRequest,
 ) -> RunningNotebooksResponse:
-    """Close a session and list the notebooks still running."""
+    """Close a notebook's session and list the notebooks still running."""
     app_state = AppState(request)
-    app_state.session_manager.close_session(body.session_id)
+    app_state.session_manager.close_session(
+        app_state.require_current_session_id()
+    )
     return RunningNotebooksResponse(files=_get_active_sessions(app_state))
 
 

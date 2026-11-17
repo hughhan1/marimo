@@ -22,7 +22,6 @@ from marimo._server.models.models import (
     SuccessResponse,
     TextResponse,
 )
-from marimo._types.ids import ConsumerId
 from marimo._utils.async_path import abspath
 from marimo._utils.http import HTTPStatus
 
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 
-@tool("kernel_read_code")
+@tool("kernel_read_code", notebook="required")
 @requires("read")
 async def read_code(
     *,
@@ -61,7 +60,7 @@ async def read_code(
     return ReadCodeResponse(contents=contents)
 
 
-@tool("kernel_rename")
+@tool("kernel_rename", notebook="required")
 @requires("edit")
 async def rename_file(
     *,
@@ -95,14 +94,13 @@ async def rename_file(
     # Rename-triggered cells may immediately read the file or edit its
     # dependencies. The durable file and server binding must be ready first.
     app_state.require_current_session().put_control_request(
-        command,
-        from_consumer_id=ConsumerId(app_state.require_current_session_id()),
+        command, from_consumer_id=app_state.tab
     )
 
     return SuccessResponse()
 
 
-@tool("kernel_save_layout")
+@tool("kernel_save_layout", notebook="required")
 @requires("edit")
 async def save_layout(
     *,
@@ -117,7 +115,7 @@ async def save_layout(
     return SuccessResponse()
 
 
-@tool("kernel_copy")
+@tool("kernel_copy", notebook="required")
 @requires("edit")
 async def copy(
     *,
@@ -151,7 +149,7 @@ async def copy(
     return TextResponse(text=session.app_file_manager.copy(body))
 
 
-@tool("kernel_save_app_config")
+@tool("kernel_save_app_config", notebook="required")
 @requires("edit")
 async def save_app_config(
     *,

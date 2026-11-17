@@ -111,7 +111,7 @@ async def get_export_availability(
     return await _get_export_availability()
 
 
-@tool("export_requirements_install")
+@tool("export_requirements_install", notebook="required")
 @requires("edit")
 async def install_export_requirements(
     *,
@@ -156,7 +156,7 @@ async def install_export_requirements(
     return availability
 
 
-@tool("export_html")
+@tool("export_html", notebook="required")
 @requires("read")
 async def export_as_html(
     *,
@@ -207,7 +207,7 @@ async def export_as_html(
     )
 
 
-@tool("export_auto_export_html")
+@tool("export_auto_export_html", notebook="required")
 @requires("edit")
 async def auto_export_as_html(
     *,
@@ -278,7 +278,7 @@ async def auto_export_as_html(
     return SuccessResponse()
 
 
-@tool("export_script")
+@tool("export_script", notebook="required")
 @requires("edit")
 async def export_as_script(
     *,
@@ -312,7 +312,7 @@ async def export_as_script(
     )
 
 
-@tool("export_markdown")
+@tool("export_markdown", notebook="required")
 @requires("edit")
 async def export_as_markdown(
     *,
@@ -347,7 +347,7 @@ async def export_as_markdown(
     )
 
 
-@tool("export_ipynb")
+@tool("export_ipynb", notebook="required")
 @requires("edit")
 async def export_as_ipynb(
     *,
@@ -383,7 +383,7 @@ async def export_as_ipynb(
     )
 
 
-@tool("export_auto_export_markdown")
+@tool("export_auto_export_markdown", notebook="required")
 @requires("edit")
 async def auto_export_as_markdown(
     *,
@@ -437,7 +437,7 @@ async def auto_export_as_markdown(
     return SuccessResponse()
 
 
-@tool("export_auto_export_ipynb")
+@tool("export_auto_export_ipynb", notebook="required")
 @requires("edit")
 async def auto_export_as_ipynb(
     *,
@@ -474,11 +474,7 @@ async def auto_export_as_ipynb(
             if package not in session_view.notified_server_packages
         ]
         if unnotified_packages:
-            notify_server_missing_packages(
-                session,
-                app_state.get_current_session_id(),
-                unnotified_packages,
-            )
+            notify_server_missing_packages(app_state, unnotified_packages)
             session_view.notified_server_packages.update(unnotified_packages)
         session_view.mark_auto_export_ipynb()
         return SuccessResponse()
@@ -514,7 +510,7 @@ async def auto_export_as_ipynb(
     return SuccessResponse()
 
 
-@tool("export_pdf")
+@tool("export_pdf", notebook="required")
 @requires("edit")
 async def export_as_pdf(
     *, request: Request, body: ExportAsPDFRequest
@@ -546,7 +542,7 @@ async def export_as_pdf(
     )
 
 
-@tool("export_update_cell_outputs")
+@tool("export_update_cell_outputs", notebook="required")
 @requires("edit")
 async def update_cell_outputs(
     *, request: Request, body: UpdateCellOutputsRequest

@@ -19,7 +19,6 @@ from marimo import _loggers
 from marimo._core.calls import Caller, decode, dispatch, once
 from marimo._core.operations import problem
 from marimo._core.protocol_tools import TOOLS
-from marimo._messaging.notification import ConsumerCapabilities
 from marimo._runtime.commands import HTTPRequest
 from marimo._server.api.deps import AppState
 from marimo._server.api.tools import (
@@ -28,10 +27,10 @@ from marimo._server.api.tools import (
     tool_result,
     tool_server,
 )
+from marimo._server.api.utils import tab_capabilities
 from marimo._server.host.auth import bearer_matches
 from marimo._server.host.notebook_api import _context
 from marimo._server.host.streams import host_events
-from marimo._types.ids import ConsumerId
 
 if TYPE_CHECKING:
     from mcp import types
@@ -85,7 +84,19 @@ async def _serve(request: Request, name: str, arguments: object) -> Reply:
         return await once(
             context.mutations, name, args, lambda: serve(request, args)
         )
-    session = AppState(request).get_current_session()
+    tab = AppState(request).tab
+    if tab is not None:
+        capabilities = tab_capabilities(
+            context.bridge.session_for_notebook(args.notebook_id), tab
+        )
+        if not (
+            capabilities.interact
+            if name == "runtime.input"
+            else capabilities.edit
+        ):
+            return problem(
+                "forbidden", "This connection is read-only for this action."
+            )
     return await dispatch(
         context.mutations,
         context.bridge,
@@ -93,9 +104,7 @@ async def _serve(request: Request, name: str, arguments: object) -> Reply:
         args,
         Caller(
             request=_submitting_request(request),
-            allow_input=session is not None
-            and context.bridge.session_for_notebook(args.notebook_id)
-            is session,
+            allow_input=tab is not None,
         ),
     )
 
@@ -104,10 +113,6 @@ async def editor_call(request: Request, name: str, arguments: object) -> Reply:
     """Serve a notebook tool to the signed-in editor."""
     if "edit" not in request.auth.scopes:
         return problem("forbidden", "This editor cannot edit notebooks")
-    if not _connection_may_call(request, name):
-        return problem(
-            "forbidden", "This connection is read-only for this action."
-        )
     return await call(request, name, arguments)
 
 
@@ -120,30 +125,6 @@ def _submitting_request(request: Request) -> HTTPRequest:
     ):
         submitted.headers.pop("authorization", None)
     return submitted
-
-
-def _connection_may_call(request: Request, name: str) -> bool:
-    """Whether the editor's connection may call this notebook tool.
-
-    Host tools are system-originated, so enforce connection capabilities
-    here. A request naming no session relies on the editor's scope alone.
-    """
-    app_state = AppState(request)
-    session_id = app_state.get_current_session_id()
-    if session_id is None:
-        return True
-    session = app_state.get_current_session()
-    if session is None:
-        return False
-    consumer = session.room.get_consumer(ConsumerId(session_id))
-    capabilities = (
-        session.room.get_capabilities(consumer)
-        if consumer is not None
-        else ConsumerCapabilities.VIEWER
-    )
-    return (
-        capabilities.interact if name == "runtime.input" else capabilities.edit
-    )
 
 
 def mcp_endpoint() -> MCPEndpoint:

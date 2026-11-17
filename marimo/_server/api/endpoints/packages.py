@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("packages_add")
+@tool("packages_add", notebook="optional")
 @requires("edit")
 async def add_package(
     *, request: Request, body: AddPackageRequest
@@ -113,7 +113,7 @@ async def add_package(
         )
 
 
-@tool("packages_remove")
+@tool("packages_remove", notebook="optional")
 @requires("edit")
 async def remove_package(
     *, request: Request, body: RemovePackageRequest
@@ -192,7 +192,7 @@ def _failure_message(package_manager: PackageManager) -> str | None:
     return None
 
 
-@tool("packages_list")
+@tool("packages_list", notebook="optional")
 @requires("edit")
 async def list_packages(*, request: Request) -> ListPackagesResponse:
     """List the packages installed in the notebook's environment."""
@@ -206,7 +206,7 @@ async def list_packages(*, request: Request) -> ListPackagesResponse:
     return ListPackagesResponse(packages=packages)
 
 
-@tool("packages_tree")
+@tool("packages_tree", notebook="optional")
 @requires("edit")
 async def dependency_tree(*, request: Request) -> DependencyTreeResponse:
     """Describe the notebook environment's dependency tree."""
@@ -285,13 +285,7 @@ def _sandbox_source(
     state = AppState(request)
     manager = state.session_manager
     key = file_key or manager.workspace.get_unique_file_key()
-    if (
-        mutation
-        and key is not None
-        and manager.is_session_starting(
-            state.require_current_session_id(), key
-        )
-    ):
+    if mutation and key is not None and manager.is_file_starting(key):
         raise HTTPException(409, "Wait for sandbox preparation to finish.")
     session = state.get_current_session()
     if session is not None:
@@ -309,7 +303,7 @@ def _sandbox_source(
     return None, path, backend_for(path)
 
 
-@tool("packages_sandbox")
+@tool("packages_sandbox", notebook="optional")
 @requires("edit")
 async def get_sandbox(
     *, request: Request, body: SandboxRequest
@@ -327,7 +321,7 @@ async def get_sandbox(
     return SandboxResponse(backend=backend, manifest=manifest, filename=path)
 
 
-@tool("packages_manifest")
+@tool("packages_manifest", notebook="optional")
 @requires("edit")
 async def update_manifest(
     *, request: Request, body: UpdateManifestRequest
@@ -350,7 +344,7 @@ async def update_manifest(
     return SandboxResponse(backend=backend, manifest=manifest, filename=path)
 
 
-@tool("packages_sync")
+@tool("packages_sync", notebook="optional")
 @requires("edit")
 async def sync_sandbox(
     *, request: Request, body: SandboxRequest

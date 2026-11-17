@@ -25,11 +25,16 @@ import {
   MARIMO_CONTEXT_PART_TYPE,
   resolveChatContext,
 } from "../completion-utils";
+import { MockExecutions } from "@/__mocks__/executions";
 
 // Mock getCodes function
 vi.mock("@/core/codemirror/copilot/getCodes", () => ({
   getCodes: vi.fn(),
 }));
+
+beforeEach(() => {
+  MockExecutions.seed(store, []);
+});
 
 describe("getAICompletionBody", () => {
   beforeEach(() => {
@@ -82,6 +87,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -98,6 +104,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -129,6 +136,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -167,6 +175,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -215,6 +224,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -252,6 +262,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -295,6 +306,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -324,6 +336,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });
@@ -361,6 +374,7 @@ describe("getAICompletionBody", () => {
           "variables": [],
         },
         "includeOtherCode": "// Some other code",
+        "notebookId": "n1",
       }
     `);
   });

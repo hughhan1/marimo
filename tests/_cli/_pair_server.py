@@ -57,10 +57,8 @@ class PairTestServer:
             request = tool_request(
                 self.url,
                 "kernel_status",
-                headers={
-                    **self._headers,
-                    "Marimo-Session-Id": self.session_id,
-                },
+                {"notebook_id": self.notebook_id},
+                headers=self._headers,
             )
             try:
                 with urllib.request.urlopen(request, timeout=1) as response:

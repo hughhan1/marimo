@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
-@tool("sql_validate")
+@tool("sql_validate", notebook="required")
 @requires("edit")
 async def validate_sql(
     *, request: Request, body: ValidateSQLRequest

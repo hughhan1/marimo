@@ -26,3 +26,9 @@ export const confirmedDocumentAtom = atom((get) => {
   const replica = get(activeNotebookReplicaAtom);
   return replica === null ? null : get(replica.documentAtom);
 });
+
+/** The connected notebook's id, or null while none is. */
+export const activeNotebookIdAtom = atom((get) => {
+  const replica = get(activeNotebookReplicaAtom);
+  return replica === null ? null : (get(replica.notebookAtom)?.id ?? null);
+});

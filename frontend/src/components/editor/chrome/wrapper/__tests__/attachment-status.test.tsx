@@ -16,10 +16,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import type { Attachment } from "@/core/notebook/attachments";
 import { pairConfigAtom } from "@/core/config/pair";
-import {
-  type StableSessionId,
-  stableSessionIdAtom,
-} from "@/core/kernel/session";
 import { connectionAtom } from "@/core/network/connection";
 import { ConnectionState } from "@/core/session/types";
 import { Deferred } from "@/utils/Deferred";
@@ -31,14 +27,14 @@ vi.mock("@/core/network/holon", () => {
   function mockTools() {
     return {
       pair_notebooks_attachments_detach: ({
-        id,
+        notebook_id,
         attachment_id,
       }: {
-        id: string;
+        notebook_id: string;
         attachment_id: string;
       }) =>
         API.post(
-          `/pair/notebooks/${encodeURIComponent(id)}/attachments/detach`,
+          `/pair/notebooks/${encodeURIComponent(notebook_id)}/attachments/detach`,
           {
             attachment_id,
           },
@@ -51,6 +47,10 @@ vi.mock("@/core/network/holon", () => {
     ) => {
       return call(mockTools());
     },
+    inNotebook: <A extends object>(args: A) => ({
+      ...args,
+      notebook_id: "nb-test",
+    }),
   };
 });
 
@@ -74,7 +74,6 @@ function renderStatus(attachments: Attachment[] = [AGENT], preview = true) {
   store.set(connectionAtom, { state: ConnectionState.OPEN });
   store.set(pairConfigAtom, { ...PAIR_CONFIG, hostEnabled: preview });
   store.set(attachmentsAtom, attachments);
-  store.set(stableSessionIdAtom, "stable/test" as StableSessionId);
   return {
     store,
     ...render(
@@ -299,7 +298,7 @@ describe("AttachmentStatus", () => {
     );
     await waitFor(() =>
       expect(API.post).toHaveBeenCalledWith(
-        "/pair/notebooks/stable%2Ftest/attachments/detach",
+        "/pair/notebooks/nb-test/attachments/detach",
         { attachment_id: "a1" },
       ),
     );
@@ -364,14 +363,6 @@ describe("AttachmentStatus", () => {
     expect(
       screen.queryByRole("button", { name: "Confirm disconnect Pi" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("disables disconnect without a stable session ID", () => {
-    const { store } = renderStatus();
-    act(() => store.set(stableSessionIdAtom, null));
-    expect(
-      screen.getByRole("button", { name: "Disconnect Pi" }),
-    ).toBeDisabled();
   });
 
   it("removes detached agents when the list is replaced", () => {

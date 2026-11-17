@@ -273,12 +273,6 @@ def _failure(status: object, detail: str | None, problem: object) -> PairError:
     """The error a server's refusal describes."""
     if status in (401, 403):
         return PairError("Authentication failed.")
-    if isinstance(detail, str) and detail.startswith(
-        ("Invalid session id", "Invalid stable session id")
-    ):
-        return StaleNotebookError(detail)
-    if detail == "Missing Marimo-Session-Id header":
-        return NotebookUnsupportedError()
     if status == 404:
         return StaleNotebookError(detail or "Unknown notebook.")
     if (
@@ -296,7 +290,7 @@ def _failure(status: object, detail: str | None, problem: object) -> PairError:
 
 
 def execute(
-    *, url: str, session_id: str, token: str | None, code: str
+    *, url: str, notebook_id: str, token: str | None, code: str
 ) -> ExecutionResult:
     """Run `code` against a notebook's kernel and return its outcome."""
     unknown = "The execution response ended before completion was confirmed."
@@ -305,8 +299,7 @@ def execute(
             url=url,
             token=token,
             name="kernel_execute",
-            arguments={"code": code},
-            headers={"Marimo-Stable-Session-Id": session_id},
+            arguments={"code": code, "notebook_id": notebook_id},
         )
     except (PairConnectionError, UnreadableReplyError) as error:
         # The code may have run, so the caller must inspect rather than retry.
@@ -516,14 +509,13 @@ def call_tool(
     token: str | None,
     name: str,
     arguments: dict[str, object] | None = None,
-    headers: Mapping[str, str] | None = None,
 ) -> object:
     """Call one of the editor's tools and return its structured result."""
     request_url = _endpoint_url(url, "/api/mcp")
     response = open_response(
         method="POST",
         url=request_url,
-        headers={**_mcp_headers("tools/call", name, token), **(headers or {})},
+        headers=_mcp_headers("tools/call", name, token),
         body=_mcp_body("tools/call", name, arguments or {}),
     )
     unexpected = f"Unexpected response from {display_url(request_url)}."

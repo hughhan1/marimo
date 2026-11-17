@@ -11,6 +11,7 @@ import type { DataUIPart, FileUIPart, UIMessage } from "ai";
 import { getAIContextRegistry } from "@/core/ai/context/context";
 import type { ContextLocatorId } from "@/core/ai/context/registry";
 import { getCodes } from "@/core/codemirror/copilot/getCodes";
+import { activeNotebookId } from "@/core/network/holon";
 import type { AiCompletionRequest } from "@/core/network/types";
 import { store } from "@/core/state/jotai";
 import { Logger } from "@/utils/Logger";
@@ -42,6 +43,7 @@ export function getAICompletionBody({
 
   return {
     includeOtherCode: getCodes(""),
+    notebookId: activeNotebookId(),
     context: {
       plainText: contextString,
       schema: [],
@@ -181,6 +183,7 @@ export async function getAICompletionBodyWithAttachments({
   return {
     body: {
       includeOtherCode: getCodes(""),
+      notebookId: activeNotebookId(),
       context: {
         plainText,
         schema: [],

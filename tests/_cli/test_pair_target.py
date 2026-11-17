@@ -7,6 +7,7 @@ from marimo._cli.pair import target
 from marimo._cli.pair.client import (
     AmbiguousNotebookError,
     HostEndpoint,
+    NoNotebookError,
     PairError,
 )
 from marimo._cli.pair.discovery import Listing, RunningNotebook
@@ -37,7 +38,7 @@ def test_notebook_id_resolves_without_a_url(
         url=None, session_id=NOTEBOOK.id, token=credential
     )
     assert result == ExecutionTarget(
-        NOTEBOOK.url, NOTEBOOK.id, credential or HOST.token, NOTEBOOK.id
+        NOTEBOOK.url, NOTEBOOK.id, credential or HOST.token
     )
     assert "secret" not in repr(result)
 
@@ -63,7 +64,7 @@ def test_explicit_credentials_scope_discovery_to_the_requested_server(
     )
     assert target.resolve_target(
         url="https://remote", session_id=identifier, token="explicit"
-    ) == ExecutionTarget("https://remote", "sess-one", "explicit", "nb-one")
+    ) == ExecutionTarget("https://remote", "nb-one", "explicit")
     assert calls == [{"url": "https://remote", "token": "explicit"}]
 
 
@@ -78,7 +79,7 @@ def test_local_url_uses_catalog_without_editor_authentication(
     )
     assert target.resolve_target(
         url=NOTEBOOK.url, session_id=None, token=None
-    ) == ExecutionTarget(NOTEBOOK.url, NOTEBOOK.id, HOST.token, NOTEBOOK.id)
+    ) == ExecutionTarget(NOTEBOOK.url, NOTEBOOK.id, HOST.token)
 
 
 @pytest.mark.parametrize(
@@ -90,17 +91,41 @@ def test_local_url_uses_catalog_without_editor_authentication(
         "nb-opaque",
     ],
 )
-def test_explicit_local_session_defers_to_the_selected_server(
+def test_explicit_local_session_is_found_in_the_servers_sessions(
     monkeypatch: pytest.MonkeyPatch,
     identifier: str,
 ) -> None:
+    calls: list[dict[str, str | None]] = []
+
+    def sessions(**kwargs: str | None) -> dict[str, dict[str, str]]:
+        calls.append(kwargs)
+        return {"browser": {"session_id": identifier, "notebook_id": "nb-two"}}
+
     monkeypatch.setattr(target, "find_host", lambda _: HOST)
     monkeypatch.setattr(
         target, "list_running_notebooks", lambda _: Listing([NOTEBOOK], [])
     )
+    monkeypatch.setattr(target, "list_sessions", sessions)
     assert target.resolve_target(
         url=NOTEBOOK.url, session_id=identifier, token=None
-    ) == ExecutionTarget(NOTEBOOK.url, identifier, HOST.token)
+    ) == ExecutionTarget(NOTEBOOK.url, "nb-two", HOST.token)
+    assert calls == [{"url": NOTEBOOK.url, "token": HOST.token}]
+
+
+def test_a_session_without_a_notebook_cannot_run_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        target,
+        "list_sessions",
+        lambda **_: {
+            "browser": {"session_id": "sess-one", "notebook_id": None}
+        },
+    )
+    with pytest.raises(NoNotebookError):
+        target.resolve_target(
+            url="https://remote", session_id="sess-one", token="explicit"
+        )
 
 
 def test_multiple_notebooks_require_selection(
@@ -153,7 +178,7 @@ def test_remote_url_keeps_legacy_session_discovery(
     )
     assert target.resolve_target(
         url="https://remote", session_id=None, token="explicit"
-    ) == ExecutionTarget("https://remote", "sess-one", "explicit", "nb-one")
+    ) == ExecutionTarget("https://remote", "nb-one", "explicit")
 
 
 @pytest.mark.parametrize("known", [True, False])
@@ -176,9 +201,7 @@ def test_url_restricts_notebook_discovery_to_one_local_host(
             notebook_id=NOTEBOOK.id,
             session_id=None,
             token=None,
-        ) == ExecutionTarget(
-            NOTEBOOK.url, NOTEBOOK.id, HOST.token, NOTEBOOK.id
-        )
+        ) == ExecutionTarget(NOTEBOOK.url, NOTEBOOK.id, HOST.token)
     else:
         with pytest.raises(PairError, match="No running notebook matches"):
             target.resolve_target(
@@ -223,7 +246,7 @@ def test_catalog_membership_identifies_notebooks(
         session_id=identifier if selector == "session_id" else None,
         notebook_id=identifier if selector == "notebook_id" else None,
         token=None,
-    ) == ExecutionTarget(NOTEBOOK.url, identifier, HOST.token, identifier)
+    ) == ExecutionTarget(NOTEBOOK.url, identifier, HOST.token)
 
 
 def test_local_session_resolution_does_not_ignore_discovery_errors(

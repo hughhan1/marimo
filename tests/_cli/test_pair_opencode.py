@@ -364,7 +364,7 @@ def test_detached_forwarder_to_opencode(
                 request = tool_request(
                     notebook.url,
                     "pair_notebooks_messages",
-                    {"id": notebook.stable_session_id, "message": message},
+                    {"notebook_id": notebook.notebook_id, "message": message},
                 )
                 with urllib.request.urlopen(request, timeout=5) as response:
                     assert tool_status(tool_result(response)) == 200
