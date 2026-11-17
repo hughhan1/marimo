@@ -155,6 +155,17 @@ describe("RuntimeManager", () => {
 
       expect(url.href).toBe("https://sandbox.example.com/base/mcp");
     });
+
+    it("addresses the endpoint a proxy serves, from the page's origin", () => {
+      const runtime = new RuntimeManager({
+        url: "https://sandbox.example.com/base",
+        mcpUrl: "/mcp/app",
+      });
+
+      expect(runtime.getMcpURL().href).toBe(
+        `${window.location.origin}/mcp/app`,
+      );
+    });
   });
 
   describe("getTerminalWsURL", () => {

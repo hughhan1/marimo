@@ -372,6 +372,7 @@ async def index(request: Request) -> Response:
             server_token=app_state.skew_protection_token,
             mode=app_state.mode,
             asset_url=app_state.asset_url,
+            mcp_url=app_state.mcp_url,
         )
     else:
         config_manager = app_state.config_manager_at_file(file_key)
@@ -430,6 +431,7 @@ async def index(request: Request) -> Response:
             if app_state.remote_url
             else None,
             asset_url=app_state.asset_url,
+            mcp_url=app_state.mcp_url,
             html_head=app_state.html_head,
             execute_opengraph_generators=(
                 app_state.session_manager.execute_opengraph_generators
