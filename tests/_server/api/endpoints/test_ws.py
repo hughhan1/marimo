@@ -115,8 +115,10 @@ def test_a_page_keeps_its_session_across_polling_and_streaming_until_it_is_shut_
     while manager.get_session(SessionId("123")) is None:
         assert time.monotonic() < deadline
         time.sleep(0.05)
-    with connect_session(client, WS_URL, resume=cursor[0]):
-        pass
+    with connect_session(client, WS_URL, resume=cursor[0]) as page:
+        # A page calls its notebook's tools once it is ready, which the
+        # host's adoption of the session precedes.
+        receive_until("kernel-ready", page)
     moved = client.post(
         "/api/kernel/set_ui_element_value",
         headers=headers("123"),
