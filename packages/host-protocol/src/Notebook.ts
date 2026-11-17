@@ -146,11 +146,22 @@ export const Update = Tool.make("notebook.update", {
   failure: Schema.Union([...Problems.Mutation.members]),
 }).annotate(Tool.Title, "Rename or move a notebook");
 
-export const EventsRequest = Schema.Struct({
+/** What the notebook's events and a read of them select. */
+const selection = {
   notebook_id: P.NotebookId,
   types: Schema.optionalKey(P.Types),
   run_id: Schema.optionalKey(P.RunFilter),
   cursor: Schema.optionalKey(P.Cursor),
+};
+
+export const ReadRequest = Schema.Struct(selection).annotate({
+  description:
+    "The notebook to read, which of its events, and where to resume.",
+  identifier: "ReadNotebookRequest",
+});
+
+export const EventsRequest = Schema.Struct({
+  ...selection,
   attachment_identity: Schema.optionalKey(P.AttachmentIdentity),
   attachment_kind: Schema.optionalKey(P.AttachmentKind),
   attachment_name: Schema.optionalKey(P.AttachmentName),
@@ -170,6 +181,21 @@ export const subscription = <E extends Schema.Top>(
   arguments: EventsRequest,
   payload: events,
 });
+
+/** Reading the notebook's events, for the stream's `NotebookEvent` union. */
+export const read = <E extends Schema.Top>(events: E) =>
+  Tool.make("notebook.read", {
+    description:
+      "Returns what the `notebook` event sends up to and including\n`ready`, without a stream: the notebook's snapshot, or with\n`cursor` the events after it, or `reset` and a snapshot when the\nhost no longer has them. It takes the event's `types` and\n`run_id`, and the `id` of the `ready` it returns resumes the next\nread, so a client that cannot hold a stream open follows the\nnotebook by reading again. Reading changes nothing and does not\nattach the client.\n",
+    parameters: ReadRequest,
+    success: Schema.Struct({ events: Schema.Array(events) }).annotate({
+      description: "The notebook's events, ending in `ready`.",
+      identifier: "NotebookRead",
+    }),
+    failure: Schema.Union([...Problems.Common.members]),
+  })
+    .annotate(Tool.Title, "Read a notebook")
+    .annotate(Tool.Readonly, true);
 
 /** The notebook's tools. */
 export const Tools = Toolkit.make(

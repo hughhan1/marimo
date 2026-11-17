@@ -195,11 +195,14 @@ class Mutations:
         operation: str,
         *,
         notebook_id: str | None,
-        key: str,
+        key: str | None,
         payload: object,
         call: Callable[[], Awaitable[Reply]],
     ) -> Reply:
-        """Run `call` once per idempotency key, and answer retries with its reply."""
+        """Run `call` once per idempotency key, and answer retries with its reply.
+
+        A call without a key, which changes nothing, runs each time.
+        """
         capabilities = (
             {"runtime.run", "runtime.execute"}
             if operation in {"runtime.interrupt", "runtime.cancel"}
@@ -212,6 +215,8 @@ class Mutations:
             record.operations
         ):
             raise Forbidden(f"This notebook does not allow {operation}")
+        if key is None:
+            return await call()
         if not key:
             raise Invalid("Idempotency-Key is required")
         fingerprint = hashlib.sha256(

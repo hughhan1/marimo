@@ -125,6 +125,7 @@ async def test_snapshot_edit_and_retry(bridge):
         "ready",
     ]
     assert events[0]["data"]["notebook"]["operations"] == [
+        "notebook.read",
         "notebook.edit",
         "notebook.save",
         "runtime.run",

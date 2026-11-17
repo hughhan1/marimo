@@ -69,6 +69,7 @@ if TYPE_CHECKING:
 LOGGER = _loggers.marimo_logger()
 
 _OPERATIONS = (
+    "notebook.read",
     "notebook.edit",
     "notebook.save",
     "runtime.run",

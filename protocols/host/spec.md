@@ -333,6 +333,11 @@ event marks the end of the snapshot, after which the stream delivers changes
 as they happen. A client that only needs the current state can disconnect at
 `ready`.
 
+A client that cannot hold a stream open reads the same events with
+`notebook.read`: the snapshot up to and including `ready`, or with `cursor` the
+events after it, under the same rules as a subscription. Reading again from the
+`ready` event's cursor follows the notebook. A read does not attach the client.
+
 Clients can select object kinds with `types`. On a notebook stream, `run_id`
 narrows the view to one run and its executions and items. Because filters also
 select removal events, a client retaining inputs MUST subscribe to both `input`

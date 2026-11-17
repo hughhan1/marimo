@@ -8,6 +8,7 @@ import { NotebookClient } from "../notebook/client.ts";
 import type { ProblemOf, ToolCall } from "../request.ts";
 import type { ToolName } from "../tools.ts";
 import * as Protocol from "../protocol.ts";
+import { fixtureEvents } from "./fixtures.ts";
 
 const fixtures = new NodeUrl.URL(
   "../../../../protocols/host/fixtures/",
@@ -260,9 +261,31 @@ describe("NotebookClient", () => {
     });
     const { notebook, send } = over(() => ({ ok: true, data: {} }));
     await notebook.stop().catch(() => undefined);
-    expect(send.mock.calls[0][0].idempotency_key).toMatch(
-      /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
+    expect(send.mock.calls[0][0]).toMatchObject({
+      idempotency_key: expect.stringMatching(
+        /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
+      ),
+    });
+  });
+
+  it("reads the notebook's events without a key, from a cursor", async () => {
+    const events = fixtureEvents("notebook-events.sse");
+    const read = events.slice(
+      0,
+      events.findIndex((event) => event.event === "ready") + 1,
     );
+    const { notebook, send } = over(() => ({
+      ok: true,
+      data: { events: read },
+    }));
+    const reply = await notebook.read({ cursor: "c-1", types: ["cell"] });
+    expect(send.mock.calls[0][0]).toEqual({
+      operation: "notebook.read",
+      notebook_id: "n1",
+      cursor: "c-1",
+      types: ["cell"],
+    });
+    expect(reply).toEqual({ ok: true, data: { events: read } });
   });
 
   it("follows no stream unless a host client made it", () => {
@@ -275,6 +298,7 @@ describe("NotebookClient", () => {
       "notebook.update": "update",
       "notebook.delete": "delete",
       "notebook.open": "open",
+      "notebook.read": "read",
       "notebook.edit": "edit",
       "notebook.save": "save",
       "runtime.start": "start",

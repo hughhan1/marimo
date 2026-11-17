@@ -262,6 +262,7 @@ def test_untitled_notebooks_offer_editing_and_the_runtime(
     )
     index.refresh()
     assert set(index.untitled("__new__editor").operations) == {
+        "notebook.read",
         "notebook.edit",
         "runtime.start",
         "runtime.stop",

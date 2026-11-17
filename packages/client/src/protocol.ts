@@ -2252,6 +2252,71 @@ export type UpdateNotebookRequestOutput = zod.output<
   typeof UpdateNotebookRequest
 >;
 
+export const ReadNotebookRequest = zod
+  .strictObject({
+    notebook_id: NotebookId.describe("The notebook's id."),
+    types: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries.",
+      ),
+    run_id: RunId.optional().describe(
+      "Narrows the notebook's events to one run.",
+    ),
+    cursor: zod
+      .string()
+      .optional()
+      .describe(
+        "The `id` of the last event the client received, to resume after it.",
+      ),
+  })
+  .describe("The notebook to read, which of its events, and where to resume.");
+
+export type ReadNotebookRequest = zod.input<typeof ReadNotebookRequest>;
+export type ReadNotebookRequestOutput = zod.output<typeof ReadNotebookRequest>;
+
+export const NotebookStreamEvent = zod
+  .union([
+    NotebookEvent,
+    DocumentEvent,
+    CellEvent,
+    RuntimeEvent,
+    AttachmentEvent,
+    RunEvent,
+    ExecutionEvent,
+    ConsoleEvent,
+    DisplayEvent,
+    InputEvent,
+    VariableEvent,
+    AnalysisEvent,
+    CustomEvent,
+    NotebookRemovedEvent,
+    CellRemovedEvent,
+    RuntimeRemovedEvent,
+    AttachmentRemovedEvent,
+    RunRemovedEvent,
+    ExecutionRemovedEvent,
+    ConsoleRemovedEvent,
+    DisplayRemovedEvent,
+    VariableRemovedEvent,
+    ResetEvent,
+    ReadyEvent,
+  ])
+  .describe("One event of the `notebook` event.");
+
+export type NotebookStreamEvent = zod.input<typeof NotebookStreamEvent>;
+export type NotebookStreamEventOutput = zod.output<typeof NotebookStreamEvent>;
+
+export const NotebookRead = zod
+  .object({
+    events: zod.array(NotebookStreamEvent),
+  })
+  .describe("The notebook's events, ending in `ready`.");
+
+export type NotebookRead = zod.input<typeof NotebookRead>;
+export type NotebookReadOutput = zod.output<typeof NotebookRead>;
+
 export const CatalogEventsRequest = zod
   .strictObject({
     types: zod
@@ -2356,35 +2421,3 @@ export type NotebookEventsRequest = zod.input<typeof NotebookEventsRequest>;
 export type NotebookEventsRequestOutput = zod.output<
   typeof NotebookEventsRequest
 >;
-
-export const NotebookStreamEvent = zod
-  .union([
-    NotebookEvent,
-    DocumentEvent,
-    CellEvent,
-    RuntimeEvent,
-    AttachmentEvent,
-    RunEvent,
-    ExecutionEvent,
-    ConsoleEvent,
-    DisplayEvent,
-    InputEvent,
-    VariableEvent,
-    AnalysisEvent,
-    CustomEvent,
-    NotebookRemovedEvent,
-    CellRemovedEvent,
-    RuntimeRemovedEvent,
-    AttachmentRemovedEvent,
-    RunRemovedEvent,
-    ExecutionRemovedEvent,
-    ConsoleRemovedEvent,
-    DisplayRemovedEvent,
-    VariableRemovedEvent,
-    ResetEvent,
-    ReadyEvent,
-  ])
-  .describe("One event of the `notebook` event.");
-
-export type NotebookStreamEvent = zod.input<typeof NotebookStreamEvent>;
-export type NotebookStreamEventOutput = zod.output<typeof NotebookStreamEvent>;

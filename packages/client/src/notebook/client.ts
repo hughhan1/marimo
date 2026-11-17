@@ -29,6 +29,15 @@ interface SaveOptions extends DecisionOptions {
   readonly expectedEtag?: string;
 }
 
+/** What to read of a notebook, and from where. */
+interface ReadOptions {
+  /** The `id` of the last `ready` read, to read only what changed since. */
+  readonly cursor?: Protocol.ReadNotebookRequest["cursor"];
+  readonly types?: Protocol.ReadNotebookRequest["types"];
+  readonly runId?: Protocol.ReadNotebookRequest["run_id"];
+  readonly signal?: AbortSignal;
+}
+
 /** Makes the transport of a notebook subscription with `args`. */
 type Follow = (args: Readonly<Record<string, unknown>>) => NotebookTransport;
 
@@ -49,6 +58,26 @@ export class NotebookClient {
     this.#id = notebookId;
     this.#send = send;
     this.#follow = follow;
+  }
+
+  /**
+   * Read the notebook's events up to `ready`, without a stream: its snapshot,
+   * or with `cursor` what changed since.
+   */
+  public read({ cursor, types, runId, signal }: ReadOptions = {}): Promise<
+    ResultOf<"notebook.read">
+  > {
+    return call(
+      this.#send,
+      "notebook.read",
+      {
+        notebook_id: this.#id,
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(types === undefined ? {} : { types }),
+        ...(runId === undefined ? {} : { run_id: runId }),
+      },
+      { signal },
+    );
   }
 
   /** Rename or move the notebook. */
