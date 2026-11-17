@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -12,14 +14,20 @@ from marimo._messaging.notification import ConsumerCapabilities
 from marimo._server.api.deps import TAB_HEADER
 from marimo._types.ids import ConsumerId, SessionId
 from tests._server.api.endpoints.ws_helpers import headers, receive_until
-from tests._server.host.drive import AUTH, call, socket_snapshot, wait_for
+from tests._server.host.drive import (
+    AUTH,
+    call,
+    socket_snapshot,
+    subscribe,
+    wait_for,
+)
 from tests._server.host.live import open_host
 from tests._server.mcp_client import call_tool
 from tests._server.mocks import get_session_manager
 from tests._server.session_events import connect_session
-from tests._session.test_room import FakeConsumer
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
     from pathlib import Path
 
     from starlette.applications import Starlette
@@ -122,15 +130,26 @@ def test_editor_input_replies_require_interact(
             assert run["outcome"] == "succeeded"
 
 
-def _page(app: Starlette) -> dict[str, str]:
-    """Join an editing page to the notebook's session, as its tab."""
-    (session,) = app.state.session_manager.sessions.values()
-    session.room.add_consumer(
-        FakeConsumer("page"),
-        main=False,
-        capabilities=ConsumerCapabilities.EDITOR,
+@contextlib.asynccontextmanager
+async def _page(app: Starlette) -> AsyncIterator[dict[str, str]]:
+    """A page following the notebook's session, and its tab's headers.
+
+    The page joins the running session; its capabilities follow the join.
+    """
+    page, task, disconnect = subscribe(app, "session", session_id="page")
+    await wait_for(
+        page,
+        lambda response: any(
+            record["data"].get("marimo", {}).get("op")
+            == "consumer-capabilities"
+            for record in response.records
+        ),
     )
-    return {**AUTH, TAB_HEADER: "page"}
+    try:
+        yield {**AUTH, TAB_HEADER: "page"}
+    finally:
+        disconnect()
+        await asyncio.wait_for(task, 5)
 
 
 @pytest.mark.parametrize("scratch", [False, True])
@@ -143,7 +162,10 @@ async def test_input_replies_and_retries(
         + "\n".join("    " + line for line in code.splitlines())
         + "\n    return\n"
     )
-    async with open_host(tmp_path, source) as (app, notebook_id, events):
+    async with (
+        open_host(tmp_path, source) as (app, notebook_id, events),
+        _page(app) as page,
+    ):
         context = app.state.host_context
         notebook = await context.bridge.host.notebook(notebook_id)
         payload: dict[str, Any] = (
@@ -154,7 +176,7 @@ async def test_input_replies_and_retries(
         accepted = await call(
             app,
             "runtime.execute" if scratch else "runtime.run",
-            headers=_page(app),
+            headers=page,
             idempotency_key="run",
             notebook_id=notebook_id,
             **payload,
@@ -243,15 +265,18 @@ async def test_input_replies_and_retries(
 async def test_interrupt_closes_prompt_and_rejects_late_reply(
     tmp_path: Path,
 ) -> None:
-    async with open_host(tmp_path, "import marimo\napp = marimo.App()\n") as (
-        app,
-        notebook_id,
-        events,
+    async with (
+        open_host(tmp_path, "import marimo\napp = marimo.App()\n") as (
+            app,
+            notebook_id,
+            events,
+        ),
+        _page(app) as page,
     ):
         accepted = await call(
             app,
             "runtime.execute",
-            headers=_page(app),
+            headers=page,
             idempotency_key="run",
             notebook_id=notebook_id,
             code="input()",

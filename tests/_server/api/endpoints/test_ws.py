@@ -49,7 +49,7 @@ from tests._server.api.endpoints.ws_helpers import (
 )
 from tests._server.conftest import get_kernel_tasks
 from tests._server.mocks import get_session_manager
-from tests._server.session_events import _portal, connect_session
+from tests._server.session_events import connect_session
 from tests.mcp_request import SessionClosed
 
 if TYPE_CHECKING:
@@ -108,26 +108,18 @@ def test_a_page_keeps_its_session_across_polling_and_streaming_until_it_is_shut_
     cursor: list[str] = []
     with connect_session(client, WS_URL, read_only=cursor):
         pass
-    with connect_session(client, WS_URL, poll=cursor[0]):
-        pass
-    manager = get_session_manager(client)
-    deadline = time.monotonic() + 20
-    while manager.get_session(SessionId("123")) is None:
-        assert time.monotonic() < deadline
-        time.sleep(0.05)
     with connect_session(client, WS_URL, resume=cursor[0]) as page:
-        # A page calls its notebook's tools once it is ready, which the
-        # host's adoption of the session precedes.
         receive_until("kernel-ready", page)
-    moved = client.post(
-        "/api/kernel/set_ui_element_value",
-        headers=headers("123"),
-        json={"objectIds": ["slider"], "values": [4]},
-    )
-    assert moved.status_code == 200, moved.text
+        moved = client.post(
+            "/api/kernel/set_ui_element_value",
+            headers=headers("123"),
+            json={"objectIds": ["slider"], "values": [4]},
+        )
+        assert moved.status_code == 200, moved.text
     with connect_session(client, WS_URL, poll=cursor[0]):
         pass
-    _portal(client).call(manager.close_session, SessionId("123"))
+    shutdown = client.post("/api/kernel/shutdown", headers=headers("123"))
+    assert shutdown.status_code == 200, shutdown.text
     with pytest.raises(SessionClosed) as closed:
         with connect_session(client, WS_URL, poll=cursor[0]):
             pass
