@@ -12,6 +12,7 @@ from marimo._server.api.endpoints import (  # noqa: F401
     datasources,
     documentation,
     editing,
+    execution,
     export,
     file_explorer,
     files,
@@ -26,7 +27,6 @@ from marimo._server.api.endpoints import (  # noqa: F401
 )
 from marimo._server.api.endpoints.ai import router as ai_router
 from marimo._server.api.endpoints.assets import router as assets_router
-from marimo._server.api.endpoints.execution import router as execution_router
 from marimo._server.api.endpoints.health import router as health_router
 from marimo._server.api.endpoints.login import router as login_router
 from marimo._server.api.endpoints.terminal import router as terminal_router
@@ -40,9 +40,6 @@ if TYPE_CHECKING:
 # Define the app routes
 def build_routes(editor: EditorMCP, base_url: str = "") -> list[BaseRoute]:
     app_router = APIRouter(prefix=base_url)
-    app_router.include_router(
-        execution_router, prefix="/api/kernel", name="execution"
-    )
     app_router.include_router(ai_router, prefix="/api/ai", name="ai")
     app_router.include_router(login_router, prefix="/auth", name="auth")
     app_router.include_router(

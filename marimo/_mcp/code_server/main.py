@@ -120,7 +120,7 @@ def setup_code_mcp_server(
                 "Use list_sessions to find valid session IDs.",
             )
 
-        # Correlation ID: see /api/kernel/execute for rationale.
+        # Correlation ID: see `ScratchCellListener` for rationale.
         run_id = str(uuid4())
         listener = ScratchCellListener(run_id=run_id)
         # Ensure we take a lock on the scratchpad before scoping the

@@ -274,9 +274,6 @@ class SkewProtectionMiddleware:
         # plain HTML form and does not attach the server token header.
         if path.endswith("/auth/login"):
             return await self.app(scope, receive, send)
-        # If /api/kernel/execute, skip (agent-only endpoint)
-        if path.endswith("/api/kernel/execute"):
-            return await self.app(scope, receive, send)
         # If ws, skip
         if request.url.path.startswith("/ws") or request.url.path.endswith(
             "/ws"

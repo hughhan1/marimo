@@ -2233,11 +2233,10 @@ class Kernel:
         # If cannot compile, don't run
         cell, error = self._try_compiling_cell(SCRATCH_CELL_ID, code, [])
         if error:
-            # Surface the diagnostic on stderr so SSE clients (e.g. the
-            # /api/kernel/execute CLI path) see it — compile errors
-            # never hit `write_traceback`, so without this the error
-            # only reaches the `CellNotification` side channel and
-            # the SSE `done` event drops it.
+            # Surface the diagnostic on stderr so code-mode callers (e.g.
+            # `marimo pair execute`) see it — compile errors never hit
+            # `write_traceback`, so without this the error only reaches
+            # the `CellNotification` side channel.
             CellNotificationUtils.broadcast_console_output(
                 channel=CellChannel.STDERR,
                 mimetype="text/plain",

@@ -195,8 +195,6 @@ Options:
   -f, --file, --code-file PATH  Read Python from a UTF-8 file, or from stdin
                                 when PATH is '-'. Supply exactly one input
                                 option.
-  --stream                      Write stdout and stderr as they arrive. Default:
-                                print one JSON result.
   -h, --help                    Show this message and exit.
 """)
 
@@ -374,7 +372,7 @@ Options:
         assert result.exit_code == 2
         assert "error: could not read the code file" in result.output
 
-    def test_execute_success_and_default_streaming(
+    def test_execute_success(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         calls: list[dict[str, Any]] = []
@@ -408,7 +406,6 @@ Options:
         assert calls[0]["session_id"] == "s_ab12cd"
         assert calls[0]["code"] == "print(1)"
         assert calls[0]["token"] is None
-        assert calls[0]["stream"] is False
         assert json.loads(result.output) == {
             "success": True,
             "outcome": "succeeded",
@@ -545,7 +542,7 @@ Options:
         assert "--notebook 's'\"'\"'1'" in payload["next"]
         assert "ctx.cells['a\"b']" in payload["next"]
 
-    def test_execute_stream_failure_prints_next_lines(
+    def test_execute_stale_notebook_has_list_next(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def fail_execute(**kwargs: Any) -> ExecutionResult:
@@ -562,19 +559,18 @@ Options:
                 "http://one",
                 "--notebook",
                 "s_old",
-                "--stream",
                 "-c",
                 "print(1)",
             ],
         )
 
         assert result.exit_code == 2
-        assert result.stdout == ""
-        assert result.stderr == (
-            "error: No notebook s_old on http://one. "
-            "Run pair list to find the current notebook.\n"
-            "  next: marimo pair list --url http://one\n"
+        payload = json.loads(result.output)
+        assert payload["error"] == (
+            "No notebook s_old on http://one. "
+            "Run pair list to find the current notebook."
         )
+        assert payload["next"] == "marimo pair list --url http://one"
 
     def test_execute_auth_failure_has_token_next(
         self, monkeypatch: pytest.MonkeyPatch
@@ -717,7 +713,7 @@ Options:
         assert result.exit_code == 1
         assert result.stderr == "Interrupted.\n"
 
-    def test_execute_no_stream_and_token_file(
+    def test_execute_token_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         token_file = tmp_path / "token.txt"
@@ -749,7 +745,6 @@ Options:
                 "s_ab12cd",
                 "--token-file",
                 str(token_file),
-                "--stream",
                 "-c",
                 "print(1)",
             ],
@@ -758,8 +753,7 @@ Options:
         assert result.exit_code == 0
         assert token_calls == [token_file]
         assert execute_calls[0]["token"] == "secret"
-        assert execute_calls[0]["stream"] is True
-        assert result.output == ""
+        assert json.loads(result.output)["success"] is True
 
     def test_execute_resolves_one_session_when_omitted(
         self, monkeypatch: pytest.MonkeyPatch

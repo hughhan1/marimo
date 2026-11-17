@@ -37,6 +37,8 @@ export type MarimoOutputRecentFilesResponse = { "files": Array<MarimoOutputMarim
 export type MarimoOutputMarimoFile = { "initializationId"?: (string | null); "lastModified"?: (number | null); "name": string; "path": string; "sessionId"?: (string | null); };
 export type MarimoOutputRunningNotebooksResponse = { "files": Array<MarimoOutputMarimoFile>; };
 export type MarimoOutputWorkspaceFilesResponse = { "fileCount"?: number; "files": Array<MarimoOutputFileInfo>; "hasMore"?: boolean; "root": string; };
+export type MarimoInputCode = { "code": string; };
+export type MarimoOutputCodeExecutionResult = { "error"?: (string | null); "errors"?: Array<string>; "output"?: (string | null); "output_mimetype"?: (("application/json" | "application/vnd.jupyter.widget-view+json" | "application/vnd.marimo+error" | "application/vnd.marimo+mimebundle" | "application/vnd.marimo+traceback" | "application/vnd.vega.v5+json" | "application/vnd.vega.v6+json" | "application/vnd.vegalite.v5+json" | "application/vnd.vegalite.v6+json" | "image/avif" | "image/bmp" | "image/gif" | "image/jpeg" | "image/png" | "image/svg+xml" | "image/tiff" | "text/csv" | "text/html" | "text/latex" | "text/markdown" | "text/password" | "text/plain" | "video/mp4" | "video/mpeg") | null); "stderr"?: Array<string>; "stdout"?: Array<string>; "success": boolean; };
 export type MarimoInputCellId = { "cellId": string; };
 export type MarimoOutputFormatResponse = { "codes": { [key: string]: string; }; };
 export type MarimoOutputReadCodeResponse = { "contents": string; };
@@ -128,6 +130,7 @@ export interface Inputs {
     "home_workspace_files": { "includeMarkdown"?: boolean; };
     "kernel_code_autocomplete": { "cellId": string; "document": string; "id": string; };
     "kernel_copy": { "destination": string; "source": string; };
+    "kernel_execute": MarimoInputCode;
     "kernel_focus_cell": MarimoInputCellId;
     "kernel_format": { "codes": { [key: string]: string; }; "lineLength": number; };
     "kernel_function_call": { "args": { [key: string]: unknown; }; "functionCallId": string; "functionName": string; "namespace": string; };
@@ -141,7 +144,7 @@ export interface Inputs {
     "kernel_save_app_config": MarimoInputConfig;
     "kernel_save_layout": { "layout"?: ({ [key: string]: unknown; } | null); };
     "kernel_save_user_config": MarimoInputConfig;
-    "kernel_scratchpad_run": { "code": string; };
+    "kernel_scratchpad_run": MarimoInputCode;
     "kernel_set_model_value": { "buffers": Array<string>; "message": (MarimoInputModelUpdateMessage | MarimoInputModelCustomMessage); "modelId": string; "token"?: string; };
     "kernel_set_ui_element_value": { "objectIds": Array<string>; "values": Array<unknown>; };
     "kernel_shutdown": {  };
@@ -224,6 +227,7 @@ export interface Outputs {
     "home_workspace_files": MarimoOutputWorkspaceFilesResponse;
     "kernel_code_autocomplete": MarimoOutputSuccessResponse;
     "kernel_copy": MarimoOutputTextResponse;
+    "kernel_execute": MarimoOutputCodeExecutionResult;
     "kernel_focus_cell": MarimoOutputSuccessResponse;
     "kernel_format": MarimoOutputFormatResponse;
     "kernel_function_call": MarimoOutputSuccessResponse;
@@ -326,6 +330,7 @@ export interface InputTypes {
     "home_workspace_files": {  };
     "kernel_code_autocomplete": {  };
     "kernel_copy": {  };
+    "kernel_execute": {  };
     "kernel_focus_cell": {  };
     "kernel_format": {  };
     "kernel_function_call": {  };
@@ -422,6 +427,7 @@ export interface OutputTypes {
     "home_workspace_files": { "FileInfo": MarimoOutputFileInfo; "OpenGraphMetadata": MarimoOutputOpenGraphMetadata; };
     "kernel_code_autocomplete": {  };
     "kernel_copy": {  };
+    "kernel_execute": {  };
     "kernel_focus_cell": {  };
     "kernel_format": {  };
     "kernel_function_call": {  };

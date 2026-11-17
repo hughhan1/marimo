@@ -205,12 +205,6 @@ def pair() -> None:
     metavar="PATH",
     help="Read Python from a UTF-8 file, or from stdin when PATH is '-'. Supply exactly one input option.",
 )
-@click.option(
-    "--stream",
-    "stream",
-    is_flag=True,
-    help="Write stdout and stderr as they arrive. Default: print one JSON result.",
-)
 @click.pass_context
 def execute(
     ctx: click.Context,
@@ -221,7 +215,6 @@ def execute(
     token: str | None,
     code: str | None,
     code_file: str | None,
-    stream: bool,
 ) -> None:
     if notebook_id is not None and session_id is not None:
         raise click.UsageError("Pass --session or --notebook, not both.")
@@ -269,9 +262,6 @@ def execute(
             session_id=target.id,
             token=target.token,
             code=code,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            stream=stream,
         )
     except PairError as error:
         error_text, next_text = _failure_guidance(
@@ -285,7 +275,6 @@ def execute(
             next_text,
             notebook_id=notebook_id,
             session_id=session_id if notebook_id is None else None,
-            stream=stream,
         )
         ctx.exit(2)
     except KeyboardInterrupt:
@@ -302,18 +291,6 @@ def execute(
             notebook_id=target_id,
             selector=selector,
         )
-
-    if stream:
-        if not result.success:
-            if next_text:
-                _emit_failure(
-                    "Execution failed.",
-                    next_text,
-                    notebook_id=notebook_id,
-                    stream=True,
-                )
-            ctx.exit(1)
-        return
 
     payload: dict[str, object] = {
         "success": result.success,
@@ -502,17 +479,8 @@ def _emit_failure(
     next_text: str | None,
     *,
     notebook_id: str | None,
-    stream: bool,
     session_id: str | None = None,
 ) -> None:
-    if stream:
-        click.echo(f"error: {error_text}", err=True)
-        if next_text:
-            first, *rest = next_text.splitlines()
-            click.echo(f"  next: {first}", err=True)
-            for line in rest:
-                click.echo(f"  {line}", err=True)
-        return
     payload: dict[str, object] = {
         "success": False,
         "error": error_text,

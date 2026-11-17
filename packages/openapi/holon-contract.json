@@ -3240,6 +3240,109 @@
         }
       },
       {
+        "name": "kernel_execute",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "title": "CodeExecutionResult",
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "stdout": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stderr": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "output_mimetype": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "application/json",
+                    "application/vnd.jupyter.widget-view+json",
+                    "application/vnd.marimo+error",
+                    "application/vnd.marimo+mimebundle",
+                    "application/vnd.marimo+traceback",
+                    "application/vnd.vega.v5+json",
+                    "application/vnd.vega.v6+json",
+                    "application/vnd.vegalite.v5+json",
+                    "application/vnd.vegalite.v6+json",
+                    "image/avif",
+                    "image/bmp",
+                    "image/gif",
+                    "image/jpeg",
+                    "image/png",
+                    "image/svg+xml",
+                    "image/tiff",
+                    "text/csv",
+                    "text/html",
+                    "text/latex",
+                    "text/markdown",
+                    "text/password",
+                    "text/plain",
+                    "video/mp4",
+                    "video/mpeg"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "success"
+          ]
+        }
+      },
+      {
         "name": "kernel_focus_cell",
         "inputSchema": {
           "type": "object",

@@ -2247,7 +2247,7 @@ async def test_cell_runs(harness: Harness) -> None:
     assert both.problem["type"].endswith(":invalid-request")
 
 
-def test_legacy_execution_does_not_start_a_cataloged_notebook(
+def test_execution_does_not_start_a_cataloged_notebook(
     harness: Harness,
 ) -> None:
     with TestClient(

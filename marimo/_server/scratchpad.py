@@ -4,8 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from marimo._ai._tools.types import CodeExecutionResult
@@ -15,6 +14,7 @@ from marimo._code_mode.screenshot_meta import (
     SCREENSHOT_SERVER_URL_KEY,
 )
 from marimo._messaging.cell_output import CellChannel
+from marimo._messaging.context import CODE_MODE_KEY
 from marimo._messaging.errors import MarimoAncestorStoppedError
 from marimo._messaging.notebook.outputs import CellOutputs, scratchpad_snapshot
 from marimo._messaging.notification import (
@@ -28,8 +28,6 @@ from marimo._session.extensions.types import EventAwareExtension
 from marimo._session.requests import InstantiateNotebookRequest
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from starlette.requests import Request
 
     from marimo._messaging.notebook.document import (
@@ -39,55 +37,14 @@ if TYPE_CHECKING:
     from marimo._session.session import Session
     from marimo._types.encodable import Encodable
 
-EXECUTION_TIMEOUT = (
-    30.0  # seconds — used only by wait(); stream() has no timeout
-)
-# Channel name constants for SSE events
-_CHANNEL_MAP = {
-    CellChannel.STDOUT: "stdout",
-    CellChannel.STDERR: "stderr",
-}
-
-
-# -- SSE event payload types --------------------------------------------------
-
-
-class OutputData(TypedDict):
-    mimetype: str
-    data: str
-
-
-class ConsoleEvent(TypedDict):
-    data: str
-
-
-class Done(TypedDict):
-    """Terminal SSE event for `/api/kernel/execute`.
-
-    `success` drives the CLI exit code. `output` is the scratch
-    cell's rendered value on success, or `{mimetype: "text/plain",
-    data: ""}` on failure — the actual error detail (traceback, etc.)
-    was already streamed via preceding `stderr` events.
-    """
-
-    success: bool
-    output: OutputData
-
-
-def _format_sse(event: str, data: Any) -> str:
-    """Format a single SSE event (event + JSON data)."""
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+EXECUTION_TIMEOUT = 30.0
 
 
 # -- Listeners ----------------------------------------------------------------
 
 
 class ScratchCellListener(EventAwareExtension):
-    """Listens for scratch cell notifications via an asyncio.Queue.
-
-    Supports both SSE streaming (via `stream()`) and simple blocking
-    wait (via `wait()`) so the same listener works for the HTTP
-    `/execute` endpoint and the MCP `execute_code` tool.
+    """Listens for a scratchpad execution's notifications until it completes.
 
     In addition to the scratch cell's own output, the listener captures
     console output (stdout/stderr) from *other* cells that execute while
@@ -102,12 +59,12 @@ class ScratchCellListener(EventAwareExtension):
 
     def __init__(self, *, run_id: str) -> None:
         super().__init__()
-        self._queue: asyncio.Queue[CellNotification | None] = asyncio.Queue()
+        self._done = asyncio.Event()
         self._run_id = run_id
         self._scratch_started = False
-        self._completed = False
         self.timed_out = False
         self.child_error_summaries: list[str] = []
+        self.stdout: list[str] = []
         self.stderr: list[str] = []
 
     def on_notification_sent(
@@ -123,8 +80,7 @@ class ScratchCellListener(EventAwareExtension):
         # unrelated commands — skip them.
         if isinstance(msg, CompletedRunNotification):
             if msg.run_id == self._run_id:
-                self._completed = True
-                self._queue.put_nowait(None)
+                self._done.set()
             return
 
         if not isinstance(msg, CellNotification):
@@ -132,21 +88,27 @@ class ScratchCellListener(EventAwareExtension):
 
         if msg.cell_id == SCRATCH_CELL_ID:
             self._scratch_started = True
-            self._queue.put_nowait(msg)
-        else:
+        elif not self._scratch_started:
             # Ignore notifications from an execution that was already active
             # when this listener was attached. Child cells run by _code_mode
             # cannot execute before the scratch cell itself starts.
-            if not self._scratch_started:
-                return
-            if msg.console is not None:
-                # Stream console output from cells run by _code_mode
-                # during this scratchpad execution.
-                self._queue.put_nowait(msg)
+            return
 
-        # Keep the existing SSE grace period for trailing console output, but
-        # freeze structured diagnostics at this request's completion boundary.
-        if self._completed:
+        # Console output keeps arriving briefly after completion; see `wait`.
+        if msg.console is not None:
+            console = (
+                msg.console if isinstance(msg.console, list) else [msg.console]
+            )
+            for output in console:
+                if output is None:
+                    continue
+                if output.channel == CellChannel.STDOUT:
+                    self.stdout.append(str(output.data))
+                elif output.channel == CellChannel.STDERR:
+                    self.stderr.append(str(output.data))
+
+        # Freeze diagnostics at this request's completion boundary.
+        if self._done.is_set():
             return
 
         if msg.cell_id != SCRATCH_CELL_ID:
@@ -183,68 +145,18 @@ class ScratchCellListener(EventAwareExtension):
                         f"cell '{msg.cell_id}' raised {diagnostic}"
                     )
 
-        if msg.console is not None:
-            console_outputs = (
-                msg.console if isinstance(msg.console, list) else [msg.console]
-            )
-            # `wait()` consumes queued notifications without formatting them,
-            # so retain stderr in notification order for the structured tool
-            # result.
-            self.stderr.extend(
-                str(output.data)
-                for output in console_outputs
-                if output is not None and output.channel == CellChannel.STDERR
-            )
+    async def wait(self, timeout: float | None = EXECUTION_TIMEOUT) -> None:
+        """Block until execution completes, or `timeout` seconds pass.
 
-    async def stream(self) -> AsyncGenerator[str, None]:
-        """Yield SSE-formatted stdout/stderr events until execution completes.
-
-        Streams indefinitely — the caller is responsible for cancellation
-        (e.g. by disconnecting the SSE client, which triggers a kernel
-        interrupt server-side).
+        Sets `self.timed_out` if the deadline passes first.
         """
-        while True:
-            msg = await self._queue.get()
-
-            if msg is None:
-                # Done sentinel — but stdout/stderr are flushed every
-                # 10ms by the buffered writer thread. Wait 50ms so
-                # trailing console output arrives before we finish.
-                await asyncio.sleep(0.05)
-                while not self._queue.empty():
-                    trailing = self._queue.get_nowait()
-                    if trailing is not None:
-                        for event_str in _format_console(trailing):
-                            yield event_str
-                return
-
-            for event_str in _format_console(msg):
-                yield event_str
-
-    async def wait(self, timeout: float = EXECUTION_TIMEOUT) -> None:
-        """Block until execution completes, discarding streamed events.
-
-        Sets `self.timed_out` if the deadline is exceeded.
-        """
-        import time
-
-        deadline = time.monotonic() + timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                self.timed_out = True
-                return
-            try:
-                msg = await asyncio.wait_for(
-                    self._queue.get(), timeout=remaining
-                )
-            except TimeoutError:
-                self.timed_out = True
-                return
-            if msg is None:
-                # Same flush delay as stream()
-                await asyncio.sleep(0.05)
-                return
+        try:
+            await asyncio.wait_for(self._done.wait(), timeout=timeout)
+        except TimeoutError:
+            self.timed_out = True
+            return
+        # Console output is flushed every 10ms, so let trailing output arrive.
+        await asyncio.sleep(0.05)
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -285,6 +197,7 @@ def scratchpad_request_metadata(
         auth_token (str): Token for screenshot callbacks.
     """
     return {
+        CODE_MODE_KEY: True,
         SCREENSHOT_SERVER_URL_KEY: server_url,
         SCREENSHOT_AUTH_TOKEN_KEY: auth_token,
         SCREENSHOT_FILE_KEY: session.app_file_manager.path
@@ -297,62 +210,11 @@ def snapshot_for_scratchpad(
 ) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
     """Snapshot the notebook document and per-cell outputs for code_mode.
 
-    Returned by both `/api/execute` and the MCP `execute_code` tool
+    Returned for the code-mode `execute_code` tools
     and passed on `ExecuteScratchpadCommand` so `cm.get_context()`
     can expose cells and their last outputs.
     """
     return scratchpad_snapshot(session.document, session.session_view)
-
-
-def _format_console(msg: CellNotification) -> list[str]:
-    """Extract SSE-formatted stdout/stderr events from a CellNotification."""
-    if msg.console is None:
-        return []
-    console_list = (
-        msg.console if isinstance(msg.console, list) else [msg.console]
-    )
-    return [
-        _format_sse(channel, ConsoleEvent(data=str(out.data)))
-        for out in console_list
-        if out is not None
-        for channel in (_CHANNEL_MAP.get(out.channel),)
-        if channel is not None
-    ]
-
-
-_EMPTY_OUTPUT = OutputData(mimetype="text/plain", data="")
-
-
-def build_done_event(
-    session: Session,
-    listener: ScratchCellListener | None = None,
-) -> str:
-    """Build the terminal `done` SSE event.
-
-    `success` is false when the scratch cell itself errored OR any
-    downstream cell captured by the listener errored. The actual error
-    detail was already streamed via `stderr` events earlier in the
-    response — `done` carries only the success bit plus the scratch
-    cell's rendered output on success (empty on failure).
-    """
-    cell_notif = session.session_view.cell_notifications.get(SCRATCH_CELL_ID)
-    output = cell_notif.output if cell_notif is not None else None
-
-    scratch_errored = (
-        output is not None and output.channel == CellChannel.MARIMO_ERROR
-    )
-    has_child_errors = bool(listener and listener.child_error_summaries)
-    success = not (scratch_errored or has_child_errors)
-
-    if success and output is not None and output.channel == CellChannel.OUTPUT:
-        data = output.data
-        if isinstance(data, dict):
-            data = data.get("text/plain", data.get("text/html", str(data)))
-        output_data = OutputData(mimetype=str(output.mimetype), data=str(data))
-    else:
-        output_data = _EMPTY_OUTPUT
-
-    return _format_sse("done", Done(success=success, output=output_data))
 
 
 def extract_result(
@@ -381,9 +243,11 @@ def extract_result(
     ):
         if out is None:
             continue
+        if listener is not None:
+            continue
         if out.channel == CellChannel.STDOUT:
             stdout.append(str(out.data))
-        elif out.channel == CellChannel.STDERR and listener is None:
+        elif out.channel == CellChannel.STDERR:
             stderr.append(str(out.data))
 
     errors: list[str] = []
@@ -395,6 +259,7 @@ def extract_result(
 
     # Include child cell error summaries.
     if listener:
+        stdout.extend(listener.stdout)
         stderr.extend(listener.stderr)
         errors.extend(listener.child_error_summaries)
 
@@ -419,7 +284,7 @@ async def run_scratchpad_code(
     code: str,
     server_url: str,
     auth_token: str,
-    timeout: float = EXECUTION_TIMEOUT,
+    timeout: float | None = EXECUTION_TIMEOUT,
 ) -> CodeExecutionResult:
     """Drive the kernel scratchpad on behalf of code-mode"""
     http_req = build_scratchpad_request(

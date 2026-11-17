@@ -1,7 +1,6 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 import time
@@ -44,8 +43,6 @@ from tests._server.mocks import (
 from tests._server.session_events import connect_session
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from starlette.testclient import TestClient
 
 SESSION_ID = SessionId("session-123")
@@ -54,52 +51,6 @@ HEADERS = {
     **token_header("fake-token"),
 }
 STABLE_SESSION_HEADER = "Marimo-Stable-Session-Id"
-
-
-def _count_execute_interrupts(
-    client: TestClient, *, watcher_fires: bool, stream_cancelled: bool
-) -> int:
-    """POST `/api/kernel/execute` with a simulated client disconnect and
-    return how many times the session interrupted the kernel.
-
-    Args:
-        client (TestClient): Client with a live session `SESSION_ID`.
-        watcher_fires (bool): The disconnect watcher sees the disconnect.
-        stream_cancelled (bool): The response stream is cancelled.
-    """
-
-    session = get_session_manager(client).get_session(SESSION_ID)
-    assert session is not None
-
-    async def wait_for_disconnect(request: object) -> None:  # noqa: ARG001
-        if not watcher_fires:
-            await asyncio.Event().wait()
-
-    async def stream(self: object):  # noqa: ARG001
-        # Yield to the event loop so the watcher task runs first.
-        await asyncio.sleep(0.05)
-        if stream_cancelled:
-            raise asyncio.CancelledError()
-        if False:
-            yield ""
-
-    with (
-        patch(
-            "marimo._server.api.endpoints.execution.wait_for_http_disconnect",
-            wait_for_disconnect,
-        ),
-        patch.object(scratchpad_mod.ScratchCellListener, "stream", stream),
-        patch.object(session, "put_control_request"),
-        patch.object(session, "try_interrupt") as try_interrupt,
-    ):
-        response = client.post(
-            "/api/kernel/execute",
-            headers=HEADERS,
-            json={"code": "x = 1"},
-        )
-
-    assert response.status_code == 200, response.text
-    return try_interrupt.call_count
 
 
 class TestExecutionRoutes_EditMode:
@@ -283,8 +234,6 @@ class TestExecutionRoutes_EditMode:
     @with_session(SESSION_ID)
     def test_execute_with_stable_session_id(client: TestClient) -> None:
 
-        from marimo._server import scratchpad as scratchpad_mod
-
         session = get_session_manager(client).get_session(SESSION_ID)
         assert session is not None
 
@@ -293,18 +242,15 @@ class TestExecutionRoutes_EditMode:
         def capture(req: object, from_consumer_id: object) -> None:  # noqa: ARG001
             captured.append(req)
 
-        async def empty_stream(
-            self: object,  # noqa: ARG001
-        ) -> AsyncGenerator[str, None]:
-            if False:
-                yield ""
+        async def completed(self: object, timeout: object = None) -> None:  # noqa: ARG001
+            return None
 
         with (
             patch.object(session, "put_control_request", side_effect=capture),
             patch.object(
                 scratchpad_mod.ScratchCellListener,
-                "stream",
-                empty_stream,
+                "wait",
+                completed,
             ),
         ):
             response = client.post(
@@ -377,8 +323,6 @@ class TestExecutionRoutes_EditMode:
         """
         from unittest.mock import PropertyMock
 
-        from marimo._server import scratchpad as scratchpad_mod
-
         session = get_session_manager(client).get_session(SESSION_ID)
         assert session is not None
 
@@ -387,9 +331,8 @@ class TestExecutionRoutes_EditMode:
         def capture(req: object, from_consumer_id: object) -> None:  # noqa: ARG001
             captured.append(req)
 
-        async def empty_stream(self: object):  # noqa: ARG001
-            if False:
-                yield ""  # makes this an async generator that yields nothing
+        async def completed(self: object, timeout: object = None) -> None:  # noqa: ARG001
+            return None
 
         for path in [None, "notebooks/my notebook.py"]:
             captured.clear()
@@ -405,8 +348,8 @@ class TestExecutionRoutes_EditMode:
                 ),
                 patch.object(
                     scratchpad_mod.ScratchCellListener,
-                    "stream",
-                    empty_stream,
+                    "wait",
+                    completed,
                 ),
             ):
                 response = client.post(
@@ -439,7 +382,7 @@ class TestExecutionRoutes_EditMode:
     def test_execute_attaches_cell_outputs_snapshot(
         client: TestClient,
     ) -> None:
-        """`/api/kernel/execute` must populate `cell_outputs` from the
+        """`kernel_execute` must populate `cell_outputs` from the
         session view so code_mode can expose `cell.output` and
         `cell.console_outputs`.  Regression guard: removing the
         construction line in the endpoint should fail this test.
@@ -447,7 +390,6 @@ class TestExecutionRoutes_EditMode:
 
         from marimo._messaging.cell_output import CellChannel, CellOutput
         from marimo._messaging.notification import CellNotification
-        from marimo._server import scratchpad as scratchpad_mod
 
         session = get_session_manager(client).get_session(SESSION_ID)
         assert session is not None
@@ -472,16 +414,15 @@ class TestExecutionRoutes_EditMode:
         def capture(req: object, from_consumer_id: object) -> None:  # noqa: ARG001
             captured.append(req)
 
-        async def empty_stream(self: object):  # noqa: ARG001
-            if False:
-                yield ""
+        async def completed(self: object, timeout: object = None) -> None:  # noqa: ARG001
+            return None
 
         with (
             patch.object(session, "put_control_request", side_effect=capture),
             patch.object(
                 scratchpad_mod.ScratchCellListener,
-                "stream",
-                empty_stream,
+                "wait",
+                completed,
             ),
         ):
             response = client.post(
@@ -500,49 +441,6 @@ class TestExecutionRoutes_EditMode:
         assert cell_outputs is not None
         assert cell_outputs.output[cell_id] is sample
         assert cell_outputs.console_outputs[cell_id] == [sample_console]
-
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_execute_interrupts_kernel_on_watched_disconnect(
-        client: TestClient,
-    ) -> None:
-        """On ASGI spec >= 2.4 servers only the disconnect watcher sees
-        the disconnect. It must interrupt the kernel."""
-        assert (
-            _count_execute_interrupts(
-                client, watcher_fires=True, stream_cancelled=False
-            )
-            == 1
-        )
-
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_execute_interrupts_kernel_on_cancelled_response(
-        client: TestClient,
-    ) -> None:
-        """On ASGI spec < 2.4 servers the response is cancelled and the
-        watcher never fires. The cancellation must interrupt the kernel."""
-        assert (
-            _count_execute_interrupts(
-                client, watcher_fires=False, stream_cancelled=True
-            )
-            == 1
-        )
-
-    @staticmethod
-    @with_session(SESSION_ID)
-    def test_execute_interrupts_kernel_once_per_disconnect(
-        client: TestClient,
-    ) -> None:
-        """On ASGI spec 2.3 servers both the disconnect watcher and the
-        response cancellation observe one client disconnect. The kernel
-        must receive one interrupt, not two."""
-        assert (
-            _count_execute_interrupts(
-                client, watcher_fires=True, stream_cancelled=True
-            )
-            == 1
-        )
 
     @staticmethod
     @with_session(SESSION_ID)

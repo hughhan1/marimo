@@ -17,6 +17,7 @@ from marimo._core import backend as be, protocol
 from marimo._core.code import code_fingerprint
 from marimo._core.document import Document, DocumentCell
 from marimo._core.stream import Stream
+from marimo._messaging.context import CODE_MODE_KEY
 from marimo._messaging.notification import (
     CellNotification,
     CompletedRunNotification,
@@ -421,6 +422,7 @@ async def test_only_scratch_runs_carry_screenshot_metadata(
         assert command.request is None
     else:
         assert command.request.meta == {
+            CODE_MODE_KEY: True,
             SCREENSHOT_SERVER_URL_KEY: "http://127.0.0.1:2718/base",
             SCREENSHOT_AUTH_TOKEN_KEY: "editor-token",
             SCREENSHOT_FILE_KEY: "/ws/forecasts.py",
