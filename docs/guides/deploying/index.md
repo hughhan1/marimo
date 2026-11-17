@@ -63,6 +63,16 @@ responses. Browsers cap concurrent HTTP/1.1 connections per origin
 open at once. The terminal and language servers (LSP) in `marimo edit` still
 require WebSockets.
 
+A proxy may serve that endpoint at another URL than `<base-url>/mcp`. Tell the
+page where with `--mcp-url`; a path is resolved against the page's origin. A
+proxy that rewrites the `Host` header also needs `--allow-origins` set to the
+public origin, and one that authenticates visitors itself and removes their
+`Authorization` header needs `--no-token`:
+
+```bash
+marimo run app.py --mcp-url /mcp/app --allow-origins https://example.com --no-token
+```
+
 ### Including code in your application
 
 By default, `marimo run` does not send your notebook's source code to

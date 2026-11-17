@@ -162,6 +162,12 @@ sandbox_message = (
 
 check_message = "Disable a static check of the notebook before running."
 
+mcp_url_message = (
+    "URL of this server's MCP endpoint for browsers, when a proxy serves it "
+    "somewhere other than <base-url>/mcp. A path is resolved against the "
+    "page's origin."
+)
+
 try:
     MAX_TERM_WIDTH = shutil.get_terminal_size().columns
 except Exception:
@@ -334,6 +340,12 @@ edit_help_msg = "\n".join(
     ),
 )
 @click.option(
+    "--mcp-url",
+    default=None,
+    type=str,
+    help=mcp_url_message,
+)
+@click.option(
     "--skip-update-check",
     is_flag=True,
     default=False,
@@ -433,6 +445,7 @@ def edit(
     token_password_file: str | None,
     base_url: str,
     allow_origins: tuple[str, ...] | None,
+    mcp_url: str | None,
     skip_update_check: bool,
     sandbox: str | None,
     no_sandbox: bool,
@@ -591,6 +604,7 @@ def edit(
         ),
         base_url=base_url,
         allow_origins=allow_origins,
+        mcp_url=mcp_url,
         redirect_console_to_browser=True,
         ttl_seconds=session_ttl,
         remote_url=remote_url,
@@ -963,6 +977,12 @@ Example:
     ),
 )
 @click.option(
+    "--mcp-url",
+    default=None,
+    type=str,
+    help=mcp_url_message,
+)
+@click.option(
     "--redirect-console-to-browser",
     is_flag=True,
     default=False,
@@ -1044,6 +1064,7 @@ def run(
     skew_protection: bool,
     base_url: str,
     allow_origins: tuple[str, ...],
+    mcp_url: str | None,
     redirect_console_to_browser: bool,
     sandbox: str | None,
     no_sandbox: bool,
@@ -1165,6 +1186,7 @@ def run(
         skew_protection=skew_protection,
         base_url=base_url,
         allow_origins=allow_origins,
+        mcp_url=mcp_url,
         cli_args=parse_args(notebook_args),
         argv=list(notebook_args),
         auth_token=resolve_token(

@@ -121,6 +121,7 @@ def _render_page_config(
     session_snapshot: NotebookSessionV1 | None = None,
     notebook_snapshot: NotebookV1 | None = None,
     runtime_config: list[dict[str, Any]] | None = None,
+    mcp_url: str | None = None,
     layout: LayoutConfig | None = None,
 ) -> str:
     """
@@ -154,6 +155,7 @@ def _render_page_config(
         "notebook": notebook_snapshot,
         "session": session_snapshot,
         "runtime_config": runtime_config,
+        "mcp_url": mcp_url,
     }
 
     pair_config = json_script(
@@ -178,6 +180,7 @@ def _render_page_config(
             "notebook": {notebook},
             "session": {session},
             "runtimeConfig": {runtime_config},
+            "mcpUrl": {mcp_url},
             "pairConfig": {pair_config}
         }}
 """.format(
@@ -202,6 +205,7 @@ def home_page_template(
     server_token: SkewProtectionToken,
     mode: SessionMode,
     asset_url: str | None = None,
+    mcp_url: str | None = None,
 ) -> str:
     html = html.replace("{{ base_url }}", base_url)
     html = html.replace("{{ title }}", "marimo")
@@ -220,6 +224,7 @@ def home_page_template(
         user_config=user_config,
         config_overrides=config_overrides,
         app_config=None,
+        mcp_url=mcp_url,
     )
 
     # Add custom CSS from display config
@@ -316,6 +321,7 @@ def notebook_page_template(
     notebook_snapshot: NotebookV1 | None = None,
     runtime_config: list[dict[str, Any]] | None = None,
     asset_url: str | None = None,
+    mcp_url: str | None = None,
     html_head: str | None = None,
     execute_opengraph_generators: bool = False,
 ) -> str:
@@ -350,6 +356,7 @@ def notebook_page_template(
         config_overrides=config_overrides,
         app_config=app_config,
         runtime_config=runtime_config,
+        mcp_url=mcp_url,
         notebook_snapshot=notebook_snapshot,
         session_snapshot=session_snapshot,
     )

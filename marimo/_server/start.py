@@ -201,6 +201,7 @@ def start(
     argv: list[str],
     base_url: str = "",
     allow_origins: tuple[str, ...] | None = None,
+    mcp_url: str | None = None,
     auth_token: AuthToken | None,
     redirect_console_to_browser: bool,
     skew_protection: bool,
@@ -367,6 +368,7 @@ def start(
         remote_url=remote_url,
         enable_auth=enable_auth,
         startup_tip=startup_tip,
+        mcp_url=mcp_url,
     )
     init_state.apply(app.state)
 

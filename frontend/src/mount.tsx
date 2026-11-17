@@ -286,6 +286,8 @@ const mountOptionsSchema = z.object({
     )
     .nullish()
     .transform((val) => val ?? []),
+
+  mcpUrl: z.string().nullish(),
 });
 
 function initStore(options: unknown) {
@@ -348,20 +350,14 @@ function initStore(options: unknown) {
   const appConfig = parseAppConfig(parsedOptions.data.appConfig);
   store.set(pairConfigAtom, parsedOptions.data.pairConfig);
 
-  // Runtime config
-  if (parsedOptions.data.runtimeConfig.length > 0) {
-    const firstRuntimeConfig = parsedOptions.data.runtimeConfig[0];
-    Logger.debug("⚡ Runtime URL", firstRuntimeConfig.url);
-    store.set(runtimeConfigAtom, {
-      ...firstRuntimeConfig,
-      serverToken: parsedOptions.data.serverToken,
-    });
-  } else {
-    store.set(runtimeConfigAtom, {
-      ...DEFAULT_RUNTIME_CONFIG,
-      serverToken: parsedOptions.data.serverToken,
-    });
-  }
+  const [runtimeConfig = DEFAULT_RUNTIME_CONFIG] =
+    parsedOptions.data.runtimeConfig;
+  Logger.debug("⚡ Runtime URL", runtimeConfig.url);
+  store.set(runtimeConfigAtom, {
+    ...runtimeConfig,
+    serverToken: parsedOptions.data.serverToken,
+    mcpUrl: parsedOptions.data.mcpUrl,
+  });
   // The page's runtime is known from here on, so look for it now.
   void getRuntimeManager().init();
 

@@ -150,6 +150,9 @@ export class RuntimeManager {
    * Requests send auth in headers (see `headers()`), never in the URL.
    */
   public getMcpURL(): URL {
+    if (this.config.mcpUrl) {
+      return new URL(this.config.mcpUrl, window.location.origin);
+    }
     return new URL(
       this.formatHttpURL({ path: "/mcp" }).pathname,
       this.httpURL.origin,

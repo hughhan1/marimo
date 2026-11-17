@@ -115,6 +115,10 @@ class AppStateBase:
         return None
 
     @property
+    def mcp_url(self) -> str | None:
+        return getattr(self.state, "mcp_url", None)
+
+    @property
     def enable_auth(self) -> bool:
         if hasattr(self.state, "enable_auth"):
             return self.state.enable_auth

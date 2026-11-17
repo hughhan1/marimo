@@ -302,6 +302,20 @@ def test_index_with_directory_run_mode(
         assert "<title>marimo</title>" in content
 
 
+@pytest.mark.parametrize("mcp_url", [None, "/mcp/app"])
+def test_pages_carry_the_mcp_url(
+    client: TestClient, tmp_path: Path, mcp_url: str | None
+) -> None:
+    client.app.state.mcp_url = mcp_url  # type: ignore[attr-defined]
+    notebook = client.get("/", headers=token_header())
+    with workspace_scope(
+        client, DirectoryWorkspace(str(tmp_path), include_markdown=False)
+    ):
+        home = client.get("/", headers=token_header())
+    for page in (notebook, home):
+        assert parse_mount_config(page.text)["mcpUrl"] == mcp_url
+
+
 def test_index_with_directory_respects_inline_theme(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
