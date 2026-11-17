@@ -383,7 +383,7 @@ class TestTracePropagationThroughRealApp:
         if "mcp" in sys.modules or _has_mcp():
             from marimo._mcp.setup import setup_mcp_server
 
-            setup_mcp_server(app, "tools")
+            setup_mcp_server(app)
 
         return app
 
