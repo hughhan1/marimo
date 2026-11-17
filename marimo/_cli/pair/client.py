@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+import msgspec
+
 from marimo._server.host import HOST_API_PATH
 
 if TYPE_CHECKING:
@@ -16,6 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
     from http.client import HTTPResponse
     from pathlib import Path
+
+    from marimo._core import protocol
 
 
 class PairError(Exception):
@@ -424,7 +428,7 @@ class HostEndpoint:
     """Host API address and bearer token from a validated live host record."""
 
     url: str
-    token: str = field(repr=False)
+    token: str | None = field(repr=False)
 
 
 def find_host(url: str, *, root: Path | None = None) -> HostEndpoint | None:
@@ -452,8 +456,14 @@ def find_host(url: str, *, root: Path | None = None) -> HostEndpoint | None:
         raise PairInputError("The server URL is invalid.") from error
     for record in discover_hosts(root=root):
         if normalized(record.url) == selected:
-            return HostEndpoint(record.url, record.token)
+            return host_endpoint(record)
     return None
+
+
+def host_endpoint(record: protocol.HostRecord) -> HostEndpoint:
+    return HostEndpoint(
+        record.url, None if record.token is msgspec.UNSET else record.token
+    )
 
 
 def resolve_host(url: str, *, root: Path | None = None) -> HostEndpoint:

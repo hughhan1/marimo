@@ -2199,13 +2199,6 @@ class HostRecord(Struct, frozen=True):
         ),
     ]
     process: Process
-    token: Annotated[
-        str,
-        Meta(
-            description="The secret a client sends to prove it read the record.",
-            min_length=1,
-        ),
-    ]
     url: Annotated[
         str,
         Meta(
@@ -2219,6 +2212,16 @@ class HostRecord(Struct, frozen=True):
             description="The version of this record's format. This document describes version 1."
         ),
     ]
+    token: (
+        Annotated[
+            str,
+            Meta(
+                description="The server's access token, which a client sends as a bearer. Absent when the server takes none.",
+                min_length=1,
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class InputEvent(Struct, frozen=True, tag_field="event", tag="input"):

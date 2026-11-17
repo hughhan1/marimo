@@ -45,7 +45,7 @@ TOOLS: dict[str, Tool] = {
     ),
     "notebook.open": Tool(
         "Show a notebook in the host's own interface",
-        "Opens the notebook where the host normally shows notebooks, such\nas a browser tab or an editor, and returns the URL it used.\nOpening may start a runtime. The host omits its token from the URL,\nand a client opens it exactly as given. If the notebook\ncannot be shown, for example because its file is gone, the host\nanswers `conflict`.\n",
+        "Opens the notebook where the host normally shows notebooks, such\nas a browser tab or an editor, and returns the URL it used.\nOpening may start a runtime. The URL can carry the host's token so\nthat a browser can sign in, so a client opens it exactly as given and\nshows it to no one else. If the notebook\ncannot be shown, for example because its file is gone, the host\nanswers `conflict`.\n",
         protocol.NotebookRequest,
         protocol.OpenNotebookResponse,
     ),

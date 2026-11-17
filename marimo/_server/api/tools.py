@@ -229,7 +229,6 @@ def schemas(tools: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "required": arguments.get("required", []),
                 "additionalProperties": False,
             },
-            "_meta": APP_ONLY,
         }
         if reply is not FileResult:
             definition["outputSchema"] = (
@@ -251,7 +250,10 @@ def contract() -> list[dict[str, Any]]:
     from marimo._server.host.tools import definitions
 
     return sorted(
-        [*schemas(TOOLS), *definitions(catalog=False)],
+        (
+            {**definition, "_meta": APP_ONLY}
+            for definition in [*schemas(TOOLS), *definitions(catalog=False)]
+        ),
         key=lambda definition: definition["name"],
     )
 

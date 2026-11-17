@@ -1633,7 +1633,10 @@ export const HostRecord = zod
     token: zod
       .string()
       .min(1)
-      .describe("The secret a client sends to prove it read the record."),
+      .optional()
+      .describe(
+        "The server's access token, which a client sends as a bearer. Absent when the server takes none.",
+      ),
   })
   .describe(
     "A host record is the file a host writes so that clients can find\nit. A host writes `<marimo-state-dir>/hosts-v1/<id>.json` once its API\nis serving at `url`, where `<id>` is an identifier the host makes\nup each time it starts. The record does not change while the host\nruns, and the host removes it when it stops.\n\nA client reads `version` before anything else and skips any record\nit cannot parse or whose version it does not support. It also\nchecks that the file and its directory belong to the current user\nand cannot be read by others, and that `url` points at this\nmachine.\n",

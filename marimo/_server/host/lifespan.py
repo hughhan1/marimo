@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import secrets
 from typing import TYPE_CHECKING
 
 from marimo import _loggers
@@ -15,6 +14,7 @@ from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.host.record import HostRecordFile, host_url
 from marimo._server.scratchpad import scratchpad_request_metadata
+from marimo._server.tokens import AuthToken
 from marimo._session.model import SessionMode
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ async def ensure_app_host(app: Starlette) -> HostContext:
     # App open only subscribes to session events: it does not index files or
     # await adoption. Concurrent first connections share this context.
     await bridge.open()
-    context = HostContext(bridge=bridge, token="", port=0)
+    context = HostContext(bridge=bridge, token=None, port=0)
     app.state.host_context = context
     return context
 
@@ -62,8 +62,13 @@ async def ensure_host(app: Starlette) -> HostContext:
         ),
     )
     await bridge.open()
-    token = secrets.token_urlsafe(32)
-    context = HostContext(bridge=bridge, token=token, port=server.port)
+    context = HostContext(
+        bridge=bridge,
+        token=None
+        if AuthToken.is_empty(state.session_manager.auth_token)
+        else str(state.session_manager.auth_token),
+        port=server.port,
+    )
     app.state.host_context = context
 
     return context
