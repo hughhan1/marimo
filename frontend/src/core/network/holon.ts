@@ -5,12 +5,6 @@ import { HTTPError } from "@/utils/errors";
 import { once } from "@/utils/once";
 import { getRuntimeManager } from "../runtime/config";
 
-/**
- * The editor's connection to its marimo server, the one place the page calls
- * `connect()`. Its endpoint is always given: alone, `connect()` would bind
- * `/mcp/frontend`, Holon's path for this page, which marimo does not serve, and
- * marimo's own endpoint moves with `--base-url`.
- */
 export const getMarimo = once(async () => {
   const { connect } = await import("#holon-ui");
   const runtimeManager = getRuntimeManager();
