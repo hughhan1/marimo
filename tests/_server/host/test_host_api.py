@@ -2246,6 +2246,17 @@ async def test_cell_runs(harness: Harness) -> None:
     assert both.problem["type"].endswith(":invalid-request")
 
 
+async def test_catalog_read_finds_the_workspace_notebooks(
+    harness: Harness,
+) -> None:
+    response = await call(harness.app, "catalog.read", types=["notebook"])
+
+    assert response.ok, response.problem
+    events = response.data["events"]
+    assert [event["event"] for event in events] == ["notebook", "ready"]
+    assert events[0]["data"]["notebook"]["id"] == harness.notebook_id
+
+
 def test_execution_does_not_start_a_cataloged_notebook(
     harness: Harness,
 ) -> None:

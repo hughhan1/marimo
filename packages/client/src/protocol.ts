@@ -2255,6 +2255,54 @@ export type UpdateNotebookRequestOutput = zod.output<
   typeof UpdateNotebookRequest
 >;
 
+export const ReadCatalogRequest = zod
+  .strictObject({
+    types: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries.",
+      ),
+    cursor: zod
+      .string()
+      .optional()
+      .describe(
+        "The `id` of the last event the client received, to resume after it.",
+      ),
+  })
+  .describe("Which of the catalog's events to read, and where to resume.");
+
+export type ReadCatalogRequest = zod.input<typeof ReadCatalogRequest>;
+export type ReadCatalogRequestOutput = zod.output<typeof ReadCatalogRequest>;
+
+export const CatalogStreamEvent = zod
+  .union([
+    HostEvent,
+    ProjectEvent,
+    NotebookEvent,
+    RuntimeEvent,
+    AttachmentEvent,
+    ProjectRemovedEvent,
+    NotebookRemovedEvent,
+    RuntimeRemovedEvent,
+    AttachmentRemovedEvent,
+    ResetEvent,
+    ReadyEvent,
+  ])
+  .describe("One event of the `catalog` event.");
+
+export type CatalogStreamEvent = zod.input<typeof CatalogStreamEvent>;
+export type CatalogStreamEventOutput = zod.output<typeof CatalogStreamEvent>;
+
+export const CatalogRead = zod
+  .object({
+    events: zod.array(CatalogStreamEvent),
+  })
+  .describe("The catalog's events, ending in `ready`.");
+
+export type CatalogRead = zod.input<typeof CatalogRead>;
+export type CatalogReadOutput = zod.output<typeof CatalogRead>;
+
 export const ReadNotebookRequest = zod
   .strictObject({
     notebook_id: NotebookId.describe("The notebook's id."),
@@ -2343,25 +2391,6 @@ export type CatalogEventsRequest = zod.input<typeof CatalogEventsRequest>;
 export type CatalogEventsRequestOutput = zod.output<
   typeof CatalogEventsRequest
 >;
-
-export const CatalogStreamEvent = zod
-  .union([
-    HostEvent,
-    ProjectEvent,
-    NotebookEvent,
-    RuntimeEvent,
-    AttachmentEvent,
-    ProjectRemovedEvent,
-    NotebookRemovedEvent,
-    RuntimeRemovedEvent,
-    AttachmentRemovedEvent,
-    ResetEvent,
-    ReadyEvent,
-  ])
-  .describe("One event of the `catalog` event.");
-
-export type CatalogStreamEvent = zod.input<typeof CatalogStreamEvent>;
-export type CatalogStreamEventOutput = zod.output<typeof CatalogStreamEvent>;
 
 export const notebookEventsRequestAttachmentIdentityMax = 128;
 

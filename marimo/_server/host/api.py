@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final, TypeGuard, get_args
 from urllib.parse import quote
 
 import msgspec
@@ -124,6 +124,31 @@ async def _delete_notebook(
     return None
 
 
+_CATALOG_STREAM: Final = get_args(get_args(protocol.CatalogStreamEvent)[0])
+
+
+def _on_catalog_stream(
+    event: object,
+) -> TypeGuard[protocol.CatalogStreamEvent]:
+    return isinstance(event, _CATALOG_STREAM)
+
+
+async def _read_catalog(
+    request: Request, call: protocol.ReadCatalogRequest
+) -> protocol.CatalogRead:
+    bridge = _context(request).bridge
+    await bridge.refresh()
+    events = bridge.host.events(
+        None if call.cursor is msgspec.UNSET else call.cursor,
+        types=None if call.types is msgspec.UNSET else set(call.types),
+    )
+    return protocol.CatalogRead(
+        events=tuple(
+            event.event for event in events if _on_catalog_stream(event.event)
+        )
+    )
+
+
 async def _open_notebook(
     request: Request, call: protocol.NotebookRequest
 ) -> Reply:
@@ -151,6 +176,7 @@ CATALOG: dict[str, Callable[[Request, Any], Awaitable[Reply]]] = {
     "notebook.update": _update_notebook,
     "notebook.delete": _delete_notebook,
     "notebook.open": _open_notebook,
+    "catalog.read": _read_catalog,
 }
 """The catalog's tools, which only the host's token may call."""
 

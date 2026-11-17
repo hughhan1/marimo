@@ -27,6 +27,7 @@ it("closes tools' arguments and keeps other objects open", () => {
     "NotebookEventsRequest",
     "NotebookRequest",
     "PutCell",
+    "ReadCatalogRequest",
     "ReadNotebookRequest",
     "RequestedCell",
     "RunRequest",

@@ -29,13 +29,20 @@ export const Create = Tool.make("notebook.create", {
   failure: Schema.Union([...Problems.Mutation.members]),
 }).annotate(Tool.Title, "Create a notebook");
 
-export const EventsRequest = Schema.Struct({
+const selection = {
   types: Schema.optionalKey(P.Types),
   cursor: Schema.optionalKey(P.Cursor),
-}).annotate({
+};
+
+export const EventsRequest = Schema.Struct(selection).annotate({
   description:
     "Which of the catalog's events a subscription follows, and where it resumes.",
   identifier: "CatalogEventsRequest",
+});
+
+export const ReadRequest = Schema.Struct(selection).annotate({
+  description: "Which of the catalog's events to read, and where to resume.",
+  identifier: "ReadCatalogRequest",
 });
 
 /** The catalog's events, for the stream's `CatalogEvent` union. */
@@ -48,6 +55,21 @@ export const subscription = <E extends Schema.Top>(
   arguments: EventsRequest,
   payload: events,
 });
+
+/** Reading the catalog's events, for the stream's `CatalogEvent` union. */
+export const read = <E extends Schema.Top>(events: E) =>
+  Tool.make("catalog.read", {
+    description:
+      "Returns what the `catalog` event sends up to and including\n`ready`, without a stream: the catalog's snapshot, or with `cursor`\nthe events after it, or `reset` and a snapshot when the host no\nlonger has them. It takes the event's `types`, and the `id` of the\n`ready` it returns resumes the next read, so a client that cannot\nhold a stream open finds the host's projects and notebooks by\nreading. Reading changes nothing.\n",
+    parameters: ReadRequest,
+    success: Schema.Struct({ events: Schema.Array(events) }).annotate({
+      description: "The catalog's events, ending in `ready`.",
+      identifier: "CatalogRead",
+    }),
+    failure: Schema.Union([...Problems.Common.members]),
+  })
+    .annotate(Tool.Title, "Read the catalog")
+    .annotate(Tool.Readonly, true);
 
 /** Every operation a host serves, as MCP tools named by operation id. */
 export const Tools = Toolkit.merge(Toolkit.make(Create), Notebook.Tools);
@@ -70,6 +92,7 @@ export const make = <const Objects extends ReadonlyArray<ObjectKind>>(
   ];
   const tools = [
     ...Object.values(Tools.tools),
+    read(derived.CatalogEvent),
     Notebook.read(derived.NotebookEvent),
   ];
   return HttpApi.make("Host")

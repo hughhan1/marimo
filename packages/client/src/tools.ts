@@ -201,6 +201,17 @@ export const tools = {
       Protocol.UnsupportedOperationProblem,
     ],
   },
+  /** Read the catalog. */
+  "catalog.read": {
+    arguments: Protocol.ReadCatalogRequest,
+    result: Protocol.CatalogRead,
+    problems: [
+      Protocol.InvalidRequestProblem,
+      Protocol.ForbiddenProblem,
+      Protocol.NotFoundProblem,
+      Protocol.InternalProblem,
+    ],
+  },
   /** Read a notebook. */
   "notebook.read": {
     arguments: Protocol.ReadNotebookRequest,

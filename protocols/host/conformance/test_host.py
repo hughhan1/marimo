@@ -245,6 +245,17 @@ async def read(host, notebook, **arguments: Any):
     return reply["events"]
 
 
+async def test_catalog_read_is_the_snapshot(host, catalog):
+    (offered,) = objects(catalog, "host")
+    require(offered, "catalog.read")
+    kinds = ["project", "notebook"]
+    reply = await host.call("catalog.read", idempotency_key=None, types=kinds)
+    streamed = await host.snapshot("catalog", types=kinds)
+    assert [(e["event"], e["data"]) for e in reply["events"]] == [
+        (e.event, e.data) for e in streamed
+    ]
+
+
 async def test_read_is_the_snapshot_without_attaching(host, scratch):
     require(scratch, "notebook.read")
     kinds = ["cell", "document"]

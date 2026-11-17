@@ -310,7 +310,10 @@ describe("NotebookClient", () => {
       "runtime.interrupt": "interrupt",
       "runtime.cancel": "cancel",
     } as const).toExtend<
-      Record<Exclude<ToolName, "notebook.create">, keyof NotebookClient>
+      Record<
+        Exclude<ToolName, "notebook.create" | "catalog.read">,
+        keyof NotebookClient
+      >
     >();
   });
 });

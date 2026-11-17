@@ -492,6 +492,27 @@ class Range(Struct, frozen=True):
     start: Position
 
 
+class ReadCatalogRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+
+
 class ReadyEvent(Struct, frozen=True, tag_field="event", tag="ready"):
     data: Annotated[dict[str, Any], Meta(max_length=0)]
     id: Annotated[
@@ -2406,6 +2427,10 @@ class AnalysisEvent(Struct, frozen=True, tag_field="event", tag="analysis"):
         ]
         | UnsetType
     ) = UNSET
+
+
+class CatalogRead(Struct, frozen=True):
+    events: tuple[CatalogStreamEvent, ...]
 
 
 Event: TypeAlias = Annotated[
