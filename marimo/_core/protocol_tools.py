@@ -25,6 +25,12 @@ class Event(NamedTuple):
 
 
 TOOLS: dict[str, Tool] = {
+    "catalog.read": Tool(
+        "Read the catalog",
+        "Returns what the `catalog` event sends up to and including\n`ready`, without a stream: the catalog's snapshot, or with `cursor`\nthe events after it, or `reset` and a snapshot when the host no\nlonger has them. It takes the event's `types`, and the `id` of the\n`ready` it returns resumes the next read, so a client that cannot\nhold a stream open finds the host's projects and notebooks by\nreading. Reading changes nothing.\n",
+        protocol.ReadCatalogRequest,
+        protocol.CatalogRead,
+    ),
     "notebook.create": Tool(
         "Create a notebook",
         "Adds an empty notebook to the project. The call carries the\nnotebook's own fields, and the host fills in what it owns. In a\nproject with a `root`, `path` is required and `name` defaults to\nthe filename; if a file already exists at `path`, the host\nanswers `conflict` and leaves it alone. In a project without a\nroot, `name` is required, the host chooses storage, and `path` is\nnull. A call missing the required field is `invalid-request`.\nThe new notebook appears on the catalog stream with this\ncall's key.\n",

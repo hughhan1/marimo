@@ -57,6 +57,24 @@ describe("Client", () => {
     ]);
   });
 
+  it("reads the catalog's events without a key, from a cursor", async () => {
+    const events = fixtureEvents("events.sse");
+    const read = events.slice(
+      0,
+      events.findIndex((event) => event.event === "ready") + 1,
+    );
+    const { client, calls } = connect(() => ({ events: read }));
+    const reply = await client.read({ cursor: "c-1", types: ["notebook"] });
+    expect(calls).toEqual([
+      {
+        name: "catalog.read",
+        arguments: { cursor: "c-1", types: ["notebook"] },
+        authorization: "Bearer secret",
+      },
+    ]);
+    expect(reply).toEqual({ ok: true, data: { events: read } });
+  });
+
   it("constructs notebook clients without fetching or retaining their records", async () => {
     const { client, fetch, calls } = connect(() => ({}));
     const entry = { ...record, id: "n/1?#%" };

@@ -16,6 +16,14 @@ import {
 } from "./request.ts";
 import { subscribe } from "./transport/mcp.ts";
 
+/** What to read of the catalog, and from where. */
+interface ReadOptions {
+  /** The `id` of the last `ready` read, to read only what changed since. */
+  readonly cursor?: Protocol.ReadCatalogRequest["cursor"];
+  readonly types?: Protocol.ReadCatalogRequest["types"];
+  readonly signal?: AbortSignal;
+}
+
 /** A client for a host's API: its tools and events at `/mcp`. */
 export class Client {
   readonly #url: URL;
@@ -43,6 +51,24 @@ export class Client {
     return new CatalogEvents<K>(
       subscribe(this.#endpoint, this.#options, "catalog", args),
       options,
+    );
+  }
+
+  /**
+   * Read the catalog up to its `ready` without following it: its snapshot,
+   * or with `cursor` what changed since.
+   */
+  public read({ cursor, types, signal }: ReadOptions = {}): Promise<
+    ResultOf<"catalog.read">
+  > {
+    return call(
+      this.#send,
+      "catalog.read",
+      {
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(types === undefined ? {} : { types }),
+      },
+      { signal },
     );
   }
 

@@ -95,9 +95,9 @@ def test_tools_name_their_arguments_results_and_problems():
         arguments = SCHEMAS[tool["inputSchema"]["$ref"].rsplit("/", 1)[1]]
         # A tool that changes something is answered once per key; a read has none.
         read_only = tool.get("annotations", {}).get("readOnlyHint", False)
-        assert ("idempotency_key" in arguments["required"]) is not read_only, (
-            tool["name"]
-        )
+        assert (
+            "idempotency_key" in arguments.get("required", ())
+        ) is not read_only, tool["name"]
         assert arguments["additionalProperties"] is False, tool["name"]
         if "outputSchema" in tool:
             assert tool["outputSchema"]["$ref"].rsplit("/", 1)[1] in SCHEMAS

@@ -9,6 +9,7 @@ OPERATIONS = [
     "notebook.update",
     "notebook.delete",
     "notebook.open",
+    "catalog.read",
     "notebook.read",
     "notebook.edit",
     "notebook.save",
