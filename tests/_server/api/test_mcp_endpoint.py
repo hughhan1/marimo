@@ -60,7 +60,7 @@ def _call(
 def test_the_committed_contract_matches_the_server() -> None:
     # Regenerate with `make fe-codegen`.
     committed = json.loads(
-        (ROOT / "packages/openapi/holon-contract.json").read_text()
+        (ROOT / "frontend/server/holon-contract.json").read_text()
     )
     assert committed["schema"]["tools"] == [
         {
