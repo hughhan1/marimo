@@ -6,7 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from marimo._messaging.context import HTTP_REQUEST_CTX, is_code_mode_request
+from marimo._messaging.context import (
+    CODE_MODE_KEY,
+    HTTP_REQUEST_CTX,
+    is_code_mode_request,
+)
 from marimo._messaging.tracebacks import (
     _highlight_traceback,
     format_exception,
@@ -98,16 +102,16 @@ class TestTracebacks:
         assert is_code_highlighting('class="not-codehilite"') is False
 
     def test_write_traceback_plain_text_in_code_mode(self) -> None:
-        """When request is from /api/kernel/execute, use plain text."""
+        """An agent's code-mode run gets plain-text tracebacks."""
         mock_stderr = MagicMock(spec=Stderr)
         req = HTTPRequest(
-            url={"path": "/api/kernel/execute"},
+            url={"path": "/api/mcp"},
             base_url={},
             headers={},
             query_params={},
             path_params={},
             cookies={},
-            meta={},
+            meta={CODE_MODE_KEY: True},
             user=None,
         )
         token = HTTP_REQUEST_CTX.set(req)
@@ -219,15 +223,15 @@ class TestIsCodeModeRequest:
     def test_no_request_context(self) -> None:
         assert is_code_mode_request() is False
 
-    def test_execute_endpoint(self) -> None:
+    def test_code_mode_request(self) -> None:
         req = HTTPRequest(
-            url={"path": "/api/kernel/execute"},
+            url={"path": "/api/mcp"},
             base_url={},
             headers={},
             query_params={},
             path_params={},
             cookies={},
-            meta={},
+            meta={CODE_MODE_KEY: True},
             user=None,
         )
         token = HTTP_REQUEST_CTX.set(req)
@@ -236,7 +240,7 @@ class TestIsCodeModeRequest:
         finally:
             HTTP_REQUEST_CTX.reset(token)
 
-    def test_run_endpoint(self) -> None:
+    def test_request_without_code_mode(self) -> None:
         req = HTTPRequest(
             url={"path": "/api/mcp"},
             base_url={},

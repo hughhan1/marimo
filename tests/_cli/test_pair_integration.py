@@ -6,7 +6,6 @@ import os
 import signal
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Literal
 
 import pytest
@@ -66,38 +65,6 @@ def _run(
         timeout=timeout,
         check=False,
     )
-
-
-def test_streams_output_before_execution_finishes(
-    server: PairTestServer,
-) -> None:
-    process = subprocess.Popen(
-        _command(
-            server,
-            "--stream",
-            "-c",
-            'import time; print("a"); time.sleep(1); print("b")',
-        ),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    try:
-        assert process.stdout is not None
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            first_line = executor.submit(process.stdout.readline).result(
-                timeout=10
-            )
-        assert first_line == "a\n"
-        assert process.poll() is None
-        stdout, stderr = process.communicate(timeout=10)
-    finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
-
-    assert process.returncode == 0, stderr
-    assert stdout == "b\n"
 
 
 @pytest.mark.parametrize("selector", ["notebook", "session", "auto"])
@@ -181,11 +148,9 @@ def test_explicit_wrong_token_does_not_fall_back_to_local_credentials(
     editor_server.wait_for_kernel("idle")
 
 
-@pytest.mark.parametrize("stream", [False, True])
 def test_editor_execution_failure_preserves_output(
     editor_server: PairTestServer,
     tmp_path: Path,
-    stream: bool,
 ) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("pair-editor-private-token")
@@ -193,22 +158,17 @@ def test_editor_execution_failure_preserves_output(
         editor_server,
         "--token-file",
         str(token_file),
-        *(["--stream"] if stream else []),
         "-c",
         "print('before error'); 1 / 0",
         selector="session",
     )
     assert result.returncode == 1, result.stderr
-    if stream:
-        assert result.stdout == "before error\n"
-        assert "ZeroDivisionError" in result.stderr
-    else:
-        payload = json.loads(result.stdout)
-        assert payload["success"] is False
-        assert payload["stdout"] == "before error\n"
-        assert "ZeroDivisionError" in payload["stderr"]
-        assert payload["notebook"] == {"id": editor_server.notebook_id}
-        assert "session" not in payload
+    payload = json.loads(result.stdout)
+    assert payload["success"] is False
+    assert payload["stdout"] == "before error\n"
+    assert "ZeroDivisionError" in payload["stderr"]
+    assert payload["notebook"] == {"id": editor_server.notebook_id}
+    assert "session" not in payload
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGINT requires POSIX")
@@ -334,11 +294,9 @@ def test_execution_without_runtime_reports_error(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("identifier", ["notebook_id", "stable_session_id"])
-def test_legacy_execute_accepts_the_local_credential(
+def test_execute_accepts_the_local_credential(
     editor_server: PairTestServer, identifier: str
 ) -> None:
-    import io
-
     from marimo._cli.pair.client import execute, resolve_host
 
     host = resolve_host(editor_server.url)
@@ -347,9 +305,6 @@ def test_legacy_execute_accepts_the_local_credential(
         session_id=getattr(editor_server, identifier),
         token=host.token,
         code="print('local credential')",
-        stdout=io.StringIO(),
-        stderr=io.StringIO(),
-        stream=False,
     )
     assert result.success, result.stderr
     assert result.stdout == "local credential\n"

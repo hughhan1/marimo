@@ -48,7 +48,7 @@ def validate_auth(
     client = conn.scope.get("client")
     if (
         conn.scope.get("method") == "POST"
-        and conn.scope["path"] == state.base_url + "/api/kernel/execute"
+        and conn.scope["path"] == state.base_url + "/api/mcp"
         and context is not None
         and context.bridge.app_sessions is None
         and context.token
@@ -57,7 +57,8 @@ def validate_auth(
         and host_header_ok(conn.headers.get("host"), context.port)
         and bearer_matches(conn.headers.get("Authorization"), context.token)
     ):
-        # Local agent credentials must not become browser login cookies.
+        # A local agent holding the host's token may call the editor's
+        # tools. Its credentials must not become browser login cookies.
         return True
 
     # Check for session cookie

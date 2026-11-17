@@ -56,40 +56,34 @@ async def _execute(
     verify_png: bool = False,
 ) -> str:
     response = await client.post(
-        "/api/kernel/execute",
-        headers={"Marimo-Session-Id": session_id},
-        json={"code": code},
+        "/api/mcp",
+        json=tool_payload("kernel_execute", {"code": code}),
+        headers={
+            **request_headers("tools/call", "kernel_execute"),
+            "Marimo-Session-Id": session_id,
+        },
         timeout=90,
     )
     response.raise_for_status()
-    event = ""
-    stdout = ""
-    stderr = ""
-    completed = False
-    for line in response.text.splitlines():
-        if line.startswith("event: "):
-            event = line.removeprefix("event: ")
-        elif line.startswith("data: "):
-            data = json.loads(line.removeprefix("data: "))
-            if event == "stdout":
-                stdout += data["data"]
-            elif event == "stderr":
-                stderr += data["data"]
-            elif event == "done":
-                assert data["success"], stderr
-                if verify_png:
-                    assert data["output"]["mimetype"] == "image/png"
-                    image_url = data["output"]["data"]
-                    assert image_url.startswith("data:image/png;base64,")
-                    png = base64.b64decode(
-                        image_url.split(",", 1)[1], validate=True
-                    )
-                    assert png.startswith(b"\x89PNG\r\n\x1a\n")
-                    assert (
-                        "PNG_SHA=" + hashlib.sha256(png).hexdigest() in stdout
-                    )
-                completed = True
-    assert completed, response.text
+    # A long call answers as a stream: pings, then the result.
+    body = next(
+        (
+            line.removeprefix("data: ")
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ),
+        response.text,
+    )
+    result = json.loads(body)["result"]["structuredContent"]
+    stdout = "".join(result["stdout"])
+    assert result["success"], "".join(result["stderr"])
+    if verify_png:
+        assert result["output_mimetype"] == "image/png"
+        image_url = result["output"]
+        assert image_url.startswith("data:image/png;base64,")
+        png = base64.b64decode(image_url.split(",", 1)[1], validate=True)
+        assert png.startswith(b"\x89PNG\r\n\x1a\n")
+        assert "PNG_SHA=" + hashlib.sha256(png).hexdigest() in stdout
     return stdout.strip()
 
 

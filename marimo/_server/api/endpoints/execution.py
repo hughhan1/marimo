@@ -1,14 +1,13 @@
 # Copyright 2026 Marimo. All rights reserved.
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from starlette.authentication import requires
-from starlette.responses import StreamingResponse
 
 from marimo import _loggers
+from marimo._ai._tools.types import CodeExecutionResult
 from marimo._runtime.commands import (
     DebugCellCommand,
     ExecuteScratchpadCommand,
@@ -22,7 +21,6 @@ from marimo._server.api.utils import (
     dispatch_control_request,
     enforce_consumer_capability,
     get_code_mode_credentials,
-    parse_request,
 )
 from marimo._server.models.models import (
     DebugCellRequest,
@@ -33,8 +31,6 @@ from marimo._server.models.models import (
     SetBreakpointsRequest,
     SuccessResponse,
 )
-from marimo._server.router import APIRouter
-from marimo._server.sse import wait_for_http_disconnect
 from marimo._server.uvicorn_utils import close_uvicorn
 from marimo._session.consumer_policy import (
     TakeoverDecision,
@@ -46,18 +42,12 @@ from marimo._session.requests import (
 )
 from marimo._session.types import KernelState
 from marimo._types.ids import ConsumerId
-from marimo._utils.asyncio_utils import cancel_and_wait
 from marimo._utils.http import HTTPException
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from starlette.requests import Request
 
 LOGGER = _loggers.marimo_logger()
-
-# Router for execution endpoints
-router = APIRouter()
 
 
 @tool("kernel_set_ui_element_value")
@@ -146,102 +136,29 @@ async def kernel_status(
     return KernelStatusResponse(state="running" if is_running else "idle")
 
 
-@router.post("/execute", include_in_schema=False)
+@tool("kernel_execute")
 @requires("edit")
 async def execute_code(
     *,
     request: Request,
-) -> StreamingResponse:
-    from marimo._runtime.commands import ExecuteScratchpadCommand
-    from marimo._server.scratchpad import (
-        ScratchCellListener,
-        build_done_event,
-        build_scratchpad_request,
-        snapshot_for_scratchpad,
-    )
+    body: ExecuteScratchpadRequest,
+) -> CodeExecutionResult:
+    """Run code against the notebook's live kernel and return its outcome."""
+    from marimo._server.scratchpad import run_scratchpad_code
 
     app_state = AppState(request)
-    body = await parse_request(request, cls=ExecuteScratchpadRequest)
     session = app_state.require_current_session_with_stable_id(
         allow_notebook_id=True
     )
-
-    # Register cells into the graph without executing them so that
-    # code_mode's run_cell can resolve dependencies. The kernel
-    # no-ops if already instantiated.
-    session.instantiate(
-        InstantiateNotebookRequest(object_ids=[], values=[], auto_run=False),
-        http_request=HTTPRequest.from_request(request),
+    server_url, auth_token = get_code_mode_credentials(app_state, request)
+    return await run_scratchpad_code(
+        session,
+        request,
+        code=body.code,
+        server_url=server_url,
+        auth_token=auth_token,
+        timeout=None,
     )
-
-    async def sse_generator() -> AsyncGenerator[str, None]:
-        interrupt_sent = False
-
-        def interrupt_once() -> None:
-            # The disconnect watcher and the response cancellation can
-            # both observe one client disconnect. The kernel must get
-            # one interrupt. Both callers run on the event-loop thread,
-            # so a plain flag is enough.
-            nonlocal interrupt_sent
-            if interrupt_sent:
-                return
-            interrupt_sent = True
-            session.try_interrupt()
-
-        async def watch_disconnect() -> None:
-            await wait_for_http_disconnect(request)
-            interrupt_once()
-
-        disconnect_task = asyncio.create_task(watch_disconnect())
-        # Correlation ID: tags both the scratchpad command and the
-        # listener so we wait for *our* completion and ignore
-        # `CompletedRun` events from other commands on this session
-        # (e.g. the `session.instantiate` call above, or concurrent
-        # browser activity).
-        run_id = str(uuid4())
-        try:
-            listener = ScratchCellListener(run_id=run_id)
-            # Ensure we take a lock on the scratchpad before scoping the
-            # listener. See #10035.
-            async with session.scratchpad_lock:
-                with session.scoped(listener):
-                    server_url, auth_token = get_code_mode_credentials(
-                        app_state, request
-                    )
-                    http_req = build_scratchpad_request(
-                        session,
-                        request,
-                        server_url=server_url,
-                        auth_token=auth_token,
-                    )
-                    notebook_cells, cell_outputs = snapshot_for_scratchpad(
-                        session
-                    )
-                    session.put_control_request(
-                        ExecuteScratchpadCommand(
-                            code=body.code,
-                            request=http_req,
-                            notebook_cells=notebook_cells,
-                            cell_outputs=cell_outputs,
-                            run_id=run_id,
-                        ),
-                        from_consumer_id=None,
-                    )
-                    async for event in listener.stream():
-                        yield event
-
-                yield build_done_event(session, listener)
-        except asyncio.CancelledError:
-            # On ASGI spec < 2.4 (uvicorn), Starlette cancels this
-            # generator when the client disconnects. On spec >= 2.4 it
-            # does not, and only the watcher fires. Interrupt here too
-            # so both server kinds stop the kernel.
-            interrupt_once()
-            raise
-        finally:
-            await cancel_and_wait(disconnect_task)
-
-    return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
 @tool("kernel_scratchpad_run")

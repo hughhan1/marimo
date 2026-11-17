@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
     from http.client import HTTPResponse
     from pathlib import Path
-    from typing import TextIO
 
 
 class PairError(Exception):
@@ -29,6 +28,10 @@ class PairInputError(PairError):
 
 class PairConnectionError(PairError):
     """A transport failure while connecting to the notebook server."""
+
+
+class UnreadableReplyError(PairError):
+    """The server's reply could not be read, so its outcome is unknown."""
 
 
 class NoRuntimeError(PairError):
@@ -255,120 +258,71 @@ def _response_problem(response: HTTPResponse) -> tuple[str | None, str | None]:
 
 
 def _raise_for_status(response: HTTPResponse) -> None:
-    if response.status in (401, 403):
-        response.close()
-        raise PairError("Authentication failed.")
     if 200 <= response.status < 300:
         return
     detail, problem = _response_problem(response)
     response.close()
+    raise _failure(response.status, detail, problem)
+
+
+def _failure(status: object, detail: str | None, problem: object) -> PairError:
+    """The error a server's refusal describes."""
+    if status in (401, 403):
+        return PairError("Authentication failed.")
     if isinstance(detail, str) and detail.startswith(
         ("Invalid session id", "Invalid stable session id")
     ):
-        raise StaleNotebookError(detail)
+        return StaleNotebookError(detail)
     if detail == "Missing Marimo-Session-Id header":
-        raise NotebookUnsupportedError
-    if response.status == 404:
-        raise StaleNotebookError(detail or "Unknown notebook.")
+        return NotebookUnsupportedError()
+    if status == 404:
+        return StaleNotebookError(detail or "Unknown notebook.")
     if (
         problem == "urn:marimo:problem:no-runtime"
         or detail == "The notebook has no running session."
     ):
-        raise NoRuntimeError(detail or "The notebook has no running kernel.")
+        return NoRuntimeError(detail or "The notebook has no running kernel.")
     if problem == "urn:marimo:problem:conflict":
-        raise RunConflictError(detail or "The host refused the run.")
+        return RunConflictError(detail or "The host refused the run.")
     if detail:
-        raise PairError(detail)
-    raise PairError(f"Server returned {response.status}.")
+        return PairError(detail)
+    return PairError(
+        f"Server returned {status}." if status else "The call failed."
+    )
 
 
 def execute(
-    *,
-    url: str,
-    session_id: str,
-    token: str | None,
-    code: str,
-    stdout: TextIO,
-    stderr: TextIO,
-    stream: bool,
+    *, url: str, session_id: str, token: str | None, code: str
 ) -> ExecutionResult:
-    request_url = _endpoint_url(url, "/api/kernel/execute")
-    headers = {
-        "Content-Type": "application/json",
-        "Marimo-Stable-Session-Id": session_id,
-    }
-    if token is not None:
-        headers["Authorization"] = f"Bearer {token}"
-    body = json.dumps({"code": code}).encode("utf-8")
+    """Run `code` against a notebook's kernel and return its outcome."""
+    unknown = "The execution response ended before completion was confirmed."
     try:
-        response = open_response(
-            method="POST", url=request_url, headers=headers, body=body
+        result = call_tool(
+            url=url,
+            token=token,
+            name="kernel_execute",
+            arguments={"code": code},
+            headers={"Marimo-Stable-Session-Id": session_id},
         )
-    except PairConnectionError as error:
-        raise PairError(
-            "The execution response ended before completion was confirmed."
-        ) from error
-    stdout_parts: list[str] = []
-    stderr_parts: list[str] = []
-
-    def write_event(target: TextIO, parts: list[str], value: str) -> None:
-        if stream:
-            target.write(value)
-            target.flush()
-        else:
-            parts.append(value)
-
-    try:
-        try:
-            for event in iter_sse(response):
-                payload = json.loads(event.data)
-                if event.name == "stdout":
-                    write_event(stdout, stdout_parts, payload["data"])
-                elif event.name == "stderr":
-                    write_event(stderr, stderr_parts, payload["data"])
-                elif event.name == "done":
-                    raw_output = payload.get("output")
-                    data = ""
-                    mimetype = "text/plain"
-                    if isinstance(raw_output, dict):
-                        data = str(raw_output.get("data") or "")
-                        mimetype = str(
-                            raw_output.get("mimetype") or "text/plain"
-                        )
-                    output = (
-                        None
-                        if not data
-                        else {"mimetype": mimetype, "data": data}
-                    )
-                    if stream and output is not None:
-                        stdout.write(f"{output['data']}\n")
-                    return ExecutionResult(
-                        success=bool(payload["success"]),
-                        outcome="succeeded"
-                        if payload["success"]
-                        else "failed",
-                        output=output,
-                        stdout="".join(stdout_parts),
-                        stderr="".join(stderr_parts),
-                    )
-        except (
-            OSError,
-            http.client.HTTPException,
-            ValueError,
-            KeyError,
-            TypeError,
-        ) as error:
-            # A malformed event means the outcome is unknown. The code may
-            # have run, so the caller must inspect rather than retry.
-            raise PairError(
-                "The execution response ended before completion was confirmed."
-            ) from error
-
-        raise PairError(
-            "The execution response ended before completion was confirmed."
-        )
-    finally:
-        response.close()
+    except (PairConnectionError, UnreadableReplyError) as error:
+        # The code may have run, so the caller must inspect rather than retry.
+        raise PairError(unknown) from error
+    if not isinstance(result, dict):
+        raise PairError(unknown)
+    success = bool(result.get("success"))
+    data = result.get("output")
+    return ExecutionResult(
+        success=success,
+        outcome="succeeded" if success else "failed",
+        output=None
+        if not data
+        else {
+            "mimetype": str(result.get("output_mimetype") or "text/plain"),
+            "data": str(data),
+        },
+        stdout="".join(result.get("stdout") or []),
+        stderr="".join(result.get("stderr") or []),
+    )
 
 
 @dataclass(frozen=True)
@@ -552,31 +506,46 @@ def call_tool(
     token: str | None,
     name: str,
     arguments: dict[str, object] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> object:
     """Call one of the editor's tools and return its structured result."""
     request_url = _endpoint_url(url, "/api/mcp")
     response = open_response(
         method="POST",
         url=request_url,
-        headers=_mcp_headers("tools/call", name, token),
+        headers={**_mcp_headers("tools/call", name, token), **(headers or {})},
         body=_mcp_body("tools/call", name, arguments or {}),
     )
     unexpected = f"Unexpected response from {display_url(request_url)}."
     try:
         try:
-            payload = json.load(response.response)
+            # A long call answers as a stream: pings, then the result.
+            payload = (
+                next(
+                    (
+                        json.loads(event.data)
+                        for event in iter_sse(response)
+                        if event.name == "message"
+                    ),
+                    None,
+                )
+                if response.response.getheader("Content-Type", "").startswith(
+                    "text/event-stream"
+                )
+                else json.load(response.response)
+            )
         except (
             OSError,
             UnicodeError,
             json.JSONDecodeError,
             http.client.HTTPException,
         ) as error:
-            raise PairError(unexpected) from error
+            raise UnreadableReplyError(unexpected) from error
     finally:
         response.close()
     result = payload.get("result") if isinstance(payload, dict) else None
     if not isinstance(result, dict):
-        raise PairError(unexpected)
+        raise UnreadableReplyError(unexpected)
     if result.get("isError"):
         raise _tool_error(result)
     return result.get("structuredContent")
@@ -598,10 +567,12 @@ def _tool_error(result: dict[str, object]) -> PairError:
         problem = None
     if not isinstance(problem, dict):
         return PairError(text if isinstance(text, str) else "The call failed.")
-    if problem.get("status") in (401, 403):
-        return PairError("Authentication failed.")
     detail = problem.get("detail") or problem.get("title")
-    return PairError(str(detail) if detail else "The call failed.")
+    return _failure(
+        problem.get("status"),
+        str(detail) if detail else None,
+        problem.get("type"),
+    )
 
 
 def list_sessions(

@@ -332,17 +332,24 @@ def test_open_response_rejects_invalid_url_without_exposing_it(
     )
 
 
-def _tool_reply(payload: object) -> io.BytesIO:
-    """A `tools/call` response whose structured result is `payload`."""
-    return io.BytesIO(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": {"content": [], "structuredContent": payload},
-            }
-        ).encode()
+def _tool_reply(payload: object, *, streamed: bool = False) -> io.BytesIO:
+    """A `tools/call` response whose structured result is `payload`.
+
+    A streamed reply is how a long call answers: pings, then the result.
+    """
+    message = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"content": [], "structuredContent": payload},
+        }
     )
+    if streamed:
+        return FakeEventResponse(
+            f": ping\r\n\r\nevent: message\r\ndata: {message}\r\n\r\n".encode(),
+            "text/event-stream",
+        )
+    return FakeEventResponse(message.encode(), "application/json")
 
 
 def test_list_sessions_sends_request_and_parses_response(
@@ -418,7 +425,7 @@ def test_list_sessions_reports_a_refused_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     problem = {"type": "x", "title": "Forbidden", "status": 403}
-    response = io.BytesIO(
+    response = FakeEventResponse(
         json.dumps(
             {
                 "jsonrpc": "2.0",
@@ -428,7 +435,8 @@ def test_list_sessions_reports_a_refused_call(
                     "content": [{"type": "text", "text": json.dumps(problem)}],
                 },
             }
-        ).encode()
+        ).encode(),
+        "application/json",
     )
     _patch_response(monkeypatch, response)
 
@@ -505,7 +513,7 @@ def test_list_sessions_rejects_malformed_response(
 def test_list_sessions_rejects_invalid_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = io.BytesIO(b"{")
+    response = FakeEventResponse(b"{", "application/json")
     _patch_response(monkeypatch, response)
 
     with pytest.raises(PairError) as exc_info:
@@ -708,64 +716,56 @@ def test_host_problem_types_map_to_cli_errors(
     assert response.closed
 
 
-@pytest.mark.parametrize("stream", [False, True])
-def test_execute_uses_legacy_endpoint_and_streams_results(
+@pytest.mark.parametrize("streamed", [False, True])
+def test_execute_calls_the_kernel_execute_tool(
     monkeypatch: pytest.MonkeyPatch,
-    stream: bool,
+    streamed: bool,
 ) -> None:
-    response = io.BytesIO(
-        b'event: stdout\ndata: {"data":"hello\\n"}\n\n'
-        b'event: stderr\ndata: {"data":"warning\\n"}\n\n'
-        b'event: done\ndata: {"success":true,"output":{"mimetype":"text/plain","data":"42"}}\n\n'
+    response = _tool_reply(
+        {
+            "success": True,
+            "output": "42",
+            "output_mimetype": "text/plain",
+            "stdout": ["hello\n"],
+            "stderr": ["warning\n"],
+            "errors": [],
+        },
+        streamed=streamed,
     )
     calls = _patch_response(monkeypatch, response)
-    stdout, stderr = io.StringIO(), io.StringIO()
     result = client.execute(
         url="http://localhost:2718",
         session_id="nb-one",
         token="private",
         code="42",
-        stdout=stdout,
-        stderr=stderr,
-        stream=stream,
     )
     assert result == client.ExecutionResult(
         True,
         {"mimetype": "text/plain", "data": "42"},
-        "" if stream else "hello\n",
-        "" if stream else "warning\n",
+        "hello\n",
+        "warning\n",
     )
-    assert (stdout.getvalue(), stderr.getvalue()) == (
-        ("hello\n42\n", "warning\n") if stream else ("", "")
-    )
-    assert calls == [
-        {
-            "method": "POST",
-            "url": "http://localhost:2718/api/kernel/execute",
-            "headers": {
-                "Content-Type": "application/json",
-                "Marimo-Stable-Session-Id": "nb-one",
-                "Authorization": "Bearer private",
-            },
-            "body": b'{"code": "42"}',
-        }
-    ]
+    [call] = calls
+    assert call["url"] == "http://localhost:2718/api/mcp"
+    assert call["headers"]["Mcp-Name"] == "kernel_execute"
+    assert call["headers"]["Marimo-Stable-Session-Id"] == "nb-one"
+    assert call["headers"]["Authorization"] == "Bearer private"
+    assert json.loads(call["body"])["params"]["arguments"] == {"code": "42"}
     assert response.closed
 
 
 @pytest.mark.parametrize(
-    "body",
+    "response",
     [
-        b"",
-        b'event: stdout\ndata: {"data":"partial"}\n\n',
-        b"event: done\ndata: invalid\n\n",
+        FakeEventResponse(b"", "application/json"),
+        FakeEventResponse(b": ping\r\n\r\n", "text/event-stream"),
+        FakeEventResponse(b"invalid", "application/json"),
     ],
 )
 def test_execution_without_confirmation_is_never_retried(
     monkeypatch: pytest.MonkeyPatch,
-    body: bytes,
+    response: FakeEventResponse,
 ) -> None:
-    response = io.BytesIO(body)
     calls = _patch_response(monkeypatch, response)
     with pytest.raises(PairError, match="before completion was confirmed"):
         client.execute(
@@ -773,9 +773,6 @@ def test_execution_without_confirmation_is_never_retried(
             session_id="nb-one",
             token=None,
             code="42",
-            stdout=io.StringIO(),
-            stderr=io.StringIO(),
-            stream=False,
         )
     assert len(calls) == 1
     assert response.closed

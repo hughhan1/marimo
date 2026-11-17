@@ -413,7 +413,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
     [
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "127.0.0.1",
             "localhost:1234",
             "local-secret",
@@ -421,7 +421,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "::1",
             "[::1]:1234",
             "local-secret",
@@ -429,7 +429,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "10.0.0.1",
             "localhost:1234",
             "local-secret",
@@ -437,7 +437,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "127.0.0.1",
             "example.com:1234",
             "local-secret",
@@ -445,7 +445,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "127.0.0.1",
             "localhost:1235",
             "local-secret",
@@ -453,7 +453,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "POST",
-            "/api/kernel/execute",
+            "/api/mcp",
             "127.0.0.1",
             "localhost:1234",
             "wrong",
@@ -477,7 +477,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
         (
             "GET",
-            "/api/kernel/execute",
+            "/api/mcp",
             "127.0.0.1",
             "localhost:1234",
             "local-secret",
@@ -485,7 +485,7 @@ def test_partial_server_config_defaults_to_insecure_local_cookie() -> None:
         ),
     ],
 )
-def test_local_credential_is_scoped_to_execution(
+def test_local_credential_is_scoped_to_the_tool_endpoint(
     base_url: str,
     method: str,
     path: str,

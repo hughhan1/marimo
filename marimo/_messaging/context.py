@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from marimo._runtime.commands import HTTPRequest
 
@@ -92,10 +92,10 @@ class http_request_context:
         HTTP_REQUEST_CTX.reset(self.token)
 
 
+CODE_MODE_KEY = "code_mode"
+
+
 def is_code_mode_request() -> bool:
-    """True when the current request originated from the /api/kernel/execute endpoint."""
+    """True when the current request runs an agent's code through code mode."""
     request = HTTP_REQUEST_CTX.get(None)
-    if request is None:
-        return False
-    path = cast("str", request.url.get("path", ""))
-    return path.endswith("/api/kernel/execute")
+    return request is not None and bool(request.meta.get(CODE_MODE_KEY))

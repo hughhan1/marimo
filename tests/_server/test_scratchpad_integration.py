@@ -1,31 +1,22 @@
 # Copyright 2026 Marimo. All rights reserved.
 """Snapshot tests for what an agent sees when driving code-mode.
 
-`code_mode` + `/api/kernel/execute` are the agent's window into
+`code_mode` + the `kernel_execute` tool are the agent's window into
 the notebook: whatever the agent does (run cells, mutate the graph,
 trigger reactive cascades, hit state setters) it learns about only
-through the SSE stream that endpoint returns. We want explicit
-coverage of that surface across the scenarios the agent can reach,
-so when the output changes we see it.
+through the result that tool returns. We want explicit coverage of
+that surface across the scenarios the agent can reach, so when the
+output changes we see it.
 
-The existing in-process `TestClient` fixture mocks the scratchpad
-stream out entirely, so real kernel timing and cross-process
-notification ordering aren't testable there. These tests share one
-`marimo edit` subprocess across the module and drive it through
-the full HTTP surface: the session's event stream for session setup
-and `completed-run` synchronization, host edits to populate
-`session.document` (required for `code_mode` cell
-lookup by name), host runs to execute cells, and
-`/api/kernel/execute` to hit the scratchpad. Each test gets a
-fresh session via a per-test `session` fixture that calls
-`/api/kernel/restart_session` on teardown. The response body is
-snapshotted as SSE lines with volatile paths and version-specific
-traceback noise scrubbed.
-
-Each test's snapshot encodes the expected SSE output for that
-scenario — failure cases land in `done` with
-`{success: false, output: {mimetype: "text/plain", data: ""}}`;
-error detail arrives earlier in the stream as `stderr` SSE events.
+These tests share one `marimo edit` subprocess across the module and
+drive it through its real surface: the session's event stream for
+session setup and `completed-run` synchronization, host edits to
+populate `session.document` (required for `code_mode` cell lookup by
+name), host runs to execute cells, and `kernel_execute` to hit the
+scratchpad. Each test gets a fresh session via a per-test `session`
+fixture that calls `kernel_restart_session` on teardown. The result is
+snapshotted one field per line, with volatile paths and
+version-specific traceback noise scrubbed.
 """
 
 from __future__ import annotations
@@ -290,9 +281,13 @@ class _Session:
         self.run_cells(cell_ids)
 
     def execute(self, code: str) -> list[str]:
-        """Run `code` via /api/kernel/execute; return normalized SSE lines."""
-        body = self._post("/api/kernel/execute", {"code": code})
-        return _normalize(body)
+        """Run `code` through `kernel_execute`; one normalized line per field."""
+        result = self._tool("kernel_execute", code=code)
+        return _normalize(
+            "\n".join(
+                f"{key}: {json.dumps(value)}" for key, value in result.items()
+            )
+        )
 
 
 # Scrub traceback noise that varies across Python versions and platforms.
@@ -394,13 +389,13 @@ def test_scratchpad_success(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: done",
-            (
-                'data: {"success": true, "output": '
-                '{"mimetype": "text/html", "data": '
-                "\"<pre class='text-xs'>2</pre>\"}}"
-            ),
-            "",
+            "success: true",
+            "output: \"<pre class='text-xs'>2</pre>\"",
+            "stdout: []",
+            "stderr: []",
+            "errors: []",
+            "error: null",
+            'output_mimetype: "text/html"',
         ]
     )
 
@@ -411,23 +406,19 @@ def test_scratchpad_compile_error(session: _Session) -> None:
     Guards that compile-time errors reach the client with actionable
     detail. Compile failures never go through `redirect_streams` /
     `write_traceback` (the cell never runs), so the diagnostic has
-    to be emitted explicitly as a `stderr` SSE event before `done`.
+    to be emitted explicitly on stderr.
     """
     lines = session.execute("def :")
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "line 1\\n    def :\\n        ^\\nSyntaxError: invalid syntax\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            "output: null",
+            "stdout: []",
+            'stderr: ["line 1\\n    def :\\n        ^\\nSyntaxError: invalid syntax\\n"]',
+            'errors: ["line 1\\n    def :\\n        ^\\nSyntaxError: invalid syntax\\n"]',
+            "error: null",
+            'output_mimetype: "application/vnd.marimo+error"',
         ]
     )
 
@@ -441,20 +432,13 @@ def test_scratchpad_itself_errors(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 1, in <module>\\n'
-                "    raise ValueError('boom')\\n"
-                'ValueError: boom\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            "output: null",
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 1, in <module>\\n    raise ValueError(\'boom\')\\nValueError: boom\\n"]',
+            'errors: ["boom"]',
+            "error: null",
+            'output_mimetype: "application/vnd.marimo+error"',
         ]
     )
 
@@ -482,20 +466,13 @@ def test_state_setter_cascade_error(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 3, in <module>\\n'
-                "    result = 1 / get_x()\\n"
-                'ZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            'output: ""',
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    result = 1 / get_x()\\nZeroDivisionError: division by zero\\n"]',
+            "errors: [\"cell 'cell_b' raised ZeroDivisionError: division by zero\"]",
+            "error: null",
+            'output_mimetype: "text/plain"',
         ]
     )
 
@@ -522,20 +499,13 @@ def test_state_chain_cascade_error(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 3, in <module>\\n'
-                "    z = 1 / get_y()\\n"
-                'ZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            'output: ""',
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    z = 1 / get_y()\\nZeroDivisionError: division by zero\\n"]',
+            "errors: [\"cell 'cell_d' raised ZeroDivisionError: division by zero\"]",
+            "error: null",
+            'output_mimetype: "text/plain"',
         ]
     )
 
@@ -561,28 +531,13 @@ def test_multiple_downstream_cells_all_error(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 1, in <module>\\n'
-                "    result = 1 / get_x()\\n"
-                'ZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 3, in <module>\\n'
-                "    result_c = 100 / get_x()\\n"
-                'ZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            'output: ""',
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 1, in <module>\\n    result = 1 / get_x()\\nZeroDivisionError: division by zero\\n", "Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    result_c = 100 / get_x()\\nZeroDivisionError: division by zero\\n"]',
+            "errors: [\"cell 'cell_b' raised ZeroDivisionError: division by zero\", \"cell 'cell_c' raised ZeroDivisionError: division by zero\"]",
+            "error: null",
+            'output_mimetype: "text/plain"',
         ]
     )
 
@@ -610,28 +565,13 @@ def test_scratchpad_raises_after_triggering_cascade(
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 2, in <module>\\n'
-                "    raise RuntimeError('scratch explosion')\\n"
-                'RuntimeError: scratch explosion\\n"}'
-            ),
-            "",
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n'
-                '  File \\"<tmp>\\", line 3, in <module>\\n'
-                "    result = 1 / get_x()\\n"
-                'ZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            "output: null",
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 2, in <module>\\n    raise RuntimeError(\'scratch explosion\')\\nRuntimeError: scratch explosion\\n", "Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    result = 1 / get_x()\\nZeroDivisionError: division by zero\\n"]',
+            'errors: ["scratch explosion", "cell \'cell_b\' raised ZeroDivisionError: division by zero"]',
+            "error: null",
+            'output_mimetype: "application/vnd.marimo+error"',
         ]
     )
 
@@ -662,23 +602,13 @@ def test_ctx_run_cell_cascade_error(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            (
-                'data: {"data": "Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    result = 1 / x\\nZeroDivisionError: division by zero\\n"}'
-            ),
-            "",
-            "event: stdout",
-            (
-                'data: {"data": "edited code of cell \'cell_a\''
-                ' (cell_a) and ran\\n"}'
-            ),
-            "",
-            "event: done",
-            (
-                'data: {"success": false, "output": '
-                '{"mimetype": "text/plain", "data": ""}}'
-            ),
-            "",
+            "success: false",
+            'output: ""',
+            "stdout: [\"edited code of cell 'cell_a' (cell_a) and ran\\n\"]",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 3, in <module>\\n    result = 1 / x\\nZeroDivisionError: division by zero\\n"]',
+            "errors: [\"cell 'cell_b' raised ZeroDivisionError: division by zero\"]",
+            "error: null",
+            'output_mimetype: "text/plain"',
         ]
     )
 
@@ -702,9 +632,7 @@ def test_ctx_run_cell_downstream_stop_is_success(session: _Session) -> None:
         '    ctx.run_cell("cell_a")',
     )
 
-    done_index = lines.index("event: done")
-    done = json.loads(lines[done_index + 1].removeprefix("data: "))
-    assert done["success"] is True
+    assert "success: true" in lines
 
 
 def test_ctx_create_cell_multiply_defined(session: _Session) -> None:
@@ -725,12 +653,13 @@ def test_ctx_create_cell_multiply_defined(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stderr",
-            'data: {"data": "Traceback (most recent call last):\\n  File \\"<tmp>\\", line 2, in <module>\\n    async with cm.get_context() as ctx:\\n  File \\"<marimo>/marimo/_code_mode/_context.py\\", line N, in __aexit__\\n    self._dry_run_compile(ops)\\n  File \\"<marimo>/marimo/_code_mode/_context.py\\", line N, in _dry_run_compile\\n    raise RuntimeError(\\nRuntimeError: Multiply-defined names:\\n  - \'x\' is already defined in cell \'cell_a\' (cell_a)\\n\\nTo skip validation, use: async with cm.get_context(skip_validation=True) as ctx\\n"}',
-            "",
-            "event: done",
-            'data: {"success": false, "output": {"mimetype": "text/plain", "data": ""}}',
-            "",
+            "success: false",
+            "output: null",
+            "stdout: []",
+            'stderr: ["Traceback (most recent call last):\\n  File \\"<tmp>\\", line 2, in <module>\\n    async with cm.get_context() as ctx:\\n  File \\"<marimo>/marimo/_code_mode/_context.py\\", line N, in __aexit__\\n    self._dry_run_compile(ops)\\n  File \\"<marimo>/marimo/_code_mode/_context.py\\", line N, in _dry_run_compile\\n    raise RuntimeError(\\nRuntimeError: Multiply-defined names:\\n  - \'x\' is already defined in cell \'cell_a\' (cell_a)\\n\\nTo skip validation, use: async with cm.get_context(skip_validation=True) as ctx\\n"]',
+            "errors: [\"Multiply-defined names:\\n  - 'x' is already defined in cell 'cell_a' (cell_a)\\n\\nTo skip validation, use: async with cm.get_context(skip_validation=True) as ctx\"]",
+            "error: null",
+            'output_mimetype: "application/vnd.marimo+error"',
         ]
     )
 
@@ -756,11 +685,12 @@ def test_ctx_create_cell_skip_validation(session: _Session) -> None:
 
     assert lines == snapshot(
         [
-            "event: stdout",
-            'data: {"data": "created cell \'<cid>\'\\n"}',
-            "",
-            "event: done",
-            'data: {"success": false, "output": {"mimetype": "text/plain", "data": ""}}',
-            "",
+            "success: false",
+            'output: ""',
+            "stdout: [\"created cell '<cid>'\\n\"]",
+            "stderr: []",
+            "errors: [\"cell '<cid>' raised MultipleDefinitionError\"]",
+            "error: null",
+            'output_mimetype: "text/plain"',
         ]
     )
