@@ -6,15 +6,19 @@ import { once } from "@/utils/once";
 import { getRuntimeManager } from "../runtime/config";
 
 export const getMarimo = once(async () => {
-  const { createApps } = await import("#holon-ui");
+  const { connect } = await import("#holon-ui");
   const runtimeManager = getRuntimeManager();
-  return createApps({
-    marimo: {
+  const page = await connect({
+    web: {
       endpoint: runtimeManager.getMcpURL(),
       fileOrigins: [runtimeManager.httpURL.origin],
       fetch: withHeaders(() => runtimeManager.headers()),
     },
-  }).marimo;
+  });
+  if (page.view !== undefined) {
+    throw new Error("The editor is built as a web page, not an MCP Apps view");
+  }
+  return page;
 });
 
 type Tools = Awaited<ReturnType<typeof getMarimo>>["tools"];

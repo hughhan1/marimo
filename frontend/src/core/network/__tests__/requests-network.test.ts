@@ -3,7 +3,7 @@
 /* oxlint-disable typescript/no-explicit-any */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import contract from "../../../../../packages/openapi/holon-contract.json";
+import contract from "../../../../server/holon-contract.json";
 import { createNetworkRequests } from "../requests-network";
 
 // Mock dependencies

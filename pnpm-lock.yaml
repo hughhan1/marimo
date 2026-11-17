@@ -444,8 +444,8 @@ importers:
         specifier: ^3.4.17
         version: 3.4.17
       holon-ui:
-        specifier: 0.0.1-dev.18
-        version: 0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7))
+        specifier: 0.0.1-dev.20
+        version: 0.0.1-dev.20(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7))
       htm:
         specifier: ^3.1.1
         version: 3.1.1
@@ -6562,16 +6562,6 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  holon-sh@0.0.1-dev.32:
-    resolution: {integrity: sha512-ipD6u5g88oKExhA6bydz+O4pNJoIoXAz18H9HvD80LH1uj72eZGFNV7U8J7mngOrkkPdO6VFwnJsUuujZ0TNKg==}
-    engines: {node: '>=22'}
-    hasBin: true
-    peerDependencies:
-      '@modelcontextprotocol/server': ^2.3.1
-    peerDependenciesMeta:
-      '@modelcontextprotocol/server':
-        optional: true
-
   holon-sh@0.0.1-dev.34:
     resolution: {integrity: sha512-2j/ut2dPh7F/yaNlgbzGjm3FaCukCPkLq1s4L2tmhWn8s6qHL6ziy7CodJTfGhhBrvmY/IP5HMDk1mzJr6aJEQ==}
     engines: {node: '>=22'}
@@ -6607,8 +6597,8 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  holon-ui@0.0.1-dev.18:
-    resolution: {integrity: sha512-bDGdwS7vcj1c2bjgtVeptlI9Q3V6zmTBu11ru8na6QnVRTAl6pEEjx+RPj0yk+NfG8giZzHdNi3/lzdXPWOocg==}
+  holon-ui@0.0.1-dev.20:
+    resolution: {integrity: sha512-OnXmFhZZXkZLotZF5Ab9q/Eh2tSJinoSe5Um+Hil3tRr5pdZTYRIXdFwurJnBUEmzw3Jgm7CEcQFAFDNkCqicw==}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': ^2.0.0
 
@@ -15995,13 +15985,6 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  holon-sh@0.0.1-dev.32:
-    dependencies:
-      '@modelcontextprotocol/client': 2.4.0
-      ipaddr.js: 2.5.0
-      mime: 4.1.2
-      undici: 7.29.1
-
   holon-sh@0.0.1-dev.34:
     dependencies:
       '@modelcontextprotocol/client': 2.4.0
@@ -16028,11 +16011,11 @@ snapshots:
       holon-types-linux-arm64: 0.0.1-dev.55
       holon-types-linux-x64: 0.0.1-dev.55
 
-  holon-ui@0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
+  holon-ui@0.0.1-dev.20(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
     dependencies:
       '@modelcontextprotocol/client': 2.4.0
       '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
-      holon-sh: 0.0.1-dev.32
+      holon-sh: 0.0.1-dev.34
     transitivePeerDependencies:
       - '@modelcontextprotocol/server'
 

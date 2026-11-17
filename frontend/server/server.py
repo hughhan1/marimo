@@ -8,8 +8,8 @@ contract instead.
 
 from __future__ import annotations
 
-# Importing the routes registers the tools.
-from marimo._server.api.router import build_routes  # noqa: F401
+# Importing the endpoints registers the tools.
+import marimo._server.api.endpoints  # noqa: F401
 from marimo._server.api.tools import EditorMCP
 
 server = EditorMCP().server

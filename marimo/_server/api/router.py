@@ -5,26 +5,6 @@ from typing import TYPE_CHECKING
 
 from starlette.routing import Mount, Route
 
-# Importing these registers their tools.
-from marimo._server.api.endpoints import (  # noqa: F401
-    cache,
-    config,
-    datasources,
-    documentation,
-    editing,
-    execution,
-    export,
-    file_explorer,
-    files,
-    home,
-    lsp,
-    packages,
-    pair,
-    secrets,
-    session,
-    sql,
-    storage,
-)
 from marimo._server.api.endpoints.ai import router as ai_router
 from marimo._server.api.endpoints.assets import router as assets_router
 from marimo._server.api.endpoints.health import router as health_router
