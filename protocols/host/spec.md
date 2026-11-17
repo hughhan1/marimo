@@ -11,7 +11,8 @@ its operations as tools, and its event streams as events.
 Clients use this API to read notebook state, follow changes, and call the
 operations the host supports.
 
-To connect, a client needs the API's base URL and an authentication token. The
+To connect, a client needs the API's base URL and, unless the host takes none,
+its bearer token. The
 [local discovery](#local-discovery) mechanism provides these through a record
 published by the host. Clients may also obtain them through configuration or
 another application.
@@ -301,8 +302,9 @@ removes the runtime when its process ends, so a result is **live** when its
 
 Clients connect using the host API's base URL and bearer token, whether
 supplied through configuration or [local discovery](#local-discovery). Version
-1 serves the API over HTTP on loopback addresses. Hosts MUST authenticate
-requests using the token and accept only loopback connections.
+1 serves the API over HTTP on loopback addresses. A host with a token MUST
+authenticate requests using it, and every host MUST accept only loopback
+connections.
 
 The host serves MCP over Streamable HTTP at `/mcp` below the base URL. Each
 operation is a tool of the same name. A tool's arguments are one object: the

@@ -114,8 +114,9 @@ async def editor_call(request: Request, name: str, arguments: object) -> Reply:
 def _submitting_request(request: Request) -> HTTPRequest:
     """Describe the request to notebook code without the token that admitted it."""
     submitted = HTTPRequest.from_request(request)
-    if bearer_matches(
-        request.headers.get("authorization"), _context(request).token
+    token = _context(request).token
+    if token is not None and bearer_matches(
+        request.headers.get("authorization"), token
     ):
         submitted.headers.pop("authorization", None)
     return submitted

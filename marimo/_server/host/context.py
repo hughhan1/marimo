@@ -17,7 +17,7 @@ class HostContext:
     """Host API token, address, session bridge, and retry receipts."""
 
     bridge: SessionBridge
-    token: str
+    token: str | None
     port: int
     mutations: Mutations = field(init=False)
 

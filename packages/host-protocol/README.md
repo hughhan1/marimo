@@ -28,7 +28,7 @@ const tools = Host.Tools.toLayer({
 
 Serve the tools over MCP at `/mcp` below the API's URL, for example with
 `McpServer` from `effect/ai`, beside the `catalog` and `notebook` events of
-the MCP Events draft. Admit only requests that carry the host record's token.
+the MCP Events draft. Admit only requests that carry the host's token, when it has one.
 
 For a client, use [`@marimo-team/client`](../client/README.md).
 

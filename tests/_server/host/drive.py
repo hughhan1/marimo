@@ -38,7 +38,7 @@ PORT = 1234
 
 AUTHORITY = f"127.0.0.1:{PORT}"
 LOOPBACK = ("127.0.0.1", 50000)
-TOKEN = "host-token"
+TOKEN = "fake-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 

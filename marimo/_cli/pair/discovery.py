@@ -15,6 +15,7 @@ from marimo._cli.pair.client import (
     HostEndpoint,
     PairError,
     display_url,
+    host_endpoint,
     iter_events,
     open_events,
 )
@@ -48,10 +49,7 @@ def list_running_notebooks(
     selected = (
         list(hosts)
         if hosts is not None
-        else [
-            HostEndpoint(record.url, record.token)
-            for record in discover_hosts()
-        ]
+        else [host_endpoint(record) for record in discover_hosts()]
     )
     listing = Listing([], [])
     if selected:

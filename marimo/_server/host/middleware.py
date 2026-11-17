@@ -2,7 +2,7 @@
 """Local access and bearer-token authentication for the host API.
 
 Host bearer requests must come from loopback and address a loopback name
-on the server's port. The bearer token comes from the host discovery record.
+on the server's port. The bearer token is the server's access token.
 """
 
 from __future__ import annotations
@@ -70,11 +70,11 @@ class HostApiMiddleware:
             response = problem(
                 "forbidden", "The host API answers only its own address"
             )
-        elif not bearer_matches(
+        elif context.token is not None and not bearer_matches(
             request.headers.get("Authorization"), context.token
         ):
             response = problem(
-                "unauthorized", "Send the host record's token as a bearer"
+                "unauthorized", "Send the server's access token as a bearer"
             )
             response.headers["WWW-Authenticate"] = "Bearer"
         else:

@@ -143,7 +143,7 @@ def _process_started_at() -> datetime:
 class HostRecordFile:
     """A discovery record written at startup and removed at shutdown."""
 
-    def __init__(self, *, url: str, token: str) -> None:
+    def __init__(self, *, url: str, token: str | None) -> None:
         self._record = protocol.HostRecord(
             version=1,
             process=protocol.Process(
@@ -151,7 +151,7 @@ class HostRecordFile:
             ),
             name="marimo",
             url=url,
-            token=token,
+            token=msgspec.UNSET if token is None else token,
         )
         self._path = marimo_state_dir() / "hosts-v1" / f"{uuid4()}.json"
         self._written = False
