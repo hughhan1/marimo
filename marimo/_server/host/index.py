@@ -190,7 +190,8 @@ class WorkspaceIndex:
             operations=tuple(
                 op
                 for op in OPERATIONS
-                if op == "notebook.edit" or op.startswith("runtime.")
+                if op in {"notebook.read", "notebook.edit"}
+                or op.startswith("runtime.")
             ),
             updated_at=None,
         )

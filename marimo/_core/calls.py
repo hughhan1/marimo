@@ -9,7 +9,7 @@ result. The catalog's tools, which only a host serves, live with the host.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final, TypeGuard, get_args
 
 import msgspec
 
@@ -35,6 +35,16 @@ class Caller:
     """Whether the caller's own session may answer the run's input."""
 
 
+_NOTEBOOK_STREAM: Final = get_args(get_args(protocol.NotebookStreamEvent)[0])
+"""The events the notebook stream's union defines."""
+
+
+def _on_notebook_stream(
+    event: object,
+) -> TypeGuard[protocol.NotebookStreamEvent]:
+    return isinstance(event, _NOTEBOOK_STREAM)
+
+
 HANDLERS: dict[str, Handler] = {}
 """Each notebook tool's handler, by the tool's name."""
 
@@ -45,6 +55,24 @@ def _handles(name: str) -> Callable[[Handler], Handler]:
         return handler
 
     return register
+
+
+@_handles("notebook.read")
+async def _read(
+    bridge: NotebookBridge, call: protocol.ReadNotebookRequest, _: Caller
+) -> protocol.NotebookRead:
+    notebook = await bridge.host.notebook(call.notebook_id)
+    events = bridge.host.events(
+        None if call.cursor is msgspec.UNSET else call.cursor,
+        notebook_id=notebook.id,
+        types=None if call.types is msgspec.UNSET else set(call.types),
+        run_id=None if call.run_id is msgspec.UNSET else call.run_id,
+    )
+    return protocol.NotebookRead(
+        events=tuple(
+            event.event for event in events if _on_notebook_stream(event.event)
+        )
+    )
 
 
 @_handles("notebook.edit")
@@ -183,7 +211,7 @@ async def once(
         return await mutations.execute(
             name,
             notebook_id=getattr(call, "notebook_id", None),
-            key=call.idempotency_key,
+            key=getattr(call, "idempotency_key", None),
             payload=call,
             call=serve,
         )

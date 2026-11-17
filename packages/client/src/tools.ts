@@ -201,6 +201,17 @@ export const tools = {
       Protocol.UnsupportedOperationProblem,
     ],
   },
+  /** Read a notebook. */
+  "notebook.read": {
+    arguments: Protocol.ReadNotebookRequest,
+    result: Protocol.NotebookRead,
+    problems: [
+      Protocol.InvalidRequestProblem,
+      Protocol.ForbiddenProblem,
+      Protocol.NotFoundProblem,
+      Protocol.InternalProblem,
+    ],
+  },
 } as const;
 
 /** A tool's name, such as `notebook.edit`. */

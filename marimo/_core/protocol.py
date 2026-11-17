@@ -1650,6 +1650,35 @@ class ProjectMessage(Struct, frozen=True):
     ) = UNSET
 
 
+class ReadNotebookRequest(Struct, frozen=True, forbid_unknown_fields=True):
+    notebook_id: Annotated[NotebookId, Meta(description="The notebook's id.")]
+    cursor: (
+        Annotated[
+            str,
+            Meta(
+                description="The `id` of the last event the client received, to resume after it."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+    run_id: (
+        Annotated[
+            RunId,
+            Meta(description="Narrows the notebook's events to one run."),
+        ]
+        | UnsetType
+    ) = UNSET
+    types: (
+        Annotated[
+            tuple[str, ...],
+            Meta(
+                description="Which kinds to send, such as `runtime` and `project`. Omit it to receive every kind the event carries."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+
+
 class RemovedMessage(Struct, frozen=True):
     id: Annotated[
         str, Meta(description="The id of the object that was removed.")
@@ -2437,3 +2466,7 @@ NotebookStreamEvent: TypeAlias = Annotated[
     | ReadyEvent,
     Meta(description="One event of the `notebook` event."),
 ]
+
+
+class NotebookRead(Struct, frozen=True):
+    events: tuple[NotebookStreamEvent, ...]

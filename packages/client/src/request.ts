@@ -212,10 +212,12 @@ export async function call<Name extends ToolName>(
   { signal, idempotencyKey: key = idempotencyKey() }: MutationOptions = {},
 ): Promise<ResultOf<Name>> {
   const tool = tools[name];
-  const parsed: object = tool.arguments.parse({
-    idempotency_key: key,
-    ...args,
-  });
+  // A call that changes nothing, such as a read, takes no key.
+  const parsed: object = tool.arguments.parse(
+    "idempotency_key" in tool.arguments.shape
+      ? { idempotency_key: key, ...args }
+      : args,
+  );
   signal?.throwIfAborted();
   // SAFETY: `parsed` is the output of `name`'s arguments schema.
   const message = { operation: name, ...parsed } as unknown as ToolCall;

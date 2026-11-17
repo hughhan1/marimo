@@ -235,6 +235,49 @@ async def test_resume_replays_missed_events(host, scratch):
     assert replay[-1].id
 
 
+async def read(host, notebook, **arguments: Any):
+    reply = await host.call(
+        "notebook.read",
+        notebook_id=notebook["id"],
+        idempotency_key=None,
+        **arguments,
+    )
+    return reply["events"]
+
+
+async def test_read_is_the_snapshot_without_attaching(host, scratch):
+    require(scratch, "notebook.read")
+    kinds = ["cell", "document"]
+    read_events = await read(host, scratch, types=kinds)
+    streamed = await snapshot(host, scratch, types=kinds)
+    assert [(e["event"], e["data"]) for e in read_events] == [
+        (e.event, e.data) for e in streamed
+    ]
+    attachments = await read(host, scratch, types=["attachment"])
+    following = await snapshot(host, scratch, types=["attachment"])
+    assert (
+        len(objects(following, "attachment"))
+        == sum(e["event"] == "attachment" for e in attachments) + 1
+    ), "a read attached the client"
+
+
+async def test_read_resumes_from_its_ready(host, scratch):
+    require(scratch, "notebook.read", "notebook.edit")
+    kinds = ["cell", "document"]
+    before = await read(host, scratch, types=kinds)
+    assert before[-1]["event"] == "ready"
+    key = uuid4().hex
+    answer = await edit(
+        host, scratch, [put("check_read", "y = 2")], idempotency_key=key
+    )
+    after = await read(host, scratch, types=kinds, cursor=before[-1]["id"])
+    assert [e["event"] for e in after] == [*kinds, "ready"]
+    assert (
+        after[0]["data"]["cell"]["etag"]
+        == answer["cells"]["check_read"]["etag"]
+    )
+
+
 async def test_create_duplicate_replay_and_missing_key(host, scratch):
     arguments = {key: scratch[key] for key in ("project_id", "name")}
     if scratch["path"] is not None:

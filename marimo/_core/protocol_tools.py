@@ -49,6 +49,12 @@ TOOLS: dict[str, Tool] = {
         protocol.NotebookRequest,
         protocol.OpenNotebookResponse,
     ),
+    "notebook.read": Tool(
+        "Read a notebook",
+        "Returns what the `notebook` event sends up to and including\n`ready`, without a stream: the notebook's snapshot, or with\n`cursor` the events after it, or `reset` and a snapshot when the\nhost no longer has them. It takes the event's `types` and\n`run_id`, and the `id` of the `ready` it returns resumes the next\nread, so a client that cannot hold a stream open follows the\nnotebook by reading again. Reading changes nothing and does not\nattach the client.\n",
+        protocol.ReadNotebookRequest,
+        protocol.NotebookRead,
+    ),
     "notebook.save": Tool(
         "Write the document to the host's store",
         "Writes the document as currently applied, after which `saved_etag`\nequals `etag`. The call names only the notebook, because the host\nalready holds the state. A host that persists every change as\nit applies it need not offer this operation. A client shows a save control\nwhen the notebook lists it, and reads whether anything is unsaved\nfrom the two etags either way.\n\nThe result is an edit response, because a host may rewrite code\nas it saves, for example to format it. Such changes reach the\nstream like any other and the result carries the new etags.\n`expected_etag` makes the document etag the client last read a\nprecondition, and the host answers `precondition-failed` when the\ndocument has moved on. If the store has changed since the host\nlast read or wrote it, the host answers `decision-required`,\noffering to overwrite the store or to reload from it, and the\nclient calls again with its decision and a new key.\n",

@@ -56,6 +56,9 @@ export const toolEntries = (tools: ReadonlyArray<Tool.Any>) =>
     inputSchema: reference(tool.parametersSchema),
     ...(returns(tool) ? { outputSchema: reference(tool.successSchema) } : {}),
     problems: problems(tool).map(reference),
+    ...(Context.get(tool.annotations, Tool.Readonly)
+      ? { annotations: { readOnlyHint: true } }
+      : {}),
   }));
 
 /** The schemas the events name, for the document's components. */

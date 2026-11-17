@@ -68,7 +68,10 @@ export const make = <const Objects extends ReadonlyArray<ObjectKind>>(
     subscription(derived.CatalogEvent),
     Notebook.subscription(derived.NotebookEvent),
   ];
-  const tools = Object.values(Tools.tools);
+  const tools = [
+    ...Object.values(Tools.tools),
+    Notebook.read(derived.NotebookEvent),
+  ];
   return HttpApi.make("Host")
     .annotate(HttpApi.AdditionalSchemas, [
       derived.Event,
