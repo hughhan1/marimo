@@ -1,8 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""Host API routes and session integration for `marimo edit`."""
-
-HOST_API_PATH = "/api/marimo/v1"
-"""Host API path relative to the server's base URL."""
+"""The host API and its session integration for `marimo edit`."""
 
 OPERATIONS = [
     "notebook.create",

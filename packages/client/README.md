@@ -14,7 +14,7 @@ application's configuration or the host's
 ```ts
 import { Client } from "@marimo-team/client";
 
-const client = new Client("http://127.0.0.1:2718/api/marimo/v1", {
+const client = new Client("http://127.0.0.1:2718", {
   token: "your-token",
 });
 ```

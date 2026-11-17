@@ -349,7 +349,7 @@ def isolated_cli(
     monkeypatch.setattr(
         commands,
         "resolve_host",
-        lambda _: HostEndpoint("http://server/api/marimo/v1", "host-token"),
+        lambda _: HostEndpoint("http://server", "host-token"),
     )
     store = ConnectionStore(tmp_path)
     monkeypatch.setattr(commands, "ConnectionStore", lambda: store)

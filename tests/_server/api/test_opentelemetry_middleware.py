@@ -400,13 +400,13 @@ class TestTracePropagationThroughRealApp:
             app = self._create_real_app()
             client = TestClient(app, raise_server_exceptions=False)
             client.post(
-                "/api/mcp",
+                "/mcp",
                 headers={"traceparent": traceparent},
             )
 
         mcp_spans = [s for s in exporter.spans if "/mcp" in (s.name or "")]
         assert len(mcp_spans) >= 1, (
-            f"Expected a span for /api/mcp, got: {[s.name for s in exporter.spans]}"
+            f"Expected a span for /mcp, got: {[s.name for s in exporter.spans]}"
         )
 
         span = mcp_spans[0]
@@ -427,10 +427,10 @@ class TestTracePropagationThroughRealApp:
         ):
             app = self._create_real_app()
             client = TestClient(app, raise_server_exceptions=False)
-            client.post("/api/mcp")
+            client.post("/mcp")
 
         mcp_spans = [s for s in exporter.spans if "/mcp" in (s.name or "")]
         assert len(mcp_spans) >= 1, (
-            f"Expected a span for /api/mcp, got: {[s.name for s in exporter.spans]}"
+            f"Expected a span for /mcp, got: {[s.name for s in exporter.spans]}"
         )
         assert mcp_spans[0].parent is None

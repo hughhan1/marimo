@@ -35,7 +35,7 @@ async def ensure_app_host(app: Starlette) -> HostContext:
     # App open only subscribes to session events: it does not index files or
     # await adoption. Concurrent first connections share this context.
     await bridge.open()
-    context = HostContext(bridge=bridge, token=None, port=0)
+    context = HostContext(bridge=bridge)
     app.state.host_context = context
     return context
 
@@ -62,13 +62,7 @@ async def ensure_host(app: Starlette) -> HostContext:
         ),
     )
     await bridge.open()
-    context = HostContext(
-        bridge=bridge,
-        token=None
-        if AuthToken.is_empty(state.session_manager.auth_token)
-        else str(state.session_manager.auth_token),
-        port=server.port,
-    )
+    context = HostContext(bridge=bridge)
     app.state.host_context = context
 
     return context
@@ -101,7 +95,10 @@ async def host(app: Starlette) -> AsyncIterator[None]:
     if url is None:
         LOGGER.warning("No host record: loopback cannot reach %s", server.host)
     else:
-        record = HostRecordFile(url=url, token=context.token)
+        token = state.session_manager.auth_token
+        record = HostRecordFile(
+            url=url, token=None if AuthToken.is_empty(token) else str(token)
+        )
         try:
             record.write()
         except Exception as e:

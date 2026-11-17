@@ -34,7 +34,7 @@ export const HostRecord = Schema.Struct({
   url: Schema.String.annotateKey({
     description:
       "Where the host's API is. The scheme is `http`, and the host part is `127.0.0.1` or `[::1]`, written exactly that way.",
-    examples: ["http://127.0.0.1:2718/api/marimo/v1"],
+    examples: ["http://127.0.0.1:2718"],
   }),
   token: Schema.optionalKey(
     Schema.String.check(Schema.isMinCodePoints(1)).annotateKey({

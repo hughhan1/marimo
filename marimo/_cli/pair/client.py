@@ -11,8 +11,6 @@ from urllib.parse import urlsplit
 
 import msgspec
 
-from marimo._server.host import HOST_API_PATH
-
 if TYPE_CHECKING:
     import threading
     from collections.abc import Iterable, Iterator, Mapping
@@ -119,13 +117,13 @@ def display_url(url: str) -> str:
     ).geturl()
 
 
-def _endpoint_url(url: str, path: str) -> str:
+def _mcp_url(url: str) -> str:
     try:
         parsed = urlsplit(url)
     except ValueError as error:
         raise PairInputError("The server URL is invalid.") from error
     return parsed._replace(
-        path=f"{parsed.path.rstrip('/')}{path}", fragment=""
+        path=f"{parsed.path.rstrip('/')}/mcp", fragment=""
     ).geturl()
 
 
@@ -359,7 +357,7 @@ def open_events(
     """
     stream = open_response(
         method="POST",
-        url=_endpoint_url(url, "/mcp"),
+        url=_mcp_url(url),
         headers=_mcp_headers("events/stream", name, token),
         body=_mcp_body("events/stream", name, arguments),
         read_timeout=read_timeout,
@@ -418,7 +416,7 @@ def _refusal(error: dict[str, object]) -> PairError:
 
 @dataclass(frozen=True)
 class HostEndpoint:
-    """Host API address and bearer token from a validated live host record."""
+    """Server address and bearer token from a validated live host record."""
 
     url: str
     token: str | None = field(repr=False)
@@ -434,13 +432,11 @@ def find_host(url: str, *, root: Path | None = None) -> HostEndpoint | None:
         host = parsed.hostname.lower()
         if host == "localhost":
             host = "127.0.0.1"
-        path = parsed.path.rstrip("/")
-        path = path.removesuffix(HOST_API_PATH)
         return (
             parsed.scheme,
             host,
             parsed.port or (443 if parsed.scheme == "https" else 80),
-            path,
+            parsed.path.rstrip("/"),
         )
 
     try:
@@ -511,7 +507,7 @@ def call_tool(
     arguments: dict[str, object] | None = None,
 ) -> object:
     """Call one of the editor's tools and return its structured result."""
-    request_url = _endpoint_url(url, "/api/mcp")
+    request_url = _mcp_url(url)
     response = open_response(
         method="POST",
         url=request_url,
@@ -581,10 +577,7 @@ def list_sessions(
     *, url: str, token: str | None
 ) -> dict[str, dict[str, str | None]]:
     payload = call_tool(url=url, token=token, name="sessions")
-    message = (
-        "Unexpected response from "
-        f"{display_url(_endpoint_url(url, '/api/mcp'))}."
-    )
+    message = f"Unexpected response from {display_url(_mcp_url(url))}."
     if not isinstance(payload, dict):
         raise PairError(message)
 

@@ -25,7 +25,7 @@ from marimo._core.protocol import ProjectMessage
 from marimo._core.run_log import RetentionPolicy
 from marimo._core.stream import RoutedEvent, event_name
 from marimo._messaging.notification import CompletedRunNotification
-from marimo._server.host import HOST_API_PATH, api as api_module, streams
+from marimo._server.host import api as api_module, streams
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.host.events import notification_event
@@ -37,10 +37,6 @@ from marimo._session.notebook import AppFileManager
 from tests._core.conftest import ScriptedBackend, make_notebook, runtime_id_of
 from tests._server.host.drive import (
     AUTH,
-    AUTHORITY,
-    LOOPBACK,
-    PORT,
-    TOKEN,
     Response,
     call,
     finished,
@@ -49,7 +45,6 @@ from tests._server.host.drive import (
     subscribe,
     until_ready,
     wait_for,
-    with_client_address,
 )
 from tests._server.mcp_client import call_tool
 from tests._server.mocks import (
@@ -148,112 +143,20 @@ def harness(
 
     monkeypatch.setattr(bridge, "_make_backend", make)
     bridge.index.refresh()
-    context = HostContext(bridge=bridge, token=TOKEN, port=PORT)
+    context = HostContext(bridge=bridge)
     context.mutations.receipt_seconds = 30
     context.mutations.clock = lambda: harness.now
     app.state.host_context = context
     return harness
 
 
-async def test_the_token_the_address_and_the_name_are_all_checked(
+async def test_a_subscription_without_the_token_is_a_401_problem(
     harness: Harness,
 ) -> None:
-    app = harness.app
-
-    async def status(**kwargs: Any) -> int:
-        return int((await refused(app, "catalog", **kwargs))["status"])
-
-    assert await status(headers={}) == 401
-    assert await status(headers={"Authorization": "Bearer nope"}) == 401
-    assert await status(client=("10.0.0.5", 1)) == 403
-    assert await status(host="evil.example:1234") == 403
-    assert await status(host="127.0.0.1:9999") == 403
-    app.state.host_context = None
-    problem = await refused(app, "catalog")
-    assert problem["status"] == 404
-    assert problem["type"].endswith(":not-found")
-
-
-async def test_unknown_routes_are_problems(harness: Harness) -> None:
-    response = await finished(harness.app, "GET", "/nothing", headers=AUTH)
-    assert response.status == 404
-    assert response.headers["content-type"] == "application/problem+json"
-
-
-async def test_a_wrong_method_on_a_known_route_is_a_405_problem(
-    harness: Harness,
-) -> None:
-    response = await finished(harness.app, "GET", "/mcp", headers=AUTH)
-    assert response.status == 405
-    assert response.headers["content-type"] == "application/problem+json"
-    assert response.json()["type"].endswith(":method-not-allowed")
-    assert "POST" in response.headers["allow"]
-
-
-@pytest.mark.parametrize(
-    ("host", "admitted"),
-    [
-        ("127.attacker.example:1234", False),
-        ("127.1.2.3:1234", True),
-        ("localhost:1234", True),
-        ("LOCALHOST:1234", True),
-        ("[::1]:1234", True),
-        ("[::ffff:127.0.0.1]:1234", True),
-        ("[::1]junk:1234", False),
-        ("[::1", False),
-        ("[::1:1234", False),
-        ("127.0.0.1:" + "1" * 5000, False),
-    ],
-)
-async def test_only_loopback_names_are_admitted(
-    harness: Harness, host: str, admitted: bool
-) -> None:
-    started = await call(
-        harness.app,
-        "runtime.start",
-        host=host,
-        idempotency_key="start",
-        notebook_id=harness.notebook_id,
-    )
-    assert started.ok is admitted
-    if not admitted:
-        assert started.problem["status"] == 403
-
-
-@pytest.mark.parametrize(
-    "port",
-    ["\xb2", "1234\xb2", "\xb9\xb2\xb3"],
-)
-def test_latin1_superscripts_are_not_a_port(port: str) -> None:
-    from marimo._server.host.auth import host_header_ok
-
-    assert port.isdigit()
-    assert host_header_ok(f"127.0.0.1:{port}", PORT) is False
-
-
-@pytest.mark.parametrize(
-    ("authorization", "kind"),
-    [
-        ("Bearer \xe9", "unauthorized"),
-        ("Bearer", "unauthorized"),
-        ("Bearer ", "unauthorized"),
-        (f"Basic {TOKEN}", "unauthorized"),
-        # An empty update reaches its tool only with the host's bearer.
-        (f"bearer  {TOKEN} ", "invalid-request"),
-    ],
-)
-async def test_malformed_bearers_are_401_problems(
-    harness: Harness, authorization: str, kind: str
-) -> None:
-    # The notebook record answers only the host's bearer, never the editor.
-    updated = await call(
-        harness.app,
-        "notebook.update",
-        headers={"Authorization": authorization},
-        idempotency_key="update",
-        notebook_id=harness.notebook_id,
-    )
-    assert updated.problem["type"].endswith(f":{kind}")
+    for headers in ({}, {"Authorization": "Bearer nope"}):
+        problem = await refused(harness.app, "catalog", headers=headers)
+        assert problem["status"] == 401
+        assert problem["type"].endswith(":unauthorized")
 
 
 async def test_an_unknown_cursor_resets_a_filtered_stream(
@@ -289,7 +192,7 @@ async def test_a_nul_byte_in_a_path_is_a_400_problem(harness: Harness) -> None:
 
 
 async def test_a_401_names_the_bearer_scheme(harness: Harness) -> None:
-    response = await finished(harness.app, "POST", "/mcp")
+    response = await finished(harness.app)
     assert response.status == 401
     assert response.headers["www-authenticate"] == "Bearer"
 
@@ -489,7 +392,6 @@ async def test_a_server_that_stops_ends_its_streams_with_their_final_frame(
 ) -> None:
     listening = socket.create_server(("127.0.0.1", 0))
     port = listening.getsockname()[1]
-    harness.app.state.host_context.port = port
     server = Server(
         uvicorn.Config(
             harness.app,
@@ -499,7 +401,7 @@ async def test_a_server_that_stops_ends_its_streams_with_their_final_frame(
             log_level="warning",
             timeout_graceful_shutdown=1,
         ),
-        endpoints=harness.app.state.mcp_endpoints,
+        endpoint=harness.app.state.mcp_endpoint,
     )
     serving = asyncio.create_task(server.serve(sockets=[listening]))
     messages: list[dict[str, Any]] = []
@@ -507,7 +409,7 @@ async def test_a_server_that_stops_ends_its_streams_with_their_final_frame(
         httpx.AsyncClient(timeout=10) as client,
         client.stream(
             "POST",
-            f"http://127.0.0.1:{port}{HOST_API_PATH}/mcp",
+            f"http://127.0.0.1:{port}/mcp",
             headers={**stream_headers("catalog"), **AUTH},
             json=stream_payload("catalog", {}),
         ) as response,
@@ -1150,17 +1052,17 @@ async def test_scratch_runs(harness: Harness) -> None:
     assert unkeyed.problem["type"].endswith(":invalid-request")
 
 
-@pytest.mark.parametrize("editor_auth", [False, True])
+@pytest.mark.parametrize("token_in_query", [False, True])
 @pytest.mark.parametrize("cell_run", [False, True])
 async def test_a_run_hands_its_request_to_the_backend(
     harness: Harness,
-    editor_auth: bool,
+    token_in_query: bool,
     cell_run: bool,
 ) -> None:
     nid = await harness.running()
     headers = {**AUTH, "X-Trace": "abc", "Cookie": "session=s"}
     query = "debug=1"
-    if editor_auth:
+    if token_in_query:
         headers.update(
             {
                 "Authorization": "Bearer application-token",
@@ -1171,13 +1073,11 @@ async def test_a_run_hands_its_request_to_the_backend(
             f"&access_token={harness.app.state.session_manager.auth_token}"
         )
     notebook = await harness.host.notebook(nid)
-    endpoint = "/api/mcp" if editor_auth else f"{HOST_API_PATH}/mcp"
     accepted = await call(
         harness.app,
         "runtime.run" if cell_run else "runtime.execute",
         headers=headers,
         query=query,
-        url=endpoint,
         idempotency_key="run",
         notebook_id=nid,
         **(
@@ -1190,10 +1090,10 @@ async def test_a_run_hands_its_request_to_the_backend(
     [submitted] = harness.backend().requests
     assert submitted is not None
     # The run's request is the call of its tool.
-    assert submitted.url["path"] == endpoint
+    assert submitted.url["path"] == "/mcp"
     assert submitted.url["query"] == query
     assert submitted.headers["x-trace"] == "abc"
-    if editor_auth:
+    if token_in_query:
         assert submitted.headers["authorization"] == "Bearer application-token"
     else:
         assert "authorization" not in submitted.headers
@@ -1453,9 +1353,7 @@ async def test_operations_the_host_does_not_offer_are_501(
     host.update_project(project)
     host.add_notebook(harness.host.notebooks[notebook.id], make_notebook)
     harness.bridge.host = host
-    harness.app.state.host_context = HostContext(
-        bridge=harness.bridge, token=TOKEN, port=PORT
-    )
+    harness.app.state.host_context = HostContext(bridge=harness.bridge)
     response = await call(
         harness.app,
         "runtime.start",
@@ -2022,20 +1920,8 @@ async def test_live_events_follow_the_notebook_and_the_filters(
 
 @pytest.mark.parametrize("base_url", ["", "/app"])
 @pytest.mark.parametrize("credential", ["cookie", "query"])
-@pytest.mark.parametrize(
-    ("authority", "address", "rejected_status"),
-    [
-        (AUTHORITY, LOOPBACK, 401),
-        ("notebooks.example:1234", ("192.0.2.1", 50000), 403),
-    ],
-)
-def test_editor_authentication_is_limited_to_the_editor_tools(
-    harness: Harness,
-    base_url: str,
-    credential: str,
-    authority: str,
-    address: tuple[str, int],
-    rejected_status: int,
+def test_the_editors_credentials_open_every_tool(
+    harness: Harness, base_url: str, credential: str
 ) -> None:
     app = create_starlette_app(base_url=base_url, enable_auth=True)
     manager = harness.app.state.session_manager
@@ -2043,9 +1929,7 @@ def test_editor_authentication_is_limited_to_the_editor_tools(
         session_manager=manager, base_url=base_url
     ).apply(app.state)
     app.state.host_context = harness.app.state.host_context
-    with TestClient(
-        with_client_address(app, address), base_url=f"http://{authority}"
-    ) as client:
+    with TestClient(app, base_url="http://notebooks.example:1234") as client:
         query = ""
         if credential == "cookie":
             response = client.post(
@@ -2061,20 +1945,20 @@ def test_editor_authentication_is_limited_to_the_editor_tools(
         notebook = client.portal.call(
             harness.host.notebook, harness.notebook_id
         )
-        host = f"{base_url}{HOST_API_PATH}"
 
-        def editor_call(name: str, **arguments: Any) -> Called:
+        def editor_call(name: str, key: str, **arguments: Any) -> Called:
             return call_tool(
                 client,
                 name,
-                url=f"{base_url}/api/mcp{query}",
+                url=f"{base_url}/mcp{query}",
                 headers={"Marimo-Server-Token": "skew-id-1"},
-                idempotency_key="editor-1",
+                idempotency_key=key,
                 **arguments,
             )
 
         edited = editor_call(
             "notebook.edit",
+            "editor-1",
             notebook_id=notebook.id,
             changes=[
                 {
@@ -2086,27 +1970,14 @@ def test_editor_authentication_is_limited_to_the_editor_tools(
         )
         assert edited.ok, edited.problem
         assert set(edited.data["cells"]) == {"fresh"}
-        # The editor serves no catalog tool, and its credentials open none
-        # of the host's.
         moved = editor_call(
-            "notebook.update", notebook_id=notebook.id, path="other.py"
-        )
-        assert moved.problem["message"] == "Unknown tool notebook.update"
-        subscribed = client.post(
-            f"{host}/mcp{query}",
-            json=stream_payload("catalog", {}),
-            headers=stream_headers("catalog"),
-        )
-        assert subscribed.status_code == rejected_status
-        host_call = call_tool(
-            client,
             "notebook.update",
-            url=f"{host}/mcp{query}",
-            idempotency_key="editor-2",
+            "editor-2",
             notebook_id=notebook.id,
             path="other.py",
         )
-        assert host_call.problem["status"] == rejected_status
+        assert moved.ok, moved.problem
+        assert moved.data["path"] == "other.py"
 
 
 @pytest.mark.parametrize(
@@ -2124,7 +1995,7 @@ def test_editor_authentication_is_limited_to_the_editor_tools(
         (
             "",
             {"Marimo-Server-Token": "skew-id-1"},
-            problem("unauthorized", "Authorization header required"),
+            problem("unauthorized", "Send the server's access token"),
         ),
     ],
 )
@@ -2135,14 +2006,11 @@ def test_editor_tools_need_credentials_and_the_server_token(
     headers: dict[str, str],
     refusal: Any,
 ) -> None:
-    client = TestClient(
-        with_client_address(harness.app, ("192.0.2.1", 50000)),
-        base_url="http://notebooks.example:1234",
-    )
+    client = TestClient(harness.app, base_url="http://notebooks.example:1234")
     called = call_tool(
         client,
         name,
-        url=f"/api/mcp{query}",
+        url=f"/mcp{query}",
         headers=headers,
         idempotency_key="editor-1",
         notebook_id=harness.notebook_id,
@@ -2166,12 +2034,9 @@ def test_editor_tool_preflights(
         session_manager=harness.app.state.session_manager, base_url=base_url
     ).apply(app.state)
     app.state.host_context = harness.app.state.host_context
-    with TestClient(
-        with_client_address(app, ("192.0.2.1", 50000)),
-        base_url="http://notebooks.example:1234",
-    ) as client:
+    with TestClient(app, base_url="http://notebooks.example:1234") as client:
         response = client.options(
-            f"{base_url}/api/mcp",
+            f"{base_url}/mcp",
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": "POST",
@@ -2184,19 +2049,6 @@ def test_editor_tool_preflights(
         response.status_code,
         response.headers.get("access-control-allow-origin"),
     ) == ((200, origin) if allowed else (400, None))
-    assert harness.backends == {}
-
-
-async def test_the_host_needs_its_token_without_editor_authentication(
-    harness: Harness,
-) -> None:
-    app = create_starlette_app(base_url="", enable_auth=False)
-    get_starlette_server_state_init(
-        session_manager=harness.app.state.session_manager
-    ).apply(app.state)
-    app.state.enable_auth = False
-    app.state.host_context = harness.app.state.host_context
-    assert (await refused(app, "catalog", headers={}))["status"] == 401
     assert harness.backends == {}
 
 
@@ -2260,9 +2112,7 @@ async def test_catalog_read_finds_the_workspace_notebooks(
 def test_execution_does_not_start_a_cataloged_notebook(
     harness: Harness,
 ) -> None:
-    with TestClient(
-        with_client_address(harness.app), base_url=f"http://{AUTHORITY}"
-    ) as client:
+    with TestClient(harness.app) as client:
         response = client.post(
             "/api/kernel/execute",
             headers=AUTH,

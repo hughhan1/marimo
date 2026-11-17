@@ -42,7 +42,7 @@ async def _call_sessions(
 
 async def _sessions(client: httpx.AsyncClient) -> dict[str, Any]:
     """The server's sessions, by session id, from its `sessions` tool."""
-    response = await _call_sessions(client, "/api/mcp")
+    response = await _call_sessions(client, "/mcp")
     response.raise_for_status()
     sessions: dict[str, Any] = response.json()["result"]["structuredContent"]
     return sessions
@@ -56,7 +56,7 @@ async def _execute(
     verify_png: bool = False,
 ) -> str:
     response = await client.post(
-        "/api/mcp",
+        "/mcp",
         json=tool_payload("kernel_execute", {"code": code}),
         headers={
             **request_headers("tools/call", "kernel_execute"),
@@ -140,7 +140,7 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                 deadline = time.monotonic() + 30
                 while True:
                     try:
-                        response = await _call_sessions(client, "/api/mcp")
+                        response = await _call_sessions(client, "/mcp")
                         if response.status_code == 200:
                             break
                     except httpx.TransportError:
@@ -150,7 +150,7 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                     await asyncio.sleep(0.1)
                 async with httpx.AsyncClient() as anonymous:
                     assert (
-                        await _call_sessions(anonymous, base + "/api/mcp")
+                        await _call_sessions(anonymous, base + "/mcp")
                     ).status_code != 200
 
                 async with async_playwright() as playwright:

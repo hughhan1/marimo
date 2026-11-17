@@ -29,7 +29,7 @@ vi.mock("node:child_process", () => ({
 const record: HostRecordOutput = {
   version: 1,
   name: "marimo",
-  url: "http://127.0.0.1:2718/prefix/api/marimo/v1",
+  url: "http://127.0.0.1:2718/prefix",
   token: "secret",
   process: { pid: 123, started_at: "2026-10-21T12:34:56.123Z" },
 };
@@ -72,7 +72,7 @@ describe.skipIf(!["darwin", "linux"].includes(process.platform))(
     it("yields records usable with the existing Client constructor", async () => {
       await write({ ...record, future_field: true });
       await write(
-        { ...record, name: "VS Code", url: "http://[::1]:2719/api/marimo/v1" },
+        { ...record, name: "VS Code", url: "http://[::1]:2719" },
         "other.json",
       );
       const records = await collect();

@@ -425,7 +425,7 @@ def start(
             # expecting it to be a Literal
             loop=loop_policy,  # type:ignore[arg-type]
         ),
-        endpoints=app.state.mcp_endpoints,
+        endpoint=app.state.mcp_endpoint,
     )
     app.state.server = server
 

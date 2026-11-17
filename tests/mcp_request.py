@@ -65,12 +65,10 @@ def tool_request(
     name: str,
     arguments: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
-    *,
-    endpoint: str = "/api/mcp",
 ) -> urllib.request.Request:
-    """A call to a tool at `endpoint` below the server's `url`."""
+    """A call to a tool at the MCP endpoint below the server's `url`."""
     return urllib.request.Request(
-        f"{url}{endpoint}",
+        f"{url}/mcp",
         method="POST",
         data=json.dumps(tool_payload(name, arguments)).encode(),
         headers={
@@ -244,7 +242,7 @@ class SessionEvents:
         self._frames: queue.Queue[str | SessionClosed] = queue.Queue()
         self._client = httpx.Client(timeout=httpx.Timeout(timeout, read=None))
         read = self._client.post(
-            f"{url}/api/mcp",
+            f"{url}/mcp",
             json=tool_payload("session_state", arguments),
             headers={
                 **request_headers("tools/call", "session_state"),
@@ -265,7 +263,7 @@ class SessionEvents:
         self._response = self._client.send(
             self._client.build_request(
                 "POST",
-                f"{url}/api/mcp",
+                f"{url}/mcp",
                 json=stream_payload("session", arguments, cursor),
                 headers={**stream_headers("session"), **(headers or {})},
             ),

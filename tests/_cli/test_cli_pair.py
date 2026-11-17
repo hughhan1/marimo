@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
-from urllib.parse import urlsplit
 
 import pytest
 from click.testing import CliRunner
@@ -52,12 +51,7 @@ def _isolate_pair_command(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         commands,
         "resolve_host",
-        lambda url: HostEndpoint(
-            urlsplit(url)
-            ._replace(path=urlsplit(url).path.rstrip("/") + "/api/marimo/v1")
-            .geturl(),
-            "host-secret",
-        ),
+        lambda url: HostEndpoint(url, "host-secret"),
     )
 
 

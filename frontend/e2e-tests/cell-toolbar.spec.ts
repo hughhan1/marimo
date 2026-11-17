@@ -7,10 +7,10 @@ import { waitForMarimoApp } from "./test-utils";
 
 const appUrl = getAppUrl("cells.py");
 
-/** A call of the `runtime.run` tool, which the editor serves beside its own. */
+/** A call of the `runtime.run` tool. */
 function isRunRequest(request: Request): boolean {
   return (
-    new URL(request.url()).pathname.endsWith("/api/mcp") &&
+    new URL(request.url()).pathname.endsWith("/mcp") &&
     (request.postData() ?? "").includes('"name":"runtime.run"')
   );
 }

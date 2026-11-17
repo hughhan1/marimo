@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""ASGI test requests to the host's tools and events at its `/mcp`.
+"""ASGI test requests to the server's tools and events at its `/mcp`.
 
 Direct ASGI requests let tests read a subscription's events while its
 response remains open.
@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 import msgspec
 
 from marimo._core.protocol_tools import TOOLS
-from marimo._server.host import HOST_API_PATH
 from tests.mcp_request import (
     Called,
     called,
@@ -28,31 +27,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping
 
     from starlette.applications import Starlette
-    from starlette.types import ASGIApp, Receive, Scope, Send
 
     from marimo._core.host import Host
     from tests._server.session_events import SessionEvents
 
-PORT = 1234
-"""Server port used to validate the request's Host header."""
-
-AUTHORITY = f"127.0.0.1:{PORT}"
-LOOPBACK = ("127.0.0.1", 50000)
 TOKEN = "fake-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-
-
-def with_client_address(
-    app: ASGIApp, address: tuple[str, int] = LOOPBACK
-) -> ASGIApp:
-    """Set the peer address without requiring Starlette's newer `client` option."""
-
-    async def wrapped(scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] in ("http", "websocket"):
-            scope = {**scope, "client": address}
-        await app(scope, receive, send)
-
-    return wrapped
 
 
 def position(host: Host, cursor: str) -> int:
@@ -123,38 +103,30 @@ def _message(record: str) -> dict[str, Any]:
 
 def request(
     app: Starlette,
-    method: str,
-    path: str,
     *,
     headers: dict[str, str] | None = None,
     body: bytes = b"",
     query: str = "",
-    client: tuple[str, int] = LOOPBACK,
-    host: str = AUTHORITY,
-    prefix: str = HOST_API_PATH,
 ) -> tuple[Response, asyncio.Task[None], Callable[[], None]]:
-    """Return the response, request task, and disconnect callback.
-
-    `path` is relative to `prefix`, the host API's by default.
-    """
+    """Post to `/mcp`; return the response, request task, and disconnect callback."""
     headers = dict(headers or {})
     scope = {
         "type": "http",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
-        "method": method,
+        "method": "POST",
         "scheme": "http",
-        "path": prefix + path,
-        "raw_path": (prefix + path).encode(),
+        "path": "/mcp",
+        "raw_path": b"/mcp",
         "query_string": query.encode(),
         "root_path": "",
         "headers": [
-            (b"host", host.encode()),
+            (b"host", b"127.0.0.1:1234"),
             (b"content-type", b"application/json"),
             *((k.lower().encode(), v.encode()) for k, v in headers.items()),
         ],
-        "client": client,
-        "server": ("127.0.0.1", PORT),
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 1234),
         "state": {},
     }
     response = Response()
@@ -184,15 +156,10 @@ def request(
 
 
 async def finished(
-    app: Starlette,
-    method: str,
-    path: str,
-    *,
-    timeout: float = 5,
-    **kwargs: Any,
+    app: Starlette, *, timeout: float = 5, **kwargs: Any
 ) -> Response:
     """Await a complete response to a non-streaming request."""
-    response, task, _ = request(app, method, path, **kwargs)
+    response, task, _ = request(app, **kwargs)
     await asyncio.wait_for(task, timeout)
     return response
 
@@ -203,25 +170,19 @@ async def call(
     /,
     *,
     headers: dict[str, str] = AUTH,
-    host: str = AUTHORITY,
     query: str = "",
-    url: str = f"{HOST_API_PATH}/mcp",
     timeout: float = 5,
     **arguments: Any,
 ) -> Called:
-    """Call a tool at `url`, the host's tools by default, as a client does.
+    """Call a tool, as a client does.
 
     A success's result must be what the tool declares, as a generated client
     checks before handing it on.
     """
     response = await finished(
         app,
-        "POST",
-        url,
-        prefix="",
         headers={**request_headers("tools/call", name), **headers},
         body=json.dumps(tool_payload(name, arguments)).encode(),
-        host=host,
         query=query,
         timeout=timeout,
     )
@@ -237,8 +198,6 @@ def subscribe(
     /,
     *,
     headers: dict[str, str] = AUTH,
-    host: str = AUTHORITY,
-    client: tuple[str, int] = LOOPBACK,
     resume: str | None = None,
     **arguments: Any,
 ) -> tuple[Response, asyncio.Task[None], Callable[[], None]]:
@@ -249,12 +208,8 @@ def subscribe(
     """
     return request(
         app,
-        "POST",
-        "/mcp",
         headers={**stream_headers(name), **headers},
         body=json.dumps(stream_payload(name, arguments, resume)).encode(),
-        host=host,
-        client=client,
     )
 
 

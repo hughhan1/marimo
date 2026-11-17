@@ -63,7 +63,7 @@ async def target(
     await bridge.open()
     notebook = bridge.notebook_for_session(session)
     assert notebook is not None
-    client.app.state.host_context = HostContext(bridge, "host-token", 2718)
+    client.app.state.host_context = HostContext(bridge)
     try:
         yield session, notebook
     finally:

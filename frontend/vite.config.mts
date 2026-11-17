@@ -224,6 +224,13 @@ export default defineConfig({
           origin: TARGET,
         },
       },
+      "/mcp": {
+        target: TARGET,
+        changeOrigin: true,
+        headers: {
+          origin: TARGET,
+        },
+      },
       "/auth": {
         target: TARGET,
         changeOrigin: true,

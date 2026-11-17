@@ -60,9 +60,7 @@ def test_untitled_editor_runs_reconnects_and_restarts_its_runtime(
     manager = get_session_manager(client)
     manager.workspace = EmptyWorkspace()
     bridge = SessionBridge(manager)
-    client.app.state.host_context = HostContext(
-        bridge=bridge, token="host-token", port=1234
-    )
+    client.app.state.host_context = HostContext(bridge=bridge)
     url = "/ws?session_id=new&access_token=fake-token"
     with client:
         assert client.portal is not None

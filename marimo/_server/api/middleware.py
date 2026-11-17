@@ -279,26 +279,24 @@ class SkewProtectionMiddleware:
             "/ws"
         ):
             return await self.app(scope, receive, send)
-        # On the tool endpoint only a tool call changes state, so a page
-        # follows its session onto a restarted server, as its socket did.
-        if path.endswith("/api/mcp") and (
-            request.headers.get(MCP_METHOD_HEADER, "tools/call")
+        server_token = request.headers.get(self.HEADER_NAME)
+        # On the tool endpoint the token only marks the page the editor was
+        # loaded from: the endpoint refuses a browser at another origin
+        # itself, and its transport refuses what a form can send. Programs
+        # call the tools without it, and only a tool call changes state, so
+        # a page follows its session onto a restarted server.
+        if path.endswith("/mcp") and (
+            server_token is None
+            or request.headers.get(MCP_METHOD_HEADER, "tools/call")
             != "tools/call"
             or request.headers.get(MCP_NAME_HEADER) == "session_state"
         ):
             return await self.app(scope, receive, send)
-        if "/api/mcp/files/" in request.url.path:
+        if "/mcp/files/" in path:
             return await self.app(scope, receive, send)
 
         expected = state.session_manager.skew_protection_token
-        server_token = request.headers.get(self.HEADER_NAME)
         if server_token is None:
-            # Programs call the tools without a page. The tool endpoints
-            # refuse a browser at another origin themselves, and their
-            # transport refuses what a form can send, so there the token
-            # only marks the page the editor was loaded from.
-            if path.endswith("/mcp"):
-                return await self.app(scope, receive, send)
             LOGGER.warning(
                 "Received request with no server token (skew protection token). "
                 "This could mean the header is being stripped by a proxy. "

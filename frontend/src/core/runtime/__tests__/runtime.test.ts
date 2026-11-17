@@ -153,7 +153,7 @@ describe("RuntimeManager", () => {
       });
       const url = runtime.getMcpURL();
 
-      expect(url.href).toBe("https://sandbox.example.com/base/api/mcp");
+      expect(url.href).toBe("https://sandbox.example.com/base/mcp");
     });
   });
 

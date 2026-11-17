@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's tools at `/api/mcp`, as the MCP SDK's stateless transport serves them."""
+"""The server's tools at `/mcp`, as the MCP SDK's stateless transport serves them."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from sse_starlette.sse import AppStatus
 
-from marimo._server.api.tools import contract
+from marimo._core.protocol_tools import TOOLS as HOST_TOOLS
+from marimo._server.api.tools import TOOLS as EDITOR_TOOLS, contract
 from marimo._session.model import SessionMode
 from tests._server.api.endpoints.ws_helpers import receive_until
 from tests._server.mcp_client import call_tool
@@ -65,7 +66,7 @@ def _rpc(
         **request_headers(payload["method"], params.get("name")),
         **(headers or {}),
     }
-    response = client.post("/api/mcp", json=payload, headers=sent)
+    response = client.post("/mcp", json=payload, headers=sent)
     assert response.status_code == status, response.text
     return response.json()  # type: ignore[no-any-return]
 
@@ -105,15 +106,48 @@ def test_discover_names_the_protocol_and_server(client: TestClient) -> None:
     )
 
 
-def test_the_assistants_tools_are_for_models_and_the_rest_for_apps(
+def test_a_bearer_lists_every_tool(client: TestClient) -> None:
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {"_meta": request_meta()},
+        },
+        headers={
+            "Authorization": "Bearer fake-token",
+            **request_headers("tools/list"),
+        },
+    )
+    # A client that takes no files is shown no tool that needs one.
+    assert {tool["name"] for tool in response.json()["result"]["tools"]} == (
+        EDITOR_TOOLS.keys() - {"files_upload"}
+        | HOST_TOOLS.keys()
+        | ASSISTANT_TOOLS
+    )
+
+
+@pytest.mark.parametrize("path", ["/api/mcp", "/api/marimo/v1/mcp"])
+def test_the_old_endpoints_serve_nothing(
+    client: TestClient, path: str
+) -> None:
+    # The app's catch-all serves GET alone, so another method is a 405.
+    assert client.get(path, headers=HEADERS).status_code == 404
+    listing = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+    assert client.post(path, json=listing, headers=HEADERS).status_code == 405
+
+
+def test_the_protocols_and_assistants_tools_are_for_models(
     client: TestClient,
 ) -> None:
     tools = _rpc(client, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[
         "result"
     ]["tools"]
-    for_models = [tool for tool in tools if tool["name"] in ASSISTANT_TOOLS]
-    for_apps = [tool for tool in tools if tool["name"] not in ASSISTANT_TOOLS]
-    assert {tool["name"] for tool in for_models} == ASSISTANT_TOOLS
+    models = ASSISTANT_TOOLS | HOST_TOOLS.keys()
+    for_models = [tool for tool in tools if tool["name"] in models]
+    for_apps = [tool for tool in tools if tool["name"] not in models]
+    assert {tool["name"] for tool in for_models} == models
     assert all("_meta" not in tool for tool in for_models)
     assert {tool["_meta"]["ui"]["visibility"][0] for tool in for_apps} == {
         "app"
@@ -156,7 +190,7 @@ def test_unknown_method_and_tool_are_protocol_errors(
 
 def test_invalid_json_is_a_parse_error(client: TestClient) -> None:
     response = client.post(
-        "/api/mcp",
+        "/mcp",
         content=b"{",
         headers={
             **HEADERS,
@@ -171,14 +205,14 @@ def test_invalid_json_is_a_parse_error(client: TestClient) -> None:
 def test_the_body_must_be_json_the_caller_accepts(client: TestClient) -> None:
     # The transport reads JSON only, and answers only a caller that takes it.
     response = client.post(
-        "/api/mcp",
+        "/mcp",
         content=b"{}",
         headers={**HEADERS, **request_headers("tools/list")},
     )
     assert response.status_code == 400
     assert "Content-Type" in response.text
     response = client.post(
-        "/api/mcp",
+        "/mcp",
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
         headers={
             **HEADERS,
@@ -265,7 +299,7 @@ def test_the_transport_refuses(
         **request_headers(payload["method"], params.get("name")),
         **headers,
     }
-    response = client.post("/api/mcp", json=payload, headers=sent)
+    response = client.post("/mcp", json=payload, headers=sent)
     assert response.status_code == status, response.text
     assert response.json()["error"]["code"] == code
 
@@ -276,7 +310,7 @@ def test_a_notification_is_acknowledged_and_dropped(
     # The protocol has no client notifications over HTTP; one is accepted
     # with no body, as the transport does, rather than answered with an error.
     response = client.post(
-        "/api/mcp",
+        "/mcp",
         json={"jsonrpc": "2.0", "method": "notifications/initialized"},
         headers={**HEADERS, **request_headers("notifications/initialized")},
     )
@@ -305,11 +339,10 @@ def test_an_older_client_is_answered_under_the_same_rules(
         "params": {"name": "status", "arguments": {}},
     }
     older = {"MCP-Protocol-Version": "2025-06-18"}
-    refused = client.post("/api/mcp", json=call, headers=older)
-    problem = tool_problem(reply(refused)["result"])
-    assert problem is not None
-    assert problem["status"] == 401
-    answered = client.post("/api/mcp", json=call, headers={**HEADERS, **older})
+    refused = client.post("/mcp", json=call, headers=older)
+    assert refused.status_code == 401
+    assert refused.json()["type"] == PROBLEM_KIND + "unauthorized"
+    answered = client.post("/mcp", json=call, headers={**HEADERS, **older})
     assert reply(answered)["result"]["structuredContent"]["status"] == (
         "healthy"
     )
@@ -336,7 +369,7 @@ def test_the_same_origin_and_an_encoded_tool_name_are_accepted(
 def test_only_post_is_served(client: TestClient) -> None:
     # The route takes POST alone; another method falls through to the app's
     # catch-all, as any unknown path does.
-    response = client.get("/api/mcp", headers=HEADERS)
+    response = client.get("/mcp", headers=HEADERS)
     assert response.status_code == 404
 
 
@@ -448,19 +481,16 @@ def test_a_raised_status_is_the_problems(client: TestClient) -> None:
 
 def test_tool_call_needs_a_credential(client: TestClient) -> None:
     response = client.post(
-        "/api/mcp",
+        "/mcp",
         json=tool_payload("usage"),
         headers={
             "Marimo-Session-Id": "123",
             **request_headers("tools/call", "usage"),
         },
     )
-    # The transport admits the call; the tool refuses it, as a problem.
-    assert response.status_code == 200
-    problem = tool_problem(response.json()["result"])
-    assert problem is not None
-    assert problem["status"] == 401
-    assert problem["type"] == PROBLEM_KIND + "unauthorized"
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["type"] == PROBLEM_KIND + "unauthorized"
 
 
 @pytest.mark.parametrize(
@@ -468,6 +498,8 @@ def test_tool_call_needs_a_credential(client: TestClient) -> None:
     [
         ("home_running_notebooks", {}, 401, "unauthorized"),
         ("get_active_notebooks", {}, 403, "forbidden"),
+        ("catalog.read", {}, 403, "forbidden"),
+        ("notebook.read", {"notebook_id": "n"}, 403, "forbidden"),
     ],
 )
 def test_read_only_caller_cannot_call_an_edit_tool(

@@ -1,15 +1,15 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's API as MCP tools, served by the MCP SDK at `/api/mcp`.
+"""The server's MCP endpoint at `/mcp`: its tools and events.
 
-A tool's arguments are the fields of its request, its result is its reply,
-and a failure is a problem carried as the error's text. The SDK owns the
-transport: the JSON-RPC envelope, the mirrored headers, the protocol version
-and `server/discover`. The arguments are decoded into the request's type by
-msgspec, which refuses what the type does not declare. Files travel by the
-MCP files extension: uploads and replies that are files go to and from
-`/api/mcp/files`, outside the tool calls. The host protocol's notebook tools
-and the assistant's tools are served here too, and this module also builds
-the host API's server.
+It serves the editor's tools, the Host Protocol's and the assistant's, and
+the `session`, `catalog` and `notebook` events. A tool's arguments are the
+fields of its request, its result is its reply, and a failure is a problem
+carried as the error's text. The SDK owns the transport: the JSON-RPC
+envelope, the mirrored headers, the protocol version and `server/discover`.
+The arguments are decoded into the request's type by msgspec, which refuses
+what the type does not declare. Files travel by the MCP files extension:
+uploads and replies that are files go to and from `/mcp/files`, outside the
+tool calls.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, get_type_hints
 import msgspec
 import msgspec.json
 import msgspec.structs
-from holon.ext.events import Events
 from holon.ext.files import EXTENSION, FileServer, LocalStorage
 from mcp import types
 from mcp.server.lowlevel import Server
@@ -33,7 +32,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
 from mcp.types.jsonrpc import INVALID_PARAMS
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from marimo import __version__
 from marimo._ai._tools.base import ToolBase, ToolContext
@@ -45,6 +44,7 @@ from marimo._core.operations import (
     is_problem,
     problem as make_problem,
 )
+from marimo._core.protocol_tools import TOOLS as HOST_TOOLS
 from marimo._server.api.deps import AppState
 from marimo._server.api.events import SessionEvents
 from marimo._server.errors import handle_error
@@ -307,18 +307,18 @@ def assistant_tools(
 
 @cache
 def contract() -> list[dict[str, Any]]:
-    """The editor's tool definitions.
+    """The tool definitions.
 
-    Its own and the host's notebook tools are for its page, and the
+    The editor's own tools are for its page; the Host Protocol's and the
     assistant's are for models too.
     """
-    from marimo._server.host.tools import definitions
-
-    for_page = [*schemas(TOOLS), *definitions(catalog=False)]
     return sorted(
         [
-            *({**definition, "_meta": APP_ONLY} for definition in for_page),
-            *schemas(assistant_tools()),
+            *(
+                {**definition, "_meta": APP_ONLY}
+                for definition in schemas(TOOLS)
+            ),
+            *schemas({**HOST_TOOLS, **assistant_tools()}),
         ],
         key=lambda definition: definition["name"],
     )
@@ -353,23 +353,14 @@ async def _call(
 ) -> types.CallToolResult:
     request = ctx.request
     assert isinstance(request, Request)
-    if not request.auth.scopes:
-        # Before the arguments are read: `@requires` would refuse the call,
-        # but only once the handler is called with them.
-        return tool_result(
-            params.name,
-            make_problem("unauthorized", "Authorization header required"),
-        )
     found = TOOLS.get(params.name)
     if found is None:
-        from marimo._server.host.tools import editor_call, notebook_tools
+        from marimo._server.host.tools import call
 
-        if params.name in notebook_tools():
+        if params.name in HOST_TOOLS:
             return tool_result(
                 params.name,
-                await editor_call(
-                    request, params.name, params.arguments or {}
-                ),
+                await call(request, params.name, params.arguments or {}),
             )
         assistant = assistant_tools(request.app).get(params.name)
         if assistant is None:
@@ -487,57 +478,56 @@ async def _problem_for(request: Request, error: Exception) -> protocol.Problem:
     return make_problem(kind, detail if detail is None else str(detail))
 
 
-def tool_server(
-    definitions: Callable[[], list[dict[str, Any]]],
-    call: Callable[
-        [ServerRequestContext[Any, Any], types.CallToolRequestParams],
-        Awaitable[types.CallToolResult],
-    ],
-) -> Server[Any]:
-    """An MCP server of tools: `definitions` lists them and `call` serves one."""
-
-    async def list_tools(
-        ctx: ServerRequestContext[Any, Any], params: Any
-    ) -> types.ListToolsResult:
-        del ctx, params
-        return types.ListToolsResult(
-            tools=[types.Tool.model_validate(each) for each in definitions()]
-        )
-
-    def input_schema(name: str) -> dict[str, Any] | None:
-        return next(
-            (
-                definition["inputSchema"]
-                for definition in definitions()
-                if definition["name"] == name
-            ),
-            None,
-        )
-
-    return Server(
-        "marimo",
-        version=__version__,
-        on_list_tools=list_tools,
-        on_call_tool=call,
-        get_tool_input_schema=input_schema,
-    )
-
-
 class MCPEndpoint:
-    """An ASGI endpoint serving an MCP server and its events, stateless."""
+    """The server's MCP endpoint: every tool and event, stateless."""
 
-    def __init__(self, server: Server[Any]) -> None:
-        self.server = server
+    def __init__(self) -> None:
+        from marimo._server.host.streams import host_events
+
+        self.storage = LocalStorage()
+        definitions = {
+            definition["name"]: definition for definition in contract()
+        }
+        files = FileServer(
+            self.storage,
+            tools=definitions.get,
+            max_inline_bytes=_MAX_INLINE_BYTES,
+        )
+
+        listing = types.ListToolsResult(
+            tools=[types.Tool.model_validate(each) for each in contract()]
+        )
+
+        async def list_tools(
+            ctx: ServerRequestContext[Any, Any], params: Any
+        ) -> types.ListToolsResult:
+            del ctx, params
+            return listing
+
+        def input_schema(name: str) -> dict[str, Any] | None:
+            found = definitions.get(name)
+            return None if found is None else found["inputSchema"]
+
+        self.server: Server[Any] = Server(
+            "marimo",
+            version=__version__,
+            on_list_tools=list_tools,
+            on_call_tool=partial(_call, files),
+            get_tool_input_schema=input_schema,
+        )
+        self.server.extensions[EXTENSION] = files.settings()
+        self.server.middleware.insert(0, files)
+        self.session_events = SessionEvents()
+        host_events(self.session_events.events)
+        self.session_events.events.serve(self.server)
 
     def close(self) -> None:
-        """End each of its event streams with its final frame.
+        """End each event stream with its final frame.
 
         A client then opens the stream again from its cursor at once. Call it
         as the server starts to stop, on the loop that serves the endpoint.
         """
-        for each in self.server.middleware:
-            if isinstance(each, Events):
-                each.close()
+        self.session_events.events.close()
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
@@ -554,6 +544,18 @@ class MCPEndpoint:
             )
             await response(scope, receive, send)
             return
+        if not request.auth.scopes:
+            problem = make_problem(
+                "unauthorized", "Send the server's access token"
+            )
+            unauthorized = Response(
+                msgspec.json.encode(problem),
+                status_code=problem.status,
+                media_type="application/problem+json",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            await unauthorized(scope, receive, send)
+            return
         manager = StreamableHTTPSessionManager(
             self.server,
             stateless=True,
@@ -566,25 +568,6 @@ class MCPEndpoint:
             await manager.handle_request(scope, receive, send)
         for task in scope.get(_AFTER_REPLY, ()):
             await task()
-
-
-class EditorMCP(MCPEndpoint):
-    def __init__(self) -> None:
-        self.storage = LocalStorage()
-        definitions = {
-            definition["name"]: definition for definition in contract()
-        }
-        files = FileServer(
-            self.storage,
-            tools=definitions.get,
-            max_inline_bytes=_MAX_INLINE_BYTES,
-        )
-        server = tool_server(contract, partial(_call, files))
-        server.extensions[EXTENSION] = files.settings()
-        server.middleware.insert(0, files)
-        self.session_events = SessionEvents()
-        self.session_events.events.serve(server)
-        super().__init__(server)
 
 
 def origin_allowed(request: Request) -> bool:

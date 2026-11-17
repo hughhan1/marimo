@@ -13,7 +13,7 @@ from marimo._server.host.context import HostContext
 from marimo._server.main import create_starlette_app
 from marimo._server.workspace import SingleFileWorkspace
 from marimo._utils.marimo_path import MarimoPath
-from tests._server.host.drive import PORT, TOKEN, call, subscribe, wait_for
+from tests._server.host.drive import call, subscribe, wait_for
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
@@ -59,9 +59,7 @@ async def open_host(
         bridge = SessionBridge(manager)
         cleanup.callback(bridge.close)
         await bridge.open()
-        app.state.host_context = HostContext(
-            bridge=bridge, token=TOKEN, port=PORT
-        )
+        app.state.host_context = HostContext(bridge=bridge)
         notebook = next(iter(bridge.host.notebooks.values()))
         events, task, disconnect = subscribe(
             app, "notebook", notebook_id=notebook.id

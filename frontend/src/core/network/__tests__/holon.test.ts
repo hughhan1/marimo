@@ -7,7 +7,7 @@ import { callMarimo } from "../holon";
 
 vi.mock("../../runtime/config", () => ({
   getRuntimeManager: () => ({
-    getMcpURL: () => new URL("http://localhost/api/mcp"),
+    getMcpURL: () => new URL("http://localhost/mcp"),
     httpURL: new URL("http://localhost"),
     headers: () => ({}),
   }),

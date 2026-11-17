@@ -20,7 +20,6 @@ from marimo._cli.pair.client import (
     open_events,
 )
 from marimo._core import protocol
-from marimo._server.host import HOST_API_PATH
 from marimo._server.host.record import discover_hosts
 
 if TYPE_CHECKING:
@@ -124,12 +123,11 @@ def _snapshot(host: HostEndpoint) -> Listing:
     finally:
         response.close()
 
-    url = host.url.rstrip("/").removesuffix(HOST_API_PATH)
     listing = Listing([], [])
     for project in projects.values():
         if project.status != "indexed":
             listing.warnings.append(
-                f"Project {project.name!r} on {url} is {project.status}; some notebooks may be missing."
+                f"Project {project.name!r} on {host.url} is {project.status}; some notebooks may be missing."
             )
     for notebook in notebooks.values():
         current_runtime = runtimes.get(notebook.id)
@@ -145,7 +143,11 @@ def _snapshot(host: HostEndpoint) -> Listing:
             path = str(Path(current_project.root) / path)
         listing.notebooks.append(
             RunningNotebook(
-                notebook.id, notebook.name, path, url, current_runtime.status
+                notebook.id,
+                notebook.name,
+                path,
+                host.url,
+                current_runtime.status,
             )
         )
     return listing

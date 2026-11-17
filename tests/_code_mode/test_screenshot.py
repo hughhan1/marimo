@@ -266,7 +266,7 @@ async def test_screenshot_after_run_ignores_stale_empty_snapshot(
 @pytest.fixture
 def screenshot_request() -> HTTPRequest:
     return HTTPRequest(
-        url={"path": "/api/mcp"},
+        url={"path": "/mcp"},
         base_url={},
         headers={},
         query_params={},

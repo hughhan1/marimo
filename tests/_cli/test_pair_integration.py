@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Literal
 
 import pytest
 
-from marimo._server.host import HOST_API_PATH
 from tests._cli._pair_server import PairTestServer, pair_test_server
 from tests.mcp_request import tool_request, tool_result, tool_status
 
@@ -275,7 +274,6 @@ def test_execution_without_runtime_reports_error(tmp_path: Path) -> None:
                 "idempotency_key": "stop-test-runtime",
             },
             headers={"Authorization": f"Bearer {host.token}"},
-            endpoint=f"{HOST_API_PATH}/mcp",
         )
         with urllib.request.urlopen(request, timeout=5) as response:
             assert tool_status(tool_result(response)) == 200
@@ -418,7 +416,6 @@ def test_notebook_id_targets_the_replacement_kernel(
                 "idempotency_key": "pair-restart-test",
             },
             headers={"Authorization": f"Bearer {host.token}"},
-            endpoint=f"{HOST_API_PATH}/mcp",
         )
         with urllib.request.urlopen(request, timeout=5) as response:
             assert tool_status(tool_result(response)) == 200

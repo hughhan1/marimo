@@ -301,10 +301,9 @@ removes the runtime when its process ends, so a result is **live** when its
 ## Connecting to the host API
 
 Clients connect using the host API's base URL and bearer token, whether
-supplied through configuration or [local discovery](#local-discovery). Version
-1 serves the API over HTTP on loopback addresses. A host with a token MUST
-authenticate requests using it, and every host MUST accept only loopback
-connections.
+supplied through configuration or [local discovery](#local-discovery). The host
+API follows the server's own address and token: a host with a token MUST
+authenticate requests using it.
 
 The host serves MCP over Streamable HTTP at `/mcp` below the base URL. Each
 operation is a tool of the same name. A tool's arguments are one object: the
@@ -613,8 +612,8 @@ Hosts can extend the protocol with new capabilities. Clients MUST ignore
 unfamiliar fields, operations, and events while continuing to process the parts
 they understand. Hosts MUST reject a call whose arguments have an
 unrecognized member at any depth with `invalid-request`, so a client learns
-that the host cannot honor it. A breaking change requires a new record version and API
-base path. Protocol versions are independent of marimo releases.
+that the host cannot honor it. A breaking change requires a new record version.
+Protocol versions are independent of marimo releases.
 
 Conformance tests exercise the contract from a client's perspective. Hosts,
 including marimo's reference implementation, are responsible for the common
