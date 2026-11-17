@@ -2,7 +2,7 @@
 """Let tests call the API by its operation path, through the MCP endpoint.
 
 `client.post("/api/kernel/rename", json=body)` becomes a `tools/call` request to
-`/api/mcp` whose arguments are the body's fields, and the result becomes an
+`/mcp` whose arguments are the body's fields, and the result becomes an
 ordinary response. A tool that acts on a notebook gets the `notebook_id` of
 the session the request's tab header names, as the page passes its own: a success is a 200 whose JSON is the structured result, a
 file is a response with the file's type and bytes, and a failure has its
@@ -162,7 +162,7 @@ def _request(self: TestClient, method: str, url: Any, **kwargs: Any) -> Any:
     outer = _original_request(
         self,
         "POST",
-        f"{full.scheme}://{full.netloc.decode()}{prefix}/api/mcp"
+        f"{full.scheme}://{full.netloc.decode()}{prefix}/mcp"
         + (f"?{urlencode(query)}" if query else ""),
         json=tool_payload(name, arguments),
         headers={**request_headers("tools/call", name), **headers},
@@ -187,7 +187,7 @@ def call_tool(
     name: str,
     /,
     *,
-    url: str = "/api/mcp",
+    url: str = "/mcp",
     headers: dict[str, str] | None = None,
     **arguments: Any,
 ) -> Called:

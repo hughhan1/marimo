@@ -22,7 +22,7 @@ function connect(
 ) {
   const { fetch, calls, subscriptions } = host(answer, subscribe);
   const client = new Client(
-    "http://localhost/prefix/api/marimo/v1/?session_id=s1",
+    "http://localhost/prefix/?session_id=s1",
     { token: "secret", fetch },
   );
   return { client, fetch, calls, subscriptions };
@@ -46,7 +46,7 @@ describe("Client", () => {
     >();
     expect(result).toEqual({ ok: true, data: record });
     expect(String(fetch.mock.calls[0][0])).toBe(
-      "http://localhost/prefix/api/marimo/v1/mcp?session_id=s1",
+      "http://localhost/prefix/mcp?session_id=s1",
     );
     expect(calls).toEqual([
       {
@@ -126,7 +126,7 @@ describe("Client", () => {
       expect(second.cursor).toBe("41");
     });
     expect(new Set(fetch.mock.calls.map(([url]) => String(url)))).toEqual(
-      new Set(["http://localhost/prefix/api/marimo/v1/mcp?session_id=s1"]),
+      new Set(["http://localhost/prefix/mcp?session_id=s1"]),
     );
     expect(subscriptions).toHaveLength(2);
     expect(subscriptions).toEqual(

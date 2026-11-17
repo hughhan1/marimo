@@ -39,9 +39,7 @@ def app_host(client: TestClient) -> Iterator[SessionBridge]:
     manager.mode = SessionMode.RUN
     manager.include_code = False
     bridge = SessionBridge(manager)
-    client.app.state.host_context = HostContext(
-        bridge=bridge, token="", port=0
-    )
+    client.app.state.host_context = HostContext(bridge=bridge)
     with client:
         assert client.portal is not None
         client.portal.call(bridge.open)

@@ -1,5 +1,5 @@
 # Copyright 2026 Marimo. All rights reserved.
-"""The editor's session as state plus changes at `/api/mcp`.
+"""The editor's session as state plus changes at `/mcp`.
 
 A page reads its session's state with `session_state`, which carries the
 `session` event's cursor, and follows the event from that cursor. The

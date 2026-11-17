@@ -149,7 +149,7 @@ def connect_session(
     server answers with an error raises it as `SessionClosed`.
     """
     parts = urlsplit(url)
-    path = f"{parts.path.removesuffix('/ws')}/api/mcp"
+    path = f"{parts.path.removesuffix('/ws')}/mcp"
     query = {key: values[-1] for key, values in parse_qs(parts.query).items()}
     arguments: dict[str, Any] = {
         "session_id": query.pop("session_id", None),

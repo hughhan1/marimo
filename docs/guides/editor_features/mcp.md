@@ -7,7 +7,7 @@ marimo supports the Model Context Protocol (MCP) in two ways: as an [MCP server]
 
 ## MCP Server
 
-`marimo edit` serves its AI tools over MCP at `/api/mcp`, allowing external AI
+`marimo edit` serves its AI tools over MCP at `/mcp`, allowing external AI
 applications to interact with your notebooks. If your goal is to have a coding
 agent manipulate a running notebook, see [marimo
 pair](../generate_with_ai/marimo_pair.md) instead.
@@ -34,7 +34,7 @@ Replace `PORT` in the examples below with the port marimo prints at startup.
 #### Claude Code
 
 ```bash
-claude mcp add --transport http marimo http://localhost:PORT/api/mcp --header "Authorization: Bearer YOUR_TOKEN"
+claude mcp add --transport http marimo http://localhost:PORT/mcp --header "Authorization: Bearer YOUR_TOKEN"
 ```
 
 #### Cursor
@@ -43,7 +43,7 @@ claude mcp add --transport http marimo http://localhost:PORT/api/mcp --header "A
 {
   "mcpServers": {
     "marimo": {
-      "url": "http://localhost:PORT/api/mcp",
+      "url": "http://localhost:PORT/mcp",
       "headers": { "Authorization": "Bearer YOUR_TOKEN" }
     }
   }
@@ -59,7 +59,7 @@ Create a `.vscode/mcp.json` file in your workspace:
   "servers": {
     "marimo": {
       "type": "http",
-      "url": "http://localhost:PORT/api/mcp",
+      "url": "http://localhost:PORT/mcp",
       "headers": { "Authorization": "Bearer YOUR_TOKEN" }
     }
   }
@@ -68,10 +68,11 @@ Create a `.vscode/mcp.json` file in your workspace:
 
 ### Available tools
 
-The following tools are listed for models. A `marimo run` server refuses
-them, since they read a notebook's code and data. The endpoint also lists the
-tools marimo's own page calls; those are marked `_meta.ui.visibility: ["app"]`,
-for apps rather than models.
+The following tools are listed for models, along with the tools and events of
+the [Host Protocol](https://github.com/marimo-team/marimo/blob/main/protocols/host/spec.md).
+A `marimo run` server refuses them, since they read a notebook's code and
+data. The endpoint also lists the tools marimo's own page calls; those are
+marked `_meta.ui.visibility: ["app"]`, for apps rather than models.
 
 #### Inspection
 

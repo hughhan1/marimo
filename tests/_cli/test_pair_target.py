@@ -13,7 +13,7 @@ from marimo._cli.pair.client import (
 from marimo._cli.pair.discovery import Listing, RunningNotebook
 from marimo._cli.pair.target import ExecutionTarget
 
-HOST = HostEndpoint("http://127.0.0.1:2718/base/api/marimo/v1", "local-secret")
+HOST = HostEndpoint("http://127.0.0.1:2718/base", "local-secret")
 NOTEBOOK = RunningNotebook(
     "nb-one",
     "analysis",

@@ -48,7 +48,7 @@ const options = {
   snapshot: null,
   sessionArguments: () => ({ session_id: "s1", query_params: "" }),
   headers: () => ({}),
-  mcpUrl: () => new URL("http://localhost/api/mcp"),
+  mcpUrl: () => new URL("http://localhost/mcp"),
   waitUntilReady: async () => undefined,
   checkHealth: async () => true,
 };
@@ -120,7 +120,7 @@ describe("createEditorBackend", () => {
     const call = (await new Request(input, init).json()) as {
       params: unknown;
     };
-    expect(String(input)).toBe("http://localhost/api/mcp");
+    expect(String(input)).toBe("http://localhost/mcp");
     expect(call.params).toMatchObject({
       name: "notebook.edit",
       arguments: { notebook_id: "n1", idempotency_key: "edit-1", changes: [] },

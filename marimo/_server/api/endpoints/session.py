@@ -25,5 +25,5 @@ async def session_state(
 
     Follow the `session` event from `cursor` for every change after it.
     """
-    events: SessionEvents = request.app.state.session_events
+    events: SessionEvents = request.app.state.mcp_endpoint.session_events
     return await events.state(request, body)

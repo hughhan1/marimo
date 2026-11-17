@@ -16,17 +16,23 @@ import socket
 import sys
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import urlencode
 
 import httpx
 import pytest
 
-from tests.mcp_request import request_headers, tool_payload
+from tests.mcp_request import (
+    request_headers,
+    stream_headers,
+    stream_payload,
+    tool_payload,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
     from pathlib import Path
 
-    from playwright.async_api import Page, WebSocket
+    from playwright.async_api import Page
 
 
 async def _call_sessions(
@@ -42,26 +48,40 @@ async def _call_sessions(
 
 async def _sessions(client: httpx.AsyncClient) -> dict[str, Any]:
     """The server's sessions, by session id, from its `sessions` tool."""
-    response = await _call_sessions(client, "/api/mcp")
+    response = await _call_sessions(client, "/mcp")
     response.raise_for_status()
     sessions: dict[str, Any] = response.json()["result"]["structuredContent"]
     return sessions
 
 
+async def _running(lines: AsyncIterator[str], seen: set[str]) -> str:
+    """The next notebook whose runtime runs, from a `catalog` stream."""
+    async for line in lines:
+        if not line.startswith("data:"):
+            continue
+        message = json.loads(line.removeprefix("data:"))
+        event = message.get("params", {}).get("data", {})
+        runtime = event.get("data", {}).get("runtime", {})
+        notebook_id = runtime.get("notebook_id")
+        if runtime.get("status") == "running" and notebook_id not in seen:
+            seen.add(notebook_id)
+            return str(notebook_id)
+    raise AssertionError("The catalog ended")
+
+
 async def _execute(
     client: httpx.AsyncClient,
-    session_id: str,
+    notebook_id: str,
     code: str,
     *,
     verify_png: bool = False,
 ) -> str:
     response = await client.post(
-        "/api/mcp",
-        json=tool_payload("kernel_execute", {"code": code}),
-        headers={
-            **request_headers("tools/call", "kernel_execute"),
-            "Marimo-Session-Id": session_id,
-        },
+        "/mcp",
+        json=tool_payload(
+            "kernel_execute", {"notebook_id": notebook_id, "code": code}
+        ),
+        headers=request_headers("tools/call", "kernel_execute"),
         timeout=90,
     )
     response.raise_for_status()
@@ -140,7 +160,7 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                 deadline = time.monotonic() + 30
                 while True:
                     try:
-                        response = await _call_sessions(client, "/api/mcp")
+                        response = await _call_sessions(client, "/mcp")
                         if response.status_code == 200:
                             break
                     except httpx.TransportError:
@@ -150,43 +170,40 @@ async def test_screenshots_attach_to_live_notebook(tmp_path: Path) -> None:
                     await asyncio.sleep(0.1)
                 async with httpx.AsyncClient() as anonymous:
                     assert (
-                        await _call_sessions(anonymous, base + "/api/mcp")
+                        await _call_sessions(anonymous, base + "/mcp")
                     ).status_code != 200
 
-                async with async_playwright() as playwright:
+                async with (
+                    async_playwright() as playwright,
+                    client.stream(
+                        "POST",
+                        "/mcp",
+                        json=stream_payload("catalog", {"types": ["runtime"]}),
+                        headers=stream_headers("catalog"),
+                    ) as catalog,
+                ):
                     browser = await playwright.chromium.launch()
                     keys = [str(file) for file in files] + [
                         "__new__capture-test"
                     ]
-                    editors: list[tuple[str, Page, WebSocket, str]] = []
+                    lines = catalog.aiter_lines()
+                    seen: set[str] = set()
+                    editors: list[tuple[str, Page, str]] = []
                     for key in keys:
                         context = await browser.new_context()
                         page = await context.new_page()
-                        sockets: list[WebSocket] = []
-                        page.on(
-                            "websocket",
-                            lambda ws, records=sockets: records.append(ws),
-                        )
                         await page.goto(
                             base
                             + "/?"
                             + urlencode({"file": key, "access_token": token})
                         )
-                        deadline = time.monotonic() + 30
-                        while not sockets or parse_qs(
-                            urlsplit(sockets[0].url).query
-                        )["session_id"][0] not in await _sessions(client):
-                            assert time.monotonic() < deadline
-                            await asyncio.sleep(0.1)
-                        session_id = parse_qs(urlsplit(sockets[0].url).query)[
-                            "session_id"
-                        ][0]
-                        editors.append((key, page, sockets[0], session_id))
+                        # A page's session runs its notebook once it joined.
+                        editors.append(
+                            (key, page, await _running(lines, seen))
+                        )
                     sessions_before = await _sessions(client)
                     assert len(sessions_before) == 3
-                    for index, (key, page, websocket, session_id) in enumerate(
-                        editors
-                    ):
+                    for index, (key, page, notebook_id) in enumerate(editors):
                         marker = f"LIVE NOTEBOOK {index}"
                         source = f"import marimo as mo\nmo.Html('<div>{marker}</div>')"
                         if index == 2:
@@ -247,7 +264,7 @@ print("CELL_ID=" + cell_id)
 image
 """
                         stdout = await _execute(
-                            client, session_id, code, verify_png=True
+                            client, notebook_id, code, verify_png=True
                         )
                         cell_id = next(
                             line.removeprefix("CELL_ID=")
@@ -255,10 +272,9 @@ image
                             if line.startswith("CELL_ID=")
                         )
                         await page.get_by_text(marker, exact=True).wait_for()
-                        assert not websocket.is_closed()
                         assert (
                             await _execute(
-                                client, session_id, "print('still connected')"
+                                client, notebook_id, "print('still connected')"
                             )
                             == "still connected"
                         )

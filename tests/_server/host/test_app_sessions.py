@@ -3,26 +3,30 @@
 
 from __future__ import annotations
 
+from holon.ext.events import FORBIDDEN
+
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
 from marimo._server.main import create_starlette_app
 from marimo._session.model import SessionMode
-from tests._server.host.drive import TOKEN, call, refused
+from tests._server.host.drive import call, refused
 from tests._server.mocks import (
     get_mock_session_manager,
     get_starlette_server_state_init,
 )
 
 
-async def test_app_mode_never_exposes_the_catalog_or_mutations() -> None:
+async def test_app_mode_refuses_the_catalog_and_mutations() -> None:
     manager = get_mock_session_manager(mode=SessionMode.RUN)
     app = create_starlette_app(base_url="", enable_auth=False)
     get_starlette_server_state_init(session_manager=manager).apply(app.state)
     bridge = SessionBridge(manager)
-    app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=1234)
+    app.state.host_context = HostContext(bridge=bridge)
     await bridge.open()
     try:
-        assert (await refused(app, "catalog"))["status"] == 404
+        assert (await refused(app, "catalog"))["code"] == FORBIDDEN
+        refusal = await refused(app, "notebook", notebook_id="unknown")
+        assert refusal["code"] == FORBIDDEN
         edited = await call(
             app,
             "notebook.edit",
@@ -30,7 +34,7 @@ async def test_app_mode_never_exposes_the_catalog_or_mutations() -> None:
             notebook_id="unknown",
             changes=[],
         )
-        assert edited.problem["status"] == 404
-        assert edited.problem["type"].endswith(":not-found")
+        assert edited.problem["status"] == 403
+        assert edited.problem["type"].endswith(":forbidden")
     finally:
         bridge.close()

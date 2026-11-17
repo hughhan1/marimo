@@ -105,7 +105,7 @@ class TestTracebacks:
         """An agent's code-mode run gets plain-text tracebacks."""
         mock_stderr = MagicMock(spec=Stderr)
         req = HTTPRequest(
-            url={"path": "/api/mcp"},
+            url={"path": "/mcp"},
             base_url={},
             headers={},
             query_params={},
@@ -225,7 +225,7 @@ class TestIsCodeModeRequest:
 
     def test_code_mode_request(self) -> None:
         req = HTTPRequest(
-            url={"path": "/api/mcp"},
+            url={"path": "/mcp"},
             base_url={},
             headers={},
             query_params={},
@@ -242,7 +242,7 @@ class TestIsCodeModeRequest:
 
     def test_request_without_code_mode(self) -> None:
         req = HTTPRequest(
-            url={"path": "/api/mcp"},
+            url={"path": "/mcp"},
             base_url={},
             headers={},
             query_params={},

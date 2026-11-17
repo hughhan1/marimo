@@ -92,7 +92,7 @@ async def test_marimo_http_exception_403_preserved():
     request = Request(
         {
             "type": "http",
-            "path": "/api/mcp",
+            "path": "/mcp",
             "headers": [(b"accept", b"application/json")],
         }
     )

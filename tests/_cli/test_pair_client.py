@@ -191,7 +191,7 @@ def test_open_events_subscribes_at_the_hosts_mcp(
     )
     arguments = {"notebook_id": "nb-one", "cursor": "cursor-1"}
     client.open_events(
-        url="http://localhost:2718/base/api/marimo/v1",
+        url="http://localhost:2718/base",
         name="notebook",
         arguments=arguments,
         token="private",
@@ -199,7 +199,7 @@ def test_open_events_subscribes_at_the_hosts_mcp(
     (call,) = calls
     assert {**call, "body": json.loads(call["body"])} == {
         "method": "POST",
-        "url": "http://localhost:2718/base/api/marimo/v1/mcp",
+        "url": "http://localhost:2718/base/mcp",
         "headers": {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
@@ -264,7 +264,7 @@ def test_a_refused_subscription_raises_its_problem(
     _patch_response(monkeypatch, response)
     with pytest.raises(error, match=message) as raised:
         client.open_events(
-            url="http://localhost:2718/api/marimo/v1",
+            url="http://localhost:2718",
             name="notebook",
             arguments={"notebook_id": "nb-one"},
             token=None,
@@ -399,7 +399,7 @@ def test_list_sessions_sends_request_and_parses_response(
     [call] = calls
     assert call["method"] == "POST"
     assert call["url"] == (
-        "https://example.com/base/api/mcp?access_token=query-token"
+        "https://example.com/base/mcp?access_token=query-token"
     )
     assert call["headers"]["Authorization"] == "Bearer secret-token"
     assert call["headers"]["Mcp-Name"] == "sessions"
@@ -503,7 +503,7 @@ def test_list_sessions_rejects_malformed_response(
         )
 
     assert str(exc_info.value) == (
-        "Unexpected response from http://localhost:2718/api/mcp."
+        "Unexpected response from http://localhost:2718/mcp."
     )
     assert "password" not in str(exc_info.value)
     assert "secret" not in str(exc_info.value)
@@ -522,7 +522,7 @@ def test_list_sessions_rejects_invalid_json(
         )
 
     assert str(exc_info.value) == (
-        "Unexpected response from http://localhost:2718/api/mcp."
+        "Unexpected response from http://localhost:2718/mcp."
     )
     assert "secret" not in str(exc_info.value)
     assert response.closed
@@ -631,17 +631,17 @@ def test_resolve_host_skips_stale_and_malformed_records(
 ) -> None:
     _host_record(
         tmp_path / "a-stale.json",
-        url="http://127.0.0.1:2718/base/api/marimo/v1",
+        url="http://127.0.0.1:2718/base",
         started=1,
     )
     (tmp_path / "b-malformed.json").write_text("{}")
     _host_record(
         tmp_path / "c-live.json",
-        url="http://127.0.0.1:2718/base/api/marimo/v1",
+        url="http://127.0.0.1:2718/base",
     )
     result = client.resolve_host("http://localhost:2718/base/", root=tmp_path)
     assert result == client.HostEndpoint(
-        "http://127.0.0.1:2718/base/api/marimo/v1", "private-host-token"
+        "http://127.0.0.1:2718/base", "private-host-token"
     )
     assert "private-host-token" not in repr(result)
 
@@ -654,7 +654,7 @@ def test_resolve_host_rejects_unsafe_or_unmatched_records(
     tmp_path: Path, kind: str
 ) -> None:
     record = tmp_path / "record.json"
-    _host_record(record, url="http://127.0.0.1:2718/api/marimo/v1")
+    _host_record(record, url="http://127.0.0.1:2718")
     selected = "http://localhost:2718"
     if kind == "public":
         record.chmod(0o644)
@@ -723,7 +723,7 @@ def test_execute_calls_the_kernel_execute_tool(
         "warning\n",
     )
     [call] = calls
-    assert call["url"] == "http://localhost:2718/api/mcp"
+    assert call["url"] == "http://localhost:2718/mcp"
     assert call["headers"]["Mcp-Name"] == "kernel_execute"
     assert call["headers"]["Authorization"] == "Bearer private"
     assert json.loads(call["body"])["params"]["arguments"] == {

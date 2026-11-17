@@ -146,12 +146,12 @@ export class RuntimeManager {
   }
 
   /**
-   * The editor's MCP endpoint, which serves its tools and the notebook's.
+   * The server's MCP endpoint, which serves every tool and event.
    * Requests send auth in headers (see `headers()`), never in the URL.
    */
   public getMcpURL(): URL {
     return new URL(
-      this.formatHttpURL({ path: "/api/mcp" }).pathname,
+      this.formatHttpURL({ path: "/mcp" }).pathname,
       this.httpURL.origin,
     );
   }

@@ -17,7 +17,6 @@ import msgspec
 
 from marimo import _loggers
 from marimo._core import protocol
-from marimo._server.host import HOST_API_PATH
 from marimo._utils.xdg import marimo_state_dir
 
 if TYPE_CHECKING:
@@ -102,7 +101,7 @@ def _private(info: os.stat_result) -> bool:
 
 
 def host_url(host: str, port: int, base_url: str) -> str | None:
-    """Build the loopback URL for the host API.
+    """Build the server's loopback URL, which the host record names.
 
     Returns None when the server binds an address that loopback cannot
     reach, because a record would then name a URL nobody can open.
@@ -126,7 +125,7 @@ def host_url(host: str, port: int, base_url: str) -> str | None:
             loopback = f"[{address}]" if address.version == 6 else str(address)
         else:
             return None
-    return f"http://{loopback}:{port}{base_url}{HOST_API_PATH}"
+    return f"http://{loopback}:{port}{base_url}"
 
 
 def _process_started_at() -> datetime:

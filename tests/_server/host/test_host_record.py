@@ -12,9 +12,10 @@ from typing import TYPE_CHECKING
 import msgspec
 import pytest
 import uvicorn
+from holon.ext.events import FORBIDDEN
 
 from marimo._core import backend as be, protocol
-from marimo._server.host import HOST_API_PATH, record as record_module
+from marimo._server.host import record as record_module
 from marimo._server.host.lifespan import host as host_lifespan
 from marimo._server.host.record import host_url
 from marimo._server.main import create_starlette_app
@@ -56,7 +57,7 @@ def test_the_url_names_the_loopback_that_reaches_the_bind(
     host: str, loopback: str
 ) -> None:
     assert host_url(host, 2718, "/marimo") == (
-        f"http://{loopback}:2718/marimo{HOST_API_PATH}"
+        f"http://{loopback}:2718/marimo"
     )
 
 
@@ -83,7 +84,7 @@ async def test_an_unreachable_bind_writes_no_record(
         assert app.state.host_context is not None
 
 
-async def test_run_mode_writes_no_record_and_serves_no_host_api(
+async def test_run_mode_writes_no_record_and_refuses_the_catalog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -100,7 +101,7 @@ async def test_run_mode_writes_no_record_and_serves_no_host_api(
 
     async with app.router.lifespan_context(app):
         assert not (tmp_path / "hosts-v1").exists()
-        assert (await refused(app, "catalog"))["status"] == 404
+        assert (await refused(app, "catalog"))["code"] == FORBIDDEN
 
 
 @pytest.mark.parametrize("external_port", [1234, 8443])
@@ -124,7 +125,7 @@ async def test_the_lifespan_serves_the_host_while_the_server_runs(
         record = msgspec.json.decode(
             path.read_bytes(), type=protocol.HostRecord
         )
-        assert record.url == f"http://127.0.0.1:1234{HOST_API_PATH}"
+        assert record.url == "http://127.0.0.1:1234"
         assert record.process.pid == os.getpid()
         if sys.platform != "win32":
             assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -173,7 +174,6 @@ async def test_idle_host_expires_results_and_stops_maintenance(
         response = await call(
             app,
             "runtime.execute",
-            headers={"Authorization": f"Bearer {context.token}"},
             idempotency_key="run",
             notebook_id=notebook.id,
             code="42",
@@ -212,7 +212,7 @@ def test_discovery_reads_the_live_record_without_exposing_it(
 ) -> None:
     monkeypatch.setattr(record_module, "marimo_state_dir", lambda: tmp_path)
     writer = record_module.HostRecordFile(
-        url="http://127.0.0.1:2718/base/api/marimo/v1", token="private-token"
+        url="http://127.0.0.1:2718/base", token="private-token"
     )
     writer.write()
     try:
@@ -244,7 +244,7 @@ def test_discovery_skips_untrusted_records(
 
     monkeypatch.setattr(record_module, "marimo_state_dir", lambda: tmp_path)
     writer = record_module.HostRecordFile(
-        url="http://127.0.0.1:2718/api/marimo/v1", token="private-token"
+        url="http://127.0.0.1:2718", token="private-token"
     )
     writer.write()
     path = writer._path
@@ -261,9 +261,9 @@ def test_discovery_skips_untrusted_records(
         path.write_bytes(b" " * 65537)
     else:
         if invalid == "remote":
-            data["url"] = "http://example.com/api/marimo/v1"
+            data["url"] = "http://example.com"
         elif invalid == "credentials":
-            data["url"] = "http://user@127.0.0.1:2718/api/marimo/v1"
+            data["url"] = "http://user@127.0.0.1:2718"
         elif invalid == "stale":
             data["process"]["started_at"] = "2000-01-01T00:00:00Z"
         else:

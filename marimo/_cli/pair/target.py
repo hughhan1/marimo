@@ -15,7 +15,6 @@ from marimo._cli.pair.client import (
     resolve_host,
 )
 from marimo._cli.pair.discovery import list_running_notebooks
-from marimo._server.host import HOST_API_PATH
 
 
 @dataclass(frozen=True)
@@ -35,7 +34,7 @@ def resolve_target(
     selected_id = notebook_id if notebook_id is not None else session_id
     host = find_host(url) if url is not None and token is None else None
     if host is not None:
-        url = host.url.rstrip("/").removesuffix(HOST_API_PATH)
+        url = host.url
 
     if url is None or host is not None:
         listing = list_running_notebooks([host] if host is not None else None)

@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Literal
 
 import pytest
 
-from marimo._server.host import HOST_API_PATH
 from tests._cli._pair_server import PairTestServer, pair_test_server
 from tests.mcp_request import tool_request, tool_result, tool_status
 
@@ -275,7 +274,6 @@ def test_execution_without_runtime_reports_error(tmp_path: Path) -> None:
                 "idempotency_key": "stop-test-runtime",
             },
             headers={"Authorization": f"Bearer {host.token}"},
-            endpoint=f"{HOST_API_PATH}/mcp",
         )
         with urllib.request.urlopen(request, timeout=5) as response:
             assert tool_status(tool_result(response)) == 200
@@ -401,50 +399,44 @@ def test_notebook_id_targets_the_replacement_kernel(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import time
-    import urllib.request
+    from contextlib import closing
 
-    from marimo._cli.pair.client import resolve_host
-    from marimo._cli.pair.discovery import list_running_notebooks
+    from marimo._cli.pair.client import (
+        call_tool,
+        iter_events,
+        open_events,
+        resolve_host,
+    )
 
     monkeypatch.delenv("MARIMO_TOKEN", raising=False)
     with pair_test_server(tmp_path, token="restart-editor-secret") as running:
         host = resolve_host(running.url)
-        request = tool_request(
-            running.url,
-            "runtime.restart",
-            {
+        replacement = call_tool(
+            url=host.url,
+            token=host.token,
+            name="runtime.restart",
+            arguments={
                 "notebook_id": running.notebook_id,
-                "idempotency_key": "pair-restart-test",
+                "idempotency_key": "r",
             },
-            headers={"Authorization": f"Bearer {host.token}"},
-            endpoint=f"{HOST_API_PATH}/mcp",
         )
-        with urllib.request.urlopen(request, timeout=5) as response:
-            assert tool_status(tool_result(response)) == 200
-        deadline = time.monotonic() + 10
-        while not list_running_notebooks([host]).notebooks:
-            assert time.monotonic() < deadline, (
-                "Replacement kernel did not start"
+        assert isinstance(replacement, dict)
+        # The reply is the replacement starting; it serves once it runs.
+        with closing(
+            open_events(
+                url=host.url,
+                name="catalog",
+                arguments={"types": ["runtime"]},
+                token=host.token,
             )
-            time.sleep(0.05)
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "marimo",
-                "pair",
-                "execute",
-                "--session",
-                running.notebook_id,
-                "--code",
-                "print('replacement')",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
+        ) as catalog:
+            assert any(
+                {"id": replacement["id"], "status": "running"}.items()
+                <= json.loads(event.data)["runtime"].items()
+                for event in iter_events(catalog)
+                if event.name == "runtime"
+            )
+        result = _run(running, "-c", "print('replacement')")
         assert result.returncode == 0, (result.stdout, result.stderr)
         assert json.loads(result.stdout)["stdout"] == "replacement\n"
 

@@ -295,7 +295,7 @@ async def test_files_travel_beside_the_call(client: TestClient) -> None:
         {"marimo": None},
         {
             "marimo": {
-                "endpoint": "http://localhost/api/mcp",
+                "endpoint": "http://localhost/mcp",
                 "http_client": http_client,
             }
         },

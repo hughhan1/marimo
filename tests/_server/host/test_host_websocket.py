@@ -9,24 +9,24 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.routing import Route
 
 from marimo._messaging.cell_output import CellChannel, CellOutput
 from marimo._messaging.notification import (
     CellNotification,
     CompletedRunNotification,
 )
+from marimo._server.api.middleware import AuthBackend
+from marimo._server.api.tools import MCPEndpoint
 from marimo._server.host.bridge import SessionBridge
 from marimo._server.host.context import HostContext
-from marimo._server.host.middleware import HostApiMiddleware
-from marimo._server.host.tools import mcp_endpoint
 from marimo._server.models.home import MarimoFile
 from marimo._server.workspace import FixedFilesWorkspace
 from marimo._session.notebook import AppFileManager
 from marimo._session.state.session_view import SessionView
 from tests._server.host.conftest import FakeManager, FakeSession
 from tests._server.host.drive import (
-    PORT,
-    TOKEN,
     subscribe,
     until_ready,
     wait_for,
@@ -71,9 +71,16 @@ async def session_host(
     manager.sessions["existing"] = session
     bridge = SessionBridge(manager)  # type: ignore[arg-type]
     app = Starlette(
-        middleware=[Middleware(HostApiMiddleware, endpoint=mcp_endpoint())]
+        routes=[Route("/mcp", MCPEndpoint(), methods=["POST"])],
+        middleware=[
+            Middleware(
+                AuthenticationMiddleware,
+                backend=AuthBackend(should_authenticate=False),
+            )
+        ],
     )
-    app.state.host_context = HostContext(bridge=bridge, token=TOKEN, port=PORT)
+    app.state.session_manager = manager
+    app.state.host_context = HostContext(bridge=bridge)
     await bridge.open()
     try:
         yield app, bridge, session

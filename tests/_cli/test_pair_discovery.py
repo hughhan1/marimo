@@ -73,7 +73,7 @@ def test_listing_keeps_only_running_notebooks_and_closes_the_snapshot(
 
     monkeypatch.setattr(discovery, "open_events", open_events)
     result = discovery.list_running_notebooks(
-        [HostEndpoint("http://127.0.0.1:2718/base/api/marimo/v1", "secret")]
+        [HostEndpoint("http://127.0.0.1:2718/base", "secret")]
     )
     assert msgspec.to_builtins(result) == snapshot(
         {
@@ -98,7 +98,7 @@ def test_listing_keeps_only_running_notebooks_and_closes_the_snapshot(
     )
     assert subscribed == [
         {
-            "url": "http://127.0.0.1:2718/base/api/marimo/v1",
+            "url": "http://127.0.0.1:2718/base",
             "name": "catalog",
             "arguments": {"types": ["project", "notebook", "runtime"]},
             "token": "secret",
@@ -116,7 +116,7 @@ def test_listing_preserves_other_servers_when_a_snapshot_fails(
     def open_events(*, url: str, **_: object) -> MagicMock:
         response = MagicMock()
         data = catalog()
-        if ":2719/" in url:
+        if url.endswith(":2719"):
             if failure == "timeout":
                 raise TimeoutError("secret diagnostic")
             data = (
@@ -130,13 +130,13 @@ def test_listing_preserves_other_servers_when_a_snapshot_fails(
     monkeypatch.setattr(discovery, "open_events", open_events)
     result = discovery.list_running_notebooks(
         [
-            HostEndpoint(f"http://127.0.0.1:{port}/api/marimo/v1", "secret")
+            HostEndpoint(f"http://127.0.0.1:{port}", "secret")
             for port in [2718, 2719]
         ]
     )
     assert [n.id for n in result.notebooks] == ["live", "untitled"]
     assert result.warnings == [
-        "Could not list notebooks on http://127.0.0.1:2719/api/marimo/v1."
+        "Could not list notebooks on http://127.0.0.1:2719."
     ]
 
 

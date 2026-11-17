@@ -56,7 +56,7 @@ marimo run app.py --base-url /subpath
 ### Proxies and streaming
 
 marimo streams kernel messages to the browser over plain HTTP: each page
-subscribes to its session through `POST /api/mcp`, and the answer is a
+subscribes to its session through `POST /mcp`, and the answer is a
 `text/event-stream` that stays open. Make sure proxies do not buffer those
 responses. Browsers cap concurrent HTTP/1.1 connections per origin
 (typically 6), so prefer serving over HTTP/2 when many notebook tabs may be

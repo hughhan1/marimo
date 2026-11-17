@@ -76,15 +76,13 @@ def validate_auth(
     # Check for Authorization header (Bearer or Basic)
     auth = conn.headers.get("Authorization")
     if auth is not None:
-        scheme, _, credentials = auth.partition(" ")
-        scheme_lower = scheme.lower()
-
-        if scheme_lower == "bearer" and _matches(credentials, auth_token):
+        if bearer_matches(auth, auth_token):
             LOGGER.debug("Validated bearer token from header")
             cookie_session.set_access_token(auth_token)
             return True  # Success
 
-        if scheme_lower == "basic":
+        scheme, _, credentials = auth.partition(" ")
+        if scheme.lower() == "basic":
             username, password = _parse_basic_auth_credentials(credentials)
             if username and password and _matches(password, auth_token):
                 LOGGER.debug("Validated basic auth from header")
@@ -94,6 +92,12 @@ def validate_auth(
 
     LOGGER.debug("Invalid auth")
     return False
+
+
+def bearer_matches(authorization: str, token: str) -> bool:
+    """Whether an Authorization header is a bearer of `token`."""
+    scheme, _, credentials = authorization.partition(" ")
+    return scheme.lower() == "bearer" and _matches(credentials, token)
 
 
 def _matches(given: str, expected: str) -> bool:

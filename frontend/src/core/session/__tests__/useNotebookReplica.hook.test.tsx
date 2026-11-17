@@ -52,7 +52,7 @@ function setup(strict = false) {
     snapshot: null,
     sessionArguments: () => ({ session_id: "s1", query_params: "" }),
     headers: () => ({}),
-    mcpUrl: () => new URL("http://localhost/api/mcp"),
+    mcpUrl: () => new URL("http://localhost/mcp"),
     waitUntilReady: async () => undefined,
     checkHealth: async () => true,
     onNotification: vi.fn(),

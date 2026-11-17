@@ -8,7 +8,7 @@ This guide explains how to create tools that are accessible via both the backend
 marimo provides a unified framework for creating tools that can be used by AI assistants to interact with notebooks. These tools are automatically registered in both:
 
 1. **Backend Tools**: Used by the marimo chat panel (ask/agent modes)
-2. **MCP Tools**: Listed on the editor's MCP endpoint, `/api/mcp`, for external AI clients (like Claude Desktop)
+2. **MCP Tools**: Listed on the editor's MCP endpoint, `/mcp`, for external AI clients (like Claude Desktop)
 
 The unified architecture means you write a tool once and it works in both contexts.
 

@@ -17,7 +17,6 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, get_args
 
 import msgspec
-from holon.ext.events import Events
 from mcp.types import ErrorData
 from starlette.requests import Request
 
@@ -28,14 +27,14 @@ from marimo._core.operations import problem, problem_for
 from marimo._core.protocol_tools import EVENTS
 from marimo._core.stream import RoutedEvent
 from marimo._server.api.tools import dedented
+from marimo._server.host.context import host_context
 from marimo._server.host.events import serialize_event
-from marimo._server.host.notebook_api import _context
 from marimo._utils.asyncio_utils import cancel_and_wait
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterator
 
-    from holon.ext.events import EventType
+    from holon.ext.events import Events, EventType
     from mcp.server.context import ServerRequestContext
 
     from marimo._server.host.bridge import SessionBridge
@@ -120,9 +119,8 @@ class _Refused(Exception):
         self.problem = refusal
 
 
-def host_events() -> Events:
-    """The host's MCP events: `catalog` and `notebook`."""
-    served = Events()
+def host_events(served: Events) -> None:
+    """Declare the host's MCP events, `catalog` and `notebook`, on `served`."""
 
     def follow(
         event_type: EventType[Any, Any],
@@ -192,7 +190,7 @@ def host_events() -> Events:
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
         assert isinstance(context.request, Request)
-        host = _context(context.request)
+        host = host_context(context.request)
         try:
             asked = msgspec.convert(arguments, protocol.CatalogEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
@@ -218,7 +216,7 @@ def host_events() -> Events:
         subscription_id: str,
     ) -> Callable[[], Awaitable[None]] | None:
         assert isinstance(context.request, Request)
-        host = _context(context.request)
+        host = host_context(context.request)
         try:
             asked = msgspec.convert(arguments, protocol.NotebookEventsRequest)
             cursor, types = _cursor(asked.cursor), _types(asked.types)
@@ -259,12 +257,20 @@ def host_events() -> Events:
             input_schema=dedented(arguments),
             payload_schema=dedented(msgspec.json.schema(event.payload)),
             delivery=("push",),
+            authorize=_edits,
             on_subscribe=on_subscribe,
         )
 
     catalog = declare("catalog", on_catalog)
     notebook_events = declare("notebook", on_notebook)
-    return served
+
+
+def _edits(
+    context: ServerRequestContext[Any, Any], arguments: dict[str, Any]
+) -> bool:
+    del arguments
+    assert isinstance(context.request, Request)
+    return "edit" in context.request.auth.scopes
 
 
 def _resumed(context: ServerRequestContext[Any, Any]) -> bool:

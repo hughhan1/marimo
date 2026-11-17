@@ -10,7 +10,6 @@ from marimo import _loggers
 
 if TYPE_CHECKING:
     import socket
-    from collections.abc import Sequence
 
     from marimo._server.api.tools import MCPEndpoint
 
@@ -47,16 +46,15 @@ class Server(uvicorn.Server):
     """
 
     def __init__(
-        self, config: uvicorn.Config, *, endpoints: Sequence[MCPEndpoint]
+        self, config: uvicorn.Config, *, endpoint: MCPEndpoint
     ) -> None:
         super().__init__(config)
-        self.endpoints = endpoints
+        self.endpoint = endpoint
 
     async def shutdown(
         self, sockets: list[socket.socket] | None = None
     ) -> None:
-        for endpoint in self.endpoints:
-            endpoint.close()
+        self.endpoint.close()
         await super().shutdown(sockets)
 
 

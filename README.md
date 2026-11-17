@@ -15,4 +15,4 @@ make py && make fe
 marimo edit notebook.py
 ```
 
-The editor is at `http://localhost:2718/`, its MCP endpoint at `/api/mcp`, and the Host Protocol's at `/api/marimo/v1/mcp`. To pair an agent, ask it to run `marimo pair list` and take it from there.
+The editor is at `http://localhost:2718/` and its MCP endpoint, which serves the Host Protocol too, at `/mcp`. To pair an agent, ask it to run `marimo pair list` and take it from there.

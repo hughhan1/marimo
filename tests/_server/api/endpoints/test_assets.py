@@ -1004,9 +1004,7 @@ def test_index_does_not_provision_a_notebook(
     if not cataloged:
         bridge.index.forget(original_id)
     initial_notebooks = dict(bridge.host.notebooks)
-    client.app.state.host_context = HostContext(
-        bridge=bridge, token="host-token", port=1234
-    )  # type: ignore[union-attr]
+    client.app.state.host_context = HostContext(bridge=bridge)  # type: ignore[union-attr]
     client.app.state.remote_url = remote_url  # type: ignore[union-attr]
     response = client.get("/", headers=token_header())
     assert response.status_code == 200

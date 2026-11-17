@@ -213,7 +213,7 @@ class _Session:
         """Call one of the editor's tools, such as the notebook tools."""
         result: dict[str, Any] = json.loads(
             self._post(
-                "/api/mcp",
+                "/mcp",
                 tool_payload(name, arguments),
                 request_headers("tools/call", name),
             )
