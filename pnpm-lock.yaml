@@ -183,8 +183,8 @@ importers:
         specifier: 7.0.0-dev.20260324.1
         version: 7.0.0-dev.20260324.1
       holon-types:
-        specifier: 0.0.1-dev.25
-        version: 0.0.1-dev.25
+        specifier: 0.0.1-dev.55
+        version: 0.0.1-dev.55
       oxfmt:
         specifier: ^0.74.0
         version: 0.74.0
@@ -444,8 +444,8 @@ importers:
         specifier: ^3.4.17
         version: 3.4.17
       holon-ui:
-        specifier: 0.0.1-dev.7
-        version: 0.0.1-dev.7(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7))
+        specifier: 0.0.1-dev.18
+        version: 0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7))
       htm:
         specifier: ^3.1.1
         version: 3.1.1
@@ -736,8 +736,8 @@ importers:
   packages/client:
     dependencies:
       holon-sh:
-        specifier: 0.0.1-dev.32
-        version: 0.0.1-dev.32
+        specifier: 0.0.1-dev.34
+        version: 0.0.1-dev.34
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -6572,35 +6572,45 @@ packages:
       '@modelcontextprotocol/server':
         optional: true
 
-  holon-types-darwin-arm64@0.0.1-dev.25:
-    resolution: {integrity: sha512-44Tlbg82ewdWfaClskwWeibc4WxWH2NxL8BpDN0gyg0fAjKJd32h3v80MOy3OOPZTPc304S0aPvrF/BKytbc3w==}
+  holon-sh@0.0.1-dev.34:
+    resolution: {integrity: sha512-2j/ut2dPh7F/yaNlgbzGjm3FaCukCPkLq1s4L2tmhWn8s6qHL6ziy7CodJTfGhhBrvmY/IP5HMDk1mzJr6aJEQ==}
+    engines: {node: '>=22'}
+    hasBin: true
+    peerDependencies:
+      '@modelcontextprotocol/server': ^2.3.1
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
+
+  holon-types-darwin-arm64@0.0.1-dev.55:
+    resolution: {integrity: sha512-TuAsX0JigPijNJJNgwOIeLTaCMDzRrFEuHVRzTAcFiYTIgU+UE0KQh+PtniNuhLGakBnq1pnL+ClJ59JIjTB6Q==}
     cpu: [arm64]
     os: [darwin]
 
-  holon-types-darwin-x64@0.0.1-dev.25:
-    resolution: {integrity: sha512-zS9TMMZO0Rt1YumiitiQSgcnw3aOLX6ca9OQI/kskS7ZiLiQPfSqYi3bjmPbEoEhruHnZipXh7vHDwad0nN9Qw==}
+  holon-types-darwin-x64@0.0.1-dev.55:
+    resolution: {integrity: sha512-BoEIiBt9Gn5Ds60/ZHJqUGz2X5aclH3iSibHV2vO/bBF82s7Vbcr7Jq/V/+dlb6yvOpMnxo3146kArHBY8rMsA==}
     cpu: [x64]
     os: [darwin]
 
-  holon-types-linux-arm64@0.0.1-dev.25:
-    resolution: {integrity: sha512-ePlp08c+STlWY4BnA46P3s0gRZQ0gJX/7ete64q1gyXhRlLOegF09Anip1QDN4SPKovXCbuzVEHIsMW2dvgx3g==}
+  holon-types-linux-arm64@0.0.1-dev.55:
+    resolution: {integrity: sha512-23mtLOoLKhDKe+vT/E6baS71Gy2/gcw7NClCF5xvRj1V0Xcsev/LfvuDw+GDQFGt2Lv76Xd/+qkppbEAxVkjpw==}
     cpu: [arm64]
     os: [linux]
 
-  holon-types-linux-x64@0.0.1-dev.25:
-    resolution: {integrity: sha512-x9N8mv3TzMm7+qQM6hiKnQ/sTXUWaf4w4saeEC4bZDg2Be8CECWP69PkQsscbwCitPrd6htNbIowDYAn0qXxQQ==}
+  holon-types-linux-x64@0.0.1-dev.55:
+    resolution: {integrity: sha512-kPch4o47lKXAI6tDTYqd804zcEKMAb8+rP+MGeHDucmIb1LfduCha4zbRNBvJ3T9r498J8ka5tCUTmWBgrQB2w==}
     cpu: [x64]
     os: [linux]
 
-  holon-types@0.0.1-dev.25:
-    resolution: {integrity: sha512-Nf9FnvRL+zJsXwLvVT5XDci1P9+DRfIZu+sG0n8eifGEcRwAQqQk0UmhDSmicNqFBI48sccJNhea+5+N6lnQdg==}
+  holon-types@0.0.1-dev.55:
+    resolution: {integrity: sha512-lKYvC/82gkCkgUPMtEzgumr+RUxVaU0YRpu5Z64qxccKcwBfDrvy5EwwNL8TUfCqjMscJREDmXemH0vaTgQGPw==}
     engines: {node: '>=22'}
     hasBin: true
 
-  holon-ui@0.0.1-dev.7:
-    resolution: {integrity: sha512-LgOp6CgSuH2kCNWR8kJSvbtoP6kuumycNSqcmZ+B64RYX2Z0zzbGLAcV5K0yY4QoHwgT0mDEX3ewPBW9+VG7mw==}
+  holon-ui@0.0.1-dev.18:
+    resolution: {integrity: sha512-bDGdwS7vcj1c2bjgtVeptlI9Q3V6zmTBu11ru8na6QnVRTAl6pEEjx+RPj0yk+NfG8giZzHdNi3/lzdXPWOocg==}
     peerDependencies:
-      '@modelcontextprotocol/ext-apps': '>=1.0.0'
+      '@modelcontextprotocol/ext-apps': ^2.0.0
 
   hookified@1.13.0:
     resolution: {integrity: sha512-6sPYUY8olshgM/1LDNW4QZQN0IqgKhtl/1C8koNZBJrKLBk3AZl6chQtNwpNztvfiApHMEwMHek5rv993PRbWw==}
@@ -15992,27 +16002,35 @@ snapshots:
       mime: 4.1.2
       undici: 7.29.1
 
-  holon-types-darwin-arm64@0.0.1-dev.25:
-    optional: true
-
-  holon-types-darwin-x64@0.0.1-dev.25:
-    optional: true
-
-  holon-types-linux-arm64@0.0.1-dev.25:
-    optional: true
-
-  holon-types-linux-x64@0.0.1-dev.25:
-    optional: true
-
-  holon-types@0.0.1-dev.25:
-    optionalDependencies:
-      holon-types-darwin-arm64: 0.0.1-dev.25
-      holon-types-darwin-x64: 0.0.1-dev.25
-      holon-types-linux-arm64: 0.0.1-dev.25
-      holon-types-linux-x64: 0.0.1-dev.25
-
-  holon-ui@0.0.1-dev.7(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
+  holon-sh@0.0.1-dev.34:
     dependencies:
+      '@modelcontextprotocol/client': 2.4.0
+      ipaddr.js: 2.5.0
+      mime: 4.1.2
+      undici: 7.29.1
+
+  holon-types-darwin-arm64@0.0.1-dev.55:
+    optional: true
+
+  holon-types-darwin-x64@0.0.1-dev.55:
+    optional: true
+
+  holon-types-linux-arm64@0.0.1-dev.55:
+    optional: true
+
+  holon-types-linux-x64@0.0.1-dev.55:
+    optional: true
+
+  holon-types@0.0.1-dev.55:
+    optionalDependencies:
+      holon-types-darwin-arm64: 0.0.1-dev.55
+      holon-types-darwin-x64: 0.0.1-dev.55
+      holon-types-linux-arm64: 0.0.1-dev.55
+      holon-types-linux-x64: 0.0.1-dev.55
+
+  holon-ui@0.0.1-dev.18(@modelcontextprotocol/ext-apps@2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)):
+    dependencies:
+      '@modelcontextprotocol/client': 2.4.0
       '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
       holon-sh: 0.0.1-dev.32
     transitivePeerDependencies:
